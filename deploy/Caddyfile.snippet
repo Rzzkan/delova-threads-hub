@@ -1,0 +1,12 @@
+# Untuk VPS yang reverse proxy-nya Caddy di host.
+# Tambahkan blok ini ke /etc/caddy/Caddyfile (jangan hapus blok delova.id / wh.delova.id yang sudah ada), lalu:
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+# HTTPS (Let's Encrypt) diurus Caddy otomatis.
+
+threads.delova.id {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3100 {
+		flush_interval -1
+	}
+}

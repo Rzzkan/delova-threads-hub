@@ -1,0 +1,224 @@
+import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+
+const dir = path.resolve(process.env.DATA_DIR || 'data');
+fs.mkdirSync(dir, { recursive: true });
+export const db = new DatabaseSync(path.join(dir, 'hub.db'));
+
+db.exec(`
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS brands (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '#8a5a44',
+  description TEXT,
+  voice TEXT,
+  pillars TEXT NOT NULL DEFAULT '[]',
+  hashtags TEXT,
+  dos TEXT,
+  donts TEXT,
+  threads_user_id TEXT,
+  username TEXT,
+  token_enc TEXT,
+  token_expires_at TEXT,
+  token_refreshed_at TEXT,
+  sort INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('viewer','editor','manager','admin')),
+  pass_hash TEXT,
+  api_token_hash TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS posts (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT NOT NULL REFERENCES brands(id),
+  text TEXT NOT NULL,
+  media_urls TEXT NOT NULL DEFAULT '[]',
+  topic_tag TEXT,
+  reply_control TEXT,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft','pending_approval','scheduled','publishing','published','failed')),
+  scheduled_at TEXT,
+  published_at TEXT,
+  threads_media_id TEXT,
+  permalink TEXT,
+  error TEXT,
+  review_note TEXT,
+  source TEXT NOT NULL DEFAULT 'dashboard',
+  created_by TEXT,
+  approved_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status, scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_posts_brand ON posts(brand_id);
+
+CREATE TABLE IF NOT EXISTS insights_cache (
+  key TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  brand_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  redirect_uris TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  id TEXT PRIMARY KEY,
+  access_hash TEXT NOT NULL,
+  refresh_hash TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  access_expires INTEGER NOT NULL,
+  refresh_expires INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_access ON oauth_tokens(access_hash);
+CREATE INDEX IF NOT EXISTS idx_oauth_refresh ON oauth_tokens(refresh_hash);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT,
+  action TEXT NOT NULL,
+  detail TEXT,
+  ts TEXT NOT NULL
+);
+`);
+
+const clean = (a) => a.map((v) => (v === undefined ? null : v));
+export const all = (sql, ...p) => db.prepare(sql).all(...clean(p));
+export const get = (sql, ...p) => db.prepare(sql).get(...clean(p));
+export const run = (sql, ...p) => db.prepare(sql).run(...clean(p));
+export const now = () => new Date().toISOString();
+export const uid = () => randomUUID();
+
+/* ---------- Pengaturan / kebijakan Claude (diatur admin di dashboard) ---------- */
+const SETTING_DEFAULTS = {
+  claude_enabled: '1',   // saklar utama semua akses Claude (MCP / konektor / API token)
+  claude_create: '1',    // boleh membuat & mengedit draft, mengajukan approval
+  claude_approve: '0',   // boleh menyetujui/menjadwalkan/mengembalikan post
+  claude_publish: '0',   // boleh publish langsung
+  claude_reply: '0',     // boleh membalas / menyembunyikan reply
+  claude_daily_cap: '30', // maks draft baru dari Claude per 24 jam
+};
+for (const [k, v] of Object.entries(SETTING_DEFAULTS)) {
+  db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)').run(k, v);
+}
+export const getSetting = (key) => get('SELECT value FROM settings WHERE key=?', key)?.value ?? SETTING_DEFAULTS[key];
+export const setSetting = (key, value) =>
+  run('INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', key, String(value));
+export const policy = () => ({
+  claude_enabled: getSetting('claude_enabled') === '1',
+  can_create: getSetting('claude_create') === '1',
+  can_approve: getSetting('claude_approve') === '1',
+  can_publish: getSetting('claude_publish') === '1',
+  can_reply: getSetting('claude_reply') === '1',
+  daily_create_cap: Number(getSetting('claude_daily_cap')),
+});
+
+export function audit(userId, action, detail) {
+  run(
+    'INSERT INTO audit_log(user_id, action, detail, ts) VALUES (?,?,?,?)',
+    userId || null,
+    action,
+    detail ? JSON.stringify(detail) : null,
+    now(),
+  );
+}
+
+/* ---------- Seed 4 brand Delova (bisa diedit dari dashboard) ---------- */
+const SEED = [
+  {
+    id: 'wardrobe',
+    name: 'Delova Wardrobe',
+    color: '#8a4b38',
+    description: 'Brand utama: modest fashion, kebaya, batik, dan wastra modern untuk perempuan.',
+    voice:
+      'Hangat, elegan, tetap membumi. Seperti teman yang jago styling. Sapaan "Kak". Bahasa Indonesia santai-sopan, sesekali emoji secukupnya (maks 2).',
+    pillars: ['Styling & OOTD', 'Edukasi wastra (batik, kebaya)', 'Behind the scenes produksi', 'Testimoni & UGC pelanggan', 'Promo & restock'],
+    hashtags: '#DelovaWardrobe #ModestFashion #KebayaModern',
+    dos: 'Highlight bahan, potongan, dan kesempatan pakai (kondangan, kantor, lebaran). Ajak diskusi di akhir post.',
+    donts: 'Jangan klaim diskon/harga/stok yang tidak ada di brief. Jangan menjelekkan brand lain. Jangan spam hashtag.',
+  },
+  {
+    id: 'kids',
+    name: 'Delova Kids',
+    color: '#c2577a',
+    description: 'Sister brand: baju anak perempuan.',
+    voice:
+      'Ceria, hangat, parenting-friendly. Menyapa orang tua ("Bunda/Ayah"). Ringan, lucu, tidak menggurui.',
+    pillars: ['Outfit anak (kondangan, lebaran, sekolah)', 'Parenting ringan', 'Panduan ukuran', 'Testimoni orang tua', 'Promo & restock'],
+    hashtags: '#DelovaKids #BajuAnakPerempuan #OOTDAnak',
+    dos: 'Tekankan kenyamanan bahan dan keamanan untuk anak. Pakai bahasa yang relate dengan orang tua muda.',
+    donts: 'Jangan memakai foto/identitas anak yang tidak punya izin. Jangan klaim medis. Jangan berlebihan menekan beli.',
+  },
+  {
+    id: 'scarf',
+    name: 'Delova Scarf',
+    color: '#2f7a78',
+    description: 'Sister brand: scarf dan hijab (viscose printed, dll).',
+    voice:
+      'Chic, praktis, ringan. Fokus tips pakai dan mix & match. Bahasa kasual, to the point, sedikit humor.',
+    pillars: ['Tutorial & styling hijab', 'Mix & match outfit', 'Info bahan & perawatan', 'Campaign & kolaborasi', 'Promo & restock'],
+    hashtags: '#DelovaScarf #HijabStyle #ScarfMotif',
+    dos: 'Berikan tips yang bisa langsung dicoba. Sebut motif/bahan bila ada di brief.',
+    donts: 'Jangan klaim "anti kusut/anti panas" dan sejenisnya tanpa dasar. Jangan mengarang harga.',
+  },
+  {
+    id: 'daily',
+    name: 'Delova Daily',
+    color: '#c58a1f',
+    description: 'Lini daily wear. (Profil ini draf awal, silakan sesuaikan di menu Brand.)',
+    voice:
+      'Santai, relatable, seperti curhat ringan ke teman. Boleh sedikit humor Gen Z, tetap sopan.',
+    pillars: ['Daily outfit', 'Tips rutinitas & produktivitas', 'Humor relatable', 'Testimoni', 'Promo & restock'],
+    hashtags: '#DelovaDaily #OOTD #DailyWear',
+    dos: 'Buka dengan hook kuat di baris pertama. Pertanyaan ringan di akhir untuk memancing reply.',
+    donts: 'Jangan klaim yang tidak ada di brief. Jangan terlalu jualan di setiap post (rasio 1 promo : 3 konten non-promo).',
+  },
+];
+
+if (!get('SELECT 1 AS x FROM brands LIMIT 1')) {
+  SEED.forEach((b, i) =>
+    run(
+      `INSERT INTO brands(id,name,color,description,voice,pillars,hashtags,dos,donts,sort)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      b.id, b.name, b.color, b.description, b.voice, JSON.stringify(b.pillars), b.hashtags, b.dos, b.donts, i,
+    ),
+  );
+}

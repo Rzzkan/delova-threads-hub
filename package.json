@@ -1,0 +1,22 @@
+{
+  "name": "delova-threads-hub",
+  "version": "1.0.0",
+  "description": "Dashboard tim marketing Delova untuk mengelola 4 akun Threads (Wardrobe, Kids, Scarf, Daily) dengan integrasi Claude + MCP",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "mcp": "node --env-file-if-exists=.env mcp/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  }
+}

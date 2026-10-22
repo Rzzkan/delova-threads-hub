@@ -1,0 +1,45 @@
+# Delova Threads Hub: satu container, data di volume Docker "hub-data".
+# Dirancang menumpang di VPS yang sudah menjalankan delova.id dan wh.delova.id:
+#  - TIDAK memakai port 80/443 (itu milik reverse proxy yang sudah ada)
+#  - hanya membuka 127.0.0.1:3100 (tidak terjangkau dari internet)
+#  - batas memori/CPU supaya tidak mengganggu aplikasi lain
+name: delova-threads-hub
+
+services:
+  hub:
+    build: .
+    container_name: delova-threads-hub
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATA_DIR: /data
+      TRUST_PROXY: "1" # satu lapis reverse proxy di depan
+    ports:
+      - "127.0.0.1:${HUB_PORT:-3100}:3000"
+    volumes:
+      - hub-data:/data
+    mem_limit: 384m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+    # ---- Varian: reverse proxy kamu berjalan DI DALAM Docker (Traefik / Nginx Proxy Manager) ----
+    # 1) hapus blok "ports" di atas, 2) sambungkan ke network proxy, 3) tambahkan label sesuai proxy.
+    # networks: [proxy]
+    # labels:   # contoh Traefik (sesuaikan nama entrypoint & certresolver milikmu)
+    #   - traefik.enable=true
+    #   - traefik.http.routers.threads.rule=Host(`threads.delova.id`)
+    #   - traefik.http.routers.threads.entrypoints=websecure
+    #   - traefik.http.routers.threads.tls.certresolver=letsencrypt
+    #   - traefik.http.services.threads.loadbalancer.server.port=3000
+
+volumes:
+  hub-data:
+
+# networks:
+#   proxy:
+#     external: true
+#     name: NAMA_NETWORK_PROXY_YANG_SUDAH_ADA   # cek dengan: docker network ls

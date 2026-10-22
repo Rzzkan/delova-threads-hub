@@ -1,0 +1,583 @@
+import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+
+import * as C from './crypto.js';
+import { all, get, run, now, uid, audit, getSetting, setSetting, policy } from './db.js';
+import * as T from './threads.js';
+import * as AI from './claude.js';
+import { startScheduler, publishPost, threadsLength } from './scheduler.js';
+import { registerTools } from './mcp-tools.js';
+import { mountOAuth, baseUrl } from './oauth.js';
+
+const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
+const need = (min) => (req, res, next) =>
+  RANK[req.user.role] >= RANK[min] ? next() : res.status(403).json({ error: `Butuh peran ${min} atau lebih tinggi.` });
+const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
+
+const publicBrand = (b) => {
+  if (!b) return null;
+  const { token_enc, ...rest } = b;
+  return { ...rest, pillars: JSON.parse(b.pillars || '[]'), connected: !!token_enc, simulated: T.isDryRun() };
+};
+const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, active: !!u.active, has_api_token: !!u.api_token_hash });
+const parsePost = (p) => (p ? { ...p, media_urls: JSON.parse(p.media_urls || '[]') } : null);
+const brandOr404 = (id) => get('SELECT * FROM brands WHERE id=?', id);
+
+function validatePost(b, { partial = false } = {}) {
+  if (!partial || b.text !== undefined) {
+    if (!b.text || !String(b.text).trim()) return 'Teks post wajib diisi.';
+    if (threadsLength(b.text) > 500) return `Teks terlalu panjang (${threadsLength(b.text)}/500 karakter).`;
+  }
+  if (b.media_urls !== undefined) {
+    if (!Array.isArray(b.media_urls) || b.media_urls.length > 20) return 'media_urls harus array (maks 20).';
+    if (b.media_urls.length === 1 || b.media_urls.length === 0 || b.media_urls.length >= 2) {
+      for (const u of b.media_urls) if (!/^https:\/\//i.test(u)) return 'URL media harus HTTPS dan bisa diakses publik.';
+    }
+  }
+  if (b.topic_tag && /[.&]/.test(b.topic_tag)) return 'Topic tag tidak boleh mengandung titik atau &.';
+  if (b.scheduled_at && Number.isNaN(Date.parse(b.scheduled_at))) return 'Format scheduled_at tidak valid (ISO 8601).';
+  if (b.reply_control && !['everyone', 'accounts_you_follow', 'mentioned_only', 'followers_only'].includes(b.reply_control)) return 'reply_control tidak valid.';
+  return null;
+}
+
+export function createApp() {
+  const app = express();
+  app.disable('x-powered-by');
+  // Di balik reverse proxy (nginx/Caddy/Traefik) set TRUST_PROXY=1 agar req.ip = IP pengunjung asli,
+  // bukan IP proxy. Tanpa ini, pembatas percobaan login akan menghitung SEMUA orang sebagai satu IP.
+  if (process.env.TRUST_PROXY) app.set('trust proxy', /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
+  app.use((req, res, next) => {
+    res.set({
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'same-origin',
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    });
+    next();
+  });
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: false }));
+
+  /* ---------------- Auth ---------------- */
+  const secureCookie = baseUrl().startsWith('https');
+  const attempts = new Map();
+
+  const cookieUser = (req) => {
+    const m = /(?:^|;\s*)hub=([^;]+)/.exec(req.headers.cookie || '');
+    const p = m && C.verify(decodeURIComponent(m[1]));
+    return p ? get('SELECT * FROM users WHERE id=? AND active=1', p.uid) : null;
+  };
+  const setCookie = (res, user) =>
+    res.setHeader('Set-Cookie', `hub=${encodeURIComponent(C.sign({ uid: user.id }))}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${secureCookie ? '; Secure' : ''}`);
+
+  function tryLogin(req, email, password) {
+    const ip = req.ip;
+    const a = attempts.get(ip) || { n: 0, t: Date.now() };
+    if (Date.now() - a.t > 10 * 60_000) { a.n = 0; a.t = Date.now(); }
+    if (a.n >= 10) return { error: 'Terlalu banyak percobaan. Coba lagi 10 menit lagi.', status: 429 };
+    const u = get('SELECT * FROM users WHERE email=? AND active=1', String(email || '').toLowerCase().trim());
+    if (!u || !C.verifyPassword(String(password || ''), u.pass_hash)) {
+      attempts.set(ip, { ...a, n: a.n + 1 });
+      return { error: 'Email atau password salah.', status: 401 };
+    }
+    attempts.delete(ip);
+    return { user: u };
+  }
+
+  /** req.via: 'cookie' (dashboard, manusia) | 'token' (API token / MCP stdio) | 'oauth' (konektor claude.ai). */
+  function auth(req, res, next) {
+    const h = req.headers.authorization || '';
+    let user = null;
+    req.via = 'cookie';
+    if (h.startsWith('Bearer ')) {
+      const hash = C.sha256(h.slice(7));
+      user = get('SELECT * FROM users WHERE api_token_hash=? AND active=1', hash);
+      if (user) req.via = 'token';
+      else {
+        const t = get('SELECT * FROM oauth_tokens WHERE access_hash=? AND access_expires>?', hash, Date.now());
+        if (t) { user = get('SELECT * FROM users WHERE id=? AND active=1', t.user_id); if (user) req.via = 'oauth'; }
+      }
+    } else {
+      user = cookieUser(req);
+      if (user && req.method !== 'GET' && req.headers['x-requested-with'] !== 'hub') return bad(res, 'Permintaan ditolak (CSRF).', 403);
+    }
+    if (!user) {
+      if (req.originalUrl.startsWith('/mcp')) res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${baseUrl()}/.well-known/oauth-protected-resource"`);
+      return bad(res, 'Belum login.', 401);
+    }
+    if (req.via !== 'cookie' && getSetting('claude_enabled') !== '1') return bad(res, 'Akses Claude sedang dimatikan oleh admin (dashboard → Kontrol Claude).', 403);
+    req.user = user;
+    next();
+  }
+
+  const A = (req, action, detail) => audit(req.user.id, action, { ...(detail || {}), via: req.via });
+  const humanOnly = (req, res, next) => (req.via === 'cookie' ? next() : bad(res, 'Aksi ini hanya bisa dilakukan manusia lewat dashboard.', 403));
+  const GATE_LABEL = { claude_create: 'Buat & edit draft', claude_approve: 'Setujui & jadwalkan', claude_publish: 'Publish langsung', claude_reply: 'Balas komentar' };
+  const gate = (key) => (req, res, next) =>
+    req.via === 'cookie' || getSetting(key) === '1' ? next() : bad(res, `Dimatikan oleh admin: "${GATE_LABEL[key]}" (dashboard → Kontrol Claude). Minta manajer melakukannya di dashboard.`, 403);
+  const claudeCap = (req, res, next) => {
+    if (req.via === 'cookie') return next();
+    const cap = Number(getSetting('claude_daily_cap'));
+    const n = get("SELECT COUNT(*) AS n FROM posts WHERE source='claude' AND created_at>?", new Date(Date.now() - 86_400_000).toISOString()).n;
+    return n >= cap ? bad(res, `Batas ${cap} draft/24 jam dari Claude sudah tercapai (Kontrol Claude).`, 429) : next();
+  };
+
+  mountOAuth(app, { sessionUser: cookieUser, login: tryLogin, setCookie });
+
+  app.get('/api/health', (req, res) =>
+    res.json({ ok: true, simulated: T.isDryRun(), ai: AI.aiEnabled(), model: AI.aiEnabled() ? AI.aiModel() : null }),
+  );
+
+  app.post('/api/login', (req, res) => {
+    const r = tryLogin(req, req.body?.email, req.body?.password);
+    if (r.error) return bad(res, r.error, r.status);
+    setCookie(res, r.user);
+    audit(r.user.id, 'login', { via: 'cookie' });
+    res.json(publicUser(r.user));
+  });
+
+  app.post('/api/logout', (req, res) => {
+    res.setHeader('Set-Cookie', 'hub=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+    res.json({ ok: true });
+  });
+
+  // Callback OAuth Threads (navigasi browser, memakai cookie sesi)
+  app.get('/auth/threads/start', auth, need('manager'), (req, res) => {
+    const b = brandOr404(String(req.query.brand));
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    if (T.isDryRun()) return bad(res, 'Mode simulasi aktif: isi THREADS_APP_ID/THREADS_APP_SECRET dan set THREADS_DRY_RUN=false untuk menghubungkan akun asli.');
+    const state = C.randomToken('st');
+    run('INSERT INTO oauth_states(state,brand_id,user_id,expires_at) VALUES (?,?,?,?)', state, b.id, req.user.id, Date.now() + 10 * 60_000);
+    res.redirect(T.authorizeUrl(state));
+  });
+
+  app.get('/auth/threads/callback', auth, ah(async (req, res) => {
+    const { code, state, error_description: err } = req.query;
+    const st = get('SELECT * FROM oauth_states WHERE state=?', String(state || ''));
+    if (!st || st.expires_at < Date.now() || st.user_id !== req.user.id) return res.redirect('/#/brands?connect=gagal');
+    run('DELETE FROM oauth_states WHERE state=?', st.state);
+    if (!code) return res.redirect(`/#/brands?connect=gagal&msg=${encodeURIComponent(err || 'dibatalkan')}`);
+    try {
+      const r = await T.exchangeCode(String(code));
+      run(
+        'UPDATE brands SET token_enc=?, token_expires_at=?, token_refreshed_at=?, threads_user_id=?, username=? WHERE id=?',
+        C.encrypt(r.token), new Date(Date.now() + r.expiresIn * 1000).toISOString(), now(), r.userId, r.username, st.brand_id,
+      );
+      A(req, 'brand.connected', { brand: st.brand_id, username: r.username });
+      res.redirect('/#/brands?connect=ok');
+    } catch (e) {
+      res.redirect(`/#/brands?connect=gagal&msg=${encodeURIComponent(e.message)}`);
+    }
+  }));
+
+  /* ---------------- API (login wajib) ---------------- */
+  const api = express.Router();
+  api.use(auth);
+
+  api.get('/me', (req, res) => res.json(publicUser(req.user)));
+
+  // ----- Brands
+  api.get('/brands', (req, res) => res.json(all('SELECT * FROM brands ORDER BY sort').map(publicBrand)));
+  api.get('/brands/:id', (req, res) => {
+    const b = brandOr404(req.params.id);
+    return b ? res.json(publicBrand(b)) : bad(res, 'Brand tidak ditemukan.', 404);
+  });
+  api.put('/brands/:id', humanOnly, need('manager'), (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    const f = req.body || {};
+    run(
+      `UPDATE brands SET name=?, description=?, voice=?, pillars=?, hashtags=?, dos=?, donts=? WHERE id=?`,
+      f.name ?? b.name, f.description ?? b.description, f.voice ?? b.voice,
+      Array.isArray(f.pillars) ? JSON.stringify(f.pillars.map(String).filter(Boolean)) : b.pillars,
+      f.hashtags ?? b.hashtags, f.dos ?? b.dos, f.donts ?? b.donts, b.id,
+    );
+    A(req, 'brand.updated', { brand: b.id });
+    res.json(publicBrand(brandOr404(b.id)));
+  });
+  api.post('/brands/:id/refresh-token', humanOnly, need('admin'), ah(async (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b?.token_enc) return bad(res, 'Akun belum terhubung.');
+    const r = await T.refreshToken(b);
+    run('UPDATE brands SET token_enc=?, token_expires_at=?, token_refreshed_at=? WHERE id=?', C.encrypt(r.token), new Date(Date.now() + r.expiresIn * 1000).toISOString(), now(), b.id);
+    res.json(publicBrand(brandOr404(b.id)));
+  }));
+  api.delete('/brands/:id/connection', humanOnly, need('admin'), (req, res) => {
+    run('UPDATE brands SET token_enc=NULL, token_expires_at=NULL, threads_user_id=NULL, username=NULL WHERE id=?', req.params.id);
+    A(req, 'brand.disconnected', { brand: req.params.id });
+    res.json({ ok: true });
+  });
+
+  // ----- Dashboard
+  api.get('/dashboard', (req, res) => {
+    const brands = all('SELECT * FROM brands ORDER BY sort').map((b) => {
+      const counts = Object.fromEntries(all('SELECT status, COUNT(*) AS n FROM posts WHERE brand_id=? GROUP BY status', b.id).map((r) => [r.status, r.n]));
+      const next = get("SELECT id,text,scheduled_at FROM posts WHERE brand_id=? AND status='scheduled' ORDER BY scheduled_at LIMIT 1", b.id);
+      return { ...publicBrand(b), counts, next_post: next || null };
+    });
+    res.json({ brands, simulated: T.isDryRun(), ai: AI.aiEnabled() });
+  });
+
+  // ----- Posts
+  api.get('/posts', (req, res) => {
+    const { brand, status } = req.query;
+    const limit = Math.min(200, Number(req.query.limit) || 100);
+    const where = [];
+    const args = [];
+    if (brand) { where.push('brand_id=?'); args.push(String(brand)); }
+    if (status) { where.push('status=?'); args.push(String(status)); }
+    const rows = all(
+      `SELECT p.*, u.name AS author FROM posts p LEFT JOIN users u ON u.id=p.created_by
+       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+       ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC LIMIT ${limit}`,
+      ...args,
+    );
+    res.json(rows.map(parsePost));
+  });
+
+  api.get('/posts/:id', (req, res) => {
+    const p = get('SELECT * FROM posts WHERE id=?', req.params.id);
+    return p ? res.json(parsePost(p)) : bad(res, 'Post tidak ditemukan.', 404);
+  });
+
+  api.post('/posts', need('editor'), gate('claude_create'), claudeCap, (req, res) => {
+    const b = req.body || {};
+    if (!brandOr404(b.brand_id)) return bad(res, 'Brand tidak ditemukan.', 404);
+    const err = validatePost(b);
+    if (err) return bad(res, err);
+    const id = uid();
+    run(
+      `INSERT INTO posts(id,brand_id,text,media_urls,topic_tag,reply_control,status,scheduled_at,source,created_by,created_at,updated_at)
+       VALUES (?,?,?,?,?,?, 'draft', ?,?,?,?,?)`,
+      id, b.brand_id, b.text.trim(), JSON.stringify(b.media_urls || []), b.topic_tag || null, b.reply_control || null,
+      b.scheduled_at ? new Date(b.scheduled_at).toISOString() : null,
+      req.via !== 'cookie' ? 'claude' : ['claude', 'ai'].includes(b.source) ? b.source : 'dashboard', req.user.id, now(), now(),
+    );
+    A(req, 'post.created', { id, brand: b.brand_id, source: b.source });
+    res.status(201).json(parsePost(get('SELECT * FROM posts WHERE id=?', id)));
+  });
+
+  const loadPost = (req, res) => {
+    const p = get('SELECT * FROM posts WHERE id=?', req.params.id);
+    if (!p) bad(res, 'Post tidak ditemukan.', 404);
+    return p;
+  };
+
+  api.put('/posts/:id', need('editor'), gate('claude_create'), (req, res) => {
+    const p = loadPost(req, res);
+    if (!p) return;
+    if (['published', 'publishing'].includes(p.status)) return bad(res, 'Post yang sudah terbit tidak bisa diedit.');
+    if (req.user.role === 'editor' && p.created_by !== req.user.id) return bad(res, 'Editor hanya bisa mengedit post buatannya sendiri.', 403);
+    const b = req.body || {};
+    const err = validatePost(b, { partial: true });
+    if (err) return bad(res, err);
+    // edit isi pada post yang sudah diajukan/dijadwalkan mengembalikannya ke draft agar di-review ulang
+    const contentChanged = ['text', 'media_urls', 'topic_tag'].some((k) => b[k] !== undefined);
+    const status = ['pending_approval', 'scheduled'].includes(p.status) && contentChanged && RANK[req.user.role] < RANK.manager ? 'draft' : p.status === 'failed' ? 'draft' : p.status;
+    run(
+      `UPDATE posts SET text=?, media_urls=?, topic_tag=?, reply_control=?, scheduled_at=?, status=?, error=NULL, updated_at=? WHERE id=?`,
+      b.text !== undefined ? b.text.trim() : p.text,
+      b.media_urls !== undefined ? JSON.stringify(b.media_urls) : p.media_urls,
+      b.topic_tag !== undefined ? b.topic_tag || null : p.topic_tag,
+      b.reply_control !== undefined ? b.reply_control || null : p.reply_control,
+      b.scheduled_at !== undefined ? (b.scheduled_at ? new Date(b.scheduled_at).toISOString() : null) : p.scheduled_at,
+      status, now(), p.id,
+    );
+    res.json(parsePost(get('SELECT * FROM posts WHERE id=?', p.id)));
+  });
+
+  api.post('/posts/:id/submit', need('editor'), gate('claude_create'), (req, res) => {
+    const p = loadPost(req, res);
+    if (!p) return;
+    if (!['draft', 'failed'].includes(p.status)) return bad(res, `Post berstatus ${p.status}, tidak bisa diajukan.`);
+    run("UPDATE posts SET status='pending_approval', review_note=NULL, error=NULL, updated_at=? WHERE id=?", now(), p.id);
+    A(req, 'post.submitted', { id: p.id });
+    res.json(parsePost(get('SELECT * FROM posts WHERE id=?', p.id)));
+  });
+
+  api.post('/posts/:id/approve', need('manager'), gate('claude_approve'), (req, res) => {
+    const p = loadPost(req, res);
+    if (!p) return;
+    if (!['pending_approval', 'draft', 'failed'].includes(p.status)) return bad(res, `Post berstatus ${p.status}.`);
+    const when = req.body?.scheduled_at || p.scheduled_at || now();
+    if (Number.isNaN(Date.parse(when))) return bad(res, 'Jadwal tidak valid.');
+    run("UPDATE posts SET status='scheduled', scheduled_at=?, approved_by=?, error=NULL, updated_at=? WHERE id=?", new Date(when).toISOString(), req.user.id, now(), p.id);
+    A(req, 'post.approved', { id: p.id, scheduled_at: when });
+    res.json(parsePost(get('SELECT * FROM posts WHERE id=?', p.id)));
+  });
+
+  api.post('/posts/:id/reject', need('manager'), gate('claude_approve'), (req, res) => {
+    const p = loadPost(req, res);
+    if (!p) return;
+    if (!['pending_approval', 'scheduled'].includes(p.status)) return bad(res, `Post berstatus ${p.status}.`);
+    run("UPDATE posts SET status='draft', review_note=?, updated_at=? WHERE id=?", String(req.body?.note || '').slice(0, 300) || null, now(), p.id);
+    A(req, 'post.rejected', { id: p.id });
+    res.json(parsePost(get('SELECT * FROM posts WHERE id=?', p.id)));
+  });
+
+  api.post('/posts/:id/publish-now', need('manager'), gate('claude_publish'), ah(async (req, res) => {
+    const p = loadPost(req, res);
+    if (!p) return;
+    const out = await publishPost(p.id, { allowFrom: ['draft', 'pending_approval', 'scheduled', 'failed'], userId: req.user.id });
+    run('UPDATE posts SET approved_by=COALESCE(approved_by,?) WHERE id=?', req.user.id, p.id);
+    A(req, 'post.publish_now', { id: p.id, brand: p.brand_id });
+    res.json(parsePost(out));
+  }));
+
+  api.delete('/posts/:id', humanOnly, need('editor'), (req, res) => {
+    const p = loadPost(req, res);
+    if (!p) return;
+    if (['published', 'publishing'].includes(p.status)) return bad(res, 'Post terbit tidak bisa dihapus dari dashboard (hapus langsung di Threads).');
+    if (req.user.role === 'editor' && p.created_by !== req.user.id) return bad(res, 'Editor hanya bisa menghapus post buatannya sendiri.', 403);
+    run('DELETE FROM posts WHERE id=?', p.id);
+    A(req, 'post.deleted', { id: p.id });
+    res.json({ ok: true });
+  });
+
+  // ----- Replies & Insights
+  const publishedWithMedia = (brandId, n) =>
+    all("SELECT * FROM posts WHERE brand_id=? AND status='published' AND threads_media_id IS NOT NULL ORDER BY published_at DESC LIMIT ?", brandId, n);
+
+  api.get('/brands/:id/replies', need('editor'), ah(async (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    const out = [];
+    for (const p of publishedWithMedia(b.id, 5)) {
+      for (const r of await T.listReplies(b, p.threads_media_id)) out.push({ post_id: p.id, post_text: p.text, reply: r });
+    }
+    res.json(out);
+  }));
+
+  api.post('/brands/:id/replies/:replyId/reply', need('manager'), gate('claude_reply'), ah(async (req, res) => {
+    const b = brandOr404(req.params.id);
+    const text = String(req.body?.text || '').trim();
+    if (!b || !text) return bad(res, 'Teks balasan wajib diisi.');
+    if (threadsLength(text) > 500) return bad(res, 'Balasan maksimal 500 karakter.');
+    const r = await T.replyTo(b, req.params.replyId, text);
+    A(req, 'reply.sent', { brand: b.id, to: req.params.replyId });
+    res.json(r);
+  }));
+
+  api.post('/brands/:id/replies/:replyId/hide', need('manager'), gate('claude_reply'), ah(async (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    res.json(await T.hideReply(b, req.params.replyId, req.body?.hide !== false));
+  }));
+
+  async function cached(key, ttlMs, fn) {
+    const hit = get('SELECT * FROM insights_cache WHERE key=?', key);
+    if (hit && Date.now() - hit.fetched_at < ttlMs) return JSON.parse(hit.data);
+    const data = await fn();
+    run('INSERT INTO insights_cache(key,data,fetched_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data, fetched_at=excluded.fetched_at', key, JSON.stringify(data), Date.now());
+    return data;
+  }
+
+  async function brandInsights(b, days) {
+    const account = await cached(`acc:${b.id}:${days}`, 15 * 60_000, () => T.userInsights(b, days));
+    const posts = [];
+    for (const p of publishedWithMedia(b.id, 15)) {
+      const metrics = await cached(`post:${p.threads_media_id}`, 30 * 60_000, () => T.mediaInsights(b, p.threads_media_id));
+      posts.push({ id: p.id, text: p.text, permalink: p.permalink, published_at: p.published_at, metrics });
+    }
+    return { account, posts, simulated: T.isDryRun() };
+  }
+
+  api.get('/brands/:id/insights', need('viewer'), ah(async (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    if (!b.token_enc && !T.isDryRun()) return bad(res, 'Akun belum terhubung ke Threads.');
+    res.json(await brandInsights(b, Math.min(90, Number(req.query.days) || 7)));
+  }));
+
+  // ----- Claude (AI)
+  const aiRoute = (min, fn) => [humanOnly, need(min), ah(async (req, res) => {
+    const brand = brandOr404(req.body?.brand_id);
+    if (!brand) return bad(res, 'brand_id wajib diisi.');
+    const out = await fn(brand, req.body || {}, req);
+    A(req, 'ai.used', { brand: brand.id, route: req.path });
+    res.json(out);
+  })];
+
+  api.post('/ai/generate', ...aiRoute('editor', async (brand, b) => {
+    if (!b.brief?.trim()) { const e = new Error('Brief wajib diisi.'); e.status = 400; throw e; }
+    return { variants: await AI.generatePosts(brand, b) };
+  }));
+  api.post('/ai/improve', ...aiRoute('editor', async (brand, b) => {
+    if (!b.text?.trim()) { const e = new Error('Teks wajib diisi.'); e.status = 400; throw e; }
+    return { variants: await AI.improvePost(brand, b) };
+  }));
+  api.post('/ai/reply-suggestions', ...aiRoute('manager', async (brand, b) => ({
+    suggestions: await AI.suggestReplies(brand, { postText: b.post_text, replies: b.replies || [], count: b.count }),
+  })));
+  api.post('/ai/weekly-plan', ...aiRoute('editor', async (brand, b) => {
+    const items = await AI.weeklyPlan(brand, b);
+    // beri usulan tanggal mulai besok (WIB), jam sesuai saran Claude
+    const wibDate = new Date(Date.now() + 7 * 3600_000 + 86_400_000);
+    return {
+      items: items.map((it, i) => {
+        const [h, m] = String(it.time || '19:00').match(/\d{1,2}/g)?.map(Number) || [19, 0];
+        const d = new Date(Date.UTC(wibDate.getUTCFullYear(), wibDate.getUTCMonth(), wibDate.getUTCDate() + i, (h ?? 19) - 7, m ?? 0));
+        return { ...it, scheduled_at: d.toISOString() };
+      }),
+    };
+  }));
+  api.post('/ai/analyze', ...aiRoute('manager', async (brand, b, req) => {
+    if (!brand.token_enc && !T.isDryRun()) { const e = new Error('Akun belum terhubung ke Threads.'); e.status = 400; throw e; }
+    return { analysis: await AI.analyze(brand, await brandInsights(brand, Number(b.days) || 7)) };
+  }));
+
+  // ----- Tim (admin)
+  api.get('/users', humanOnly, need('admin'), (req, res) => res.json(all('SELECT * FROM users ORDER BY created_at').map(publicUser)));
+  api.post('/users', humanOnly, need('admin'), (req, res) => {
+    const { email, name, role, password } = req.body || {};
+    if (!email || !name || !RANK.hasOwnProperty(role) || String(password || '').length < 8) return bad(res, 'Email, nama, peran, dan password (min 8 karakter) wajib diisi.');
+    if (get('SELECT 1 AS x FROM users WHERE email=?', email.toLowerCase())) return bad(res, 'Email sudah terdaftar.');
+    const id = uid();
+    run('INSERT INTO users(id,email,name,role,pass_hash,created_at) VALUES (?,?,?,?,?,?)', id, email.toLowerCase().trim(), name, role, C.hashPassword(password), now());
+    A(req, 'user.created', { email, role });
+    res.status(201).json(publicUser(get('SELECT * FROM users WHERE id=?', id)));
+  });
+  api.put('/users/:id', humanOnly, need('admin'), (req, res) => {
+    const u = get('SELECT * FROM users WHERE id=?', req.params.id);
+    if (!u) return bad(res, 'User tidak ditemukan.', 404);
+    const b = req.body || {};
+    if (b.role && !RANK.hasOwnProperty(b.role)) return bad(res, 'Peran tidak valid.');
+    if (u.id === req.user.id && (b.active === false || (b.role && b.role !== 'admin'))) return bad(res, 'Tidak bisa menurunkan/menonaktifkan akun admin Anda sendiri.');
+    run('UPDATE users SET name=?, role=?, active=?, pass_hash=? WHERE id=?', b.name ?? u.name, b.role ?? u.role, b.active === undefined ? u.active : b.active ? 1 : 0, b.password ? C.hashPassword(b.password) : u.pass_hash, u.id);
+    A(req, 'user.updated', { id: u.id });
+    res.json(publicUser(get('SELECT * FROM users WHERE id=?', u.id)));
+  });
+  api.post('/users/:id/api-token', humanOnly, need('admin'), (req, res) => {
+    const u = get('SELECT * FROM users WHERE id=?', req.params.id);
+    if (!u) return bad(res, 'User tidak ditemukan.', 404);
+    const token = C.randomToken('dth');
+    run('UPDATE users SET api_token_hash=? WHERE id=?', C.sha256(token), u.id);
+    A(req, 'user.api_token_created', { id: u.id });
+    res.json({ token, note: 'Simpan sekarang. Token tidak akan ditampilkan lagi.' });
+  });
+  api.delete('/users/:id/api-token', humanOnly, need('admin'), (req, res) => {
+    run('UPDATE users SET api_token_hash=NULL WHERE id=?', req.params.id);
+    res.json({ ok: true });
+  });
+  api.get('/audit', humanOnly, need('admin'), (req, res) =>
+    res.json(all('SELECT a.*, u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100')),
+  );
+
+  // ----- Ringkasan untuk Claude (pintu masuk percakapan) + Kontrol Claude (admin)
+  api.get('/overview', (req, res) => {
+    const pick = (sql, ...a) => all(sql, ...a).map((p) => ({ id: p.id, brand: p.brand_id, text: p.text, status: p.status, scheduled_at: p.scheduled_at, error: p.error, source: p.source }));
+    res.json({
+      you: { name: req.user.name, role: req.user.role },
+      pending_approval: pick("SELECT * FROM posts WHERE status='pending_approval' ORDER BY created_at LIMIT 20"),
+      failed: pick("SELECT * FROM posts WHERE status='failed' ORDER BY updated_at DESC LIMIT 10"),
+      upcoming: pick("SELECT * FROM posts WHERE status='scheduled' ORDER BY scheduled_at LIMIT 10"),
+      drafts: get("SELECT COUNT(*) AS n FROM posts WHERE status='draft'").n,
+      claude_policy: policy(),
+      dashboard_url: `${baseUrl()}/#/queue?status=pending_approval`,
+      now: now(),
+    });
+  });
+
+  api.get('/settings/claude', humanOnly, need('admin'), (req, res) => res.json(policy()));
+  api.put('/settings/claude', humanOnly, need('admin'), (req, res) => {
+    const b = req.body || {};
+    const map = { claude_enabled: 'claude_enabled', can_create: 'claude_create', can_approve: 'claude_approve', can_publish: 'claude_publish', can_reply: 'claude_reply' };
+    for (const [k, key] of Object.entries(map)) if (b[k] !== undefined) setSetting(key, b[k] ? '1' : '0');
+    if (b.daily_create_cap !== undefined) setSetting('claude_daily_cap', String(Math.max(0, Math.min(500, parseInt(b.daily_create_cap, 10) || 0))));
+    A(req, 'settings.claude_updated', policy());
+    res.json(policy());
+  });
+  api.get('/claude/sessions', humanOnly, need('admin'), (req, res) =>
+    res.json(all(`SELECT t.id, u.name AS user_name, u.role, c.name AS client_name, t.created_at, t.refresh_expires
+                  FROM oauth_tokens t JOIN users u ON u.id=t.user_id JOIN oauth_clients c ON c.client_id=t.client_id ORDER BY t.created_at DESC`)),
+  );
+  api.delete('/claude/sessions', humanOnly, need('admin'), (req, res) => {
+    run('DELETE FROM oauth_tokens');
+    A(req, 'claude.sessions_revoked_all');
+    res.json({ ok: true });
+  });
+  api.delete('/claude/sessions/:id', humanOnly, need('admin'), (req, res) => {
+    run('DELETE FROM oauth_tokens WHERE id=?', req.params.id);
+    A(req, 'claude.session_revoked', { id: req.params.id });
+    res.json({ ok: true });
+  });
+  api.get('/claude/activity', humanOnly, need('admin'), (req, res) =>
+    res.json(all(`SELECT a.*, u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
+                  WHERE a.detail LIKE '%"via":"oauth"%' OR a.detail LIKE '%"via":"token"%' ORDER BY a.id DESC LIMIT 50`)),
+  );
+
+  app.use('/api', api);
+
+  /* ---------------- MCP lewat HTTP (stateless, Bearer token) ---------------- */
+  const noSse = (req, res) => res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
+  app.get('/mcp', auth, noSse);
+  app.delete('/mcp', auth, noSse);
+  app.post('/mcp', auth, ah(async (req, res) => {
+    const port = req.socket.localPort;
+    const call = async (method, p, body) => {
+      const r = await fetch(`http://127.0.0.1:${port}${p}`, {
+        method,
+        headers: { authorization: req.headers.authorization || '', 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      return j;
+    };
+    if (!(req.headers.authorization || '').startsWith('Bearer ')) return bad(res, 'Endpoint /mcp hanya menerima Bearer API token.', 401);
+    const server = new McpServer({ name: 'delova-threads-hub', version: '1.0.0' });
+    registerTools(server, call, { role: req.user.role });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on('close', () => { transport.close(); server.close(); });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  }));
+
+  /* ---------------- Static + error ---------------- */
+  app.use(express.static(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public')));
+  app.use('/api', (req, res) => bad(res, 'Endpoint tidak ditemukan.', 404));
+  app.use((err, req, res, next) => {
+    const status = err.status || (err instanceof T.ThreadsError ? 502 : 500);
+    if (status === 500) console.error(err);
+    res.status(status).json({ error: err.message || 'Terjadi kesalahan.' });
+  });
+  return app;
+}
+
+/* ---------------- Bootstrap admin pertama ---------------- */
+function bootstrapAdmin() {
+  if (get('SELECT 1 AS x FROM users LIMIT 1')) return;
+  const email = (process.env.ADMIN_EMAIL || 'admin@delova.local').toLowerCase();
+  const password = process.env.ADMIN_PASSWORD || C.randomToken('pw').slice(0, 16);
+  run('INSERT INTO users(id,email,name,role,pass_hash,created_at) VALUES (?,?,?,?,?,?)', uid(), email, 'Admin Delova', 'admin', C.hashPassword(password), now());
+  console.log('\n=== Admin pertama dibuat ===');
+  console.log(`Email    : ${email}`);
+  console.log(process.env.ADMIN_PASSWORD ? 'Password : (sesuai ADMIN_PASSWORD di .env)' : `Password : ${password}   <- catat & ganti segera`);
+  console.log('============================\n');
+}
+
+import { pathToFileURL } from 'node:url';
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  bootstrapAdmin();
+  const port = Number(process.env.PORT) || 3000;
+  const srv = createApp().listen(port, () => {
+    console.log(`Delova Threads Hub berjalan di http://localhost:${port}`);
+    console.log(`Mode Threads: ${T.isDryRun() ? 'SIMULASI (tidak memposting ke Threads asli)' : 'LIVE'} | Claude: ${AI.aiEnabled() ? AI.aiModel() : 'nonaktif (isi ANTHROPIC_API_KEY)'}`);
+  });
+  const stopScheduler = startScheduler();
+  // docker stop / restart mengirim SIGTERM: tutup rapi agar tidak memutus request yang sedang jalan
+  for (const sig of ['SIGTERM', 'SIGINT']) {
+    process.on(sig, () => {
+      console.log(`${sig} diterima, menutup server…`);
+      stopScheduler();
+      srv.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 8000).unref();
+    });
+  }
+}
+
+export { bootstrapAdmin };

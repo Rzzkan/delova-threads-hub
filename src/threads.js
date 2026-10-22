@@ -1,0 +1,240 @@
+/**
+ * Klien Threads API (Meta). Base URL & alur mengikuti dokumentasi resmi:
+ *  - OAuth:  https://threads.com/oauth/authorize  →  POST graph.threads.com/oauth/access_token
+ *  - Publish: POST /{user-id}/threads  →  (tunggu FINISHED)  →  POST /{user-id}/threads_publish
+ * Mode simulasi (THREADS_DRY_RUN=true, atau THREADS_APP_ID kosong) tidak memanggil Meta sama sekali.
+ */
+import { decrypt } from './crypto.js';
+
+const GRAPH = 'https://graph.threads.com';
+const V = `${GRAPH}/v1.0`;
+
+export const SCOPES = [
+  'threads_basic',
+  'threads_content_publish',
+  'threads_read_replies',
+  'threads_manage_replies',
+  'threads_manage_insights',
+];
+
+export const isDryRun = () => process.env.THREADS_DRY_RUN === 'true' || !process.env.THREADS_APP_ID;
+export const redirectUri = () => `${(process.env.APP_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/auth/threads/callback`;
+
+export class ThreadsError extends Error {
+  constructor(message, detail) {
+    super(message);
+    this.detail = detail;
+  }
+}
+
+async function call(method, url, params = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => [k, String(v)]),
+  );
+  const opts = { method };
+  let u = url;
+  if (method === 'GET') u += (url.includes('?') ? '&' : '?') + qs;
+  else {
+    opts.body = qs;
+    opts.headers = { 'content-type': 'application/x-www-form-urlencoded' };
+  }
+  const r = await fetch(u, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new ThreadsError(j.error?.message || `Threads API HTTP ${r.status}`, j.error);
+  return j;
+}
+
+const tokenOf = (brand) => {
+  if (!brand.token_enc) throw new ThreadsError(`Akun ${brand.name} belum terhubung ke Threads.`);
+  return decrypt(brand.token_enc);
+};
+
+/* ---------------- OAuth ---------------- */
+export function authorizeUrl(state) {
+  const q = new URLSearchParams({
+    client_id: process.env.THREADS_APP_ID,
+    redirect_uri: redirectUri(),
+    scope: SCOPES.join(','),
+    response_type: 'code',
+    state,
+  });
+  return `https://threads.com/oauth/authorize?${q}`;
+}
+
+export async function exchangeCode(code) {
+  const short = await call('POST', `${GRAPH}/oauth/access_token`, {
+    client_id: process.env.THREADS_APP_ID,
+    client_secret: process.env.THREADS_APP_SECRET,
+    grant_type: 'authorization_code',
+    redirect_uri: redirectUri(),
+    code,
+  });
+  const long = await call('GET', `${GRAPH}/access_token`, {
+    grant_type: 'th_exchange_token',
+    client_secret: process.env.THREADS_APP_SECRET,
+    access_token: short.access_token,
+  });
+  const profile = await call('GET', `${V}/me`, { fields: 'id,username,name', access_token: long.access_token });
+  return {
+    token: long.access_token,
+    expiresIn: long.expires_in || 60 * 24 * 3600,
+    userId: String(profile.id || short.user_id),
+    username: profile.username,
+  };
+}
+
+export async function refreshToken(brand) {
+  const r = await call('GET', `${GRAPH}/refresh_access_token`, {
+    grant_type: 'th_refresh_token',
+    access_token: tokenOf(brand),
+  });
+  return { token: r.access_token, expiresIn: r.expires_in || 60 * 24 * 3600 };
+}
+
+/* ---------------- Publish ---------------- */
+const isVideo = (u) => /\.(mp4|mov)(\?|$)/i.test(u);
+
+async function waitFinished(id, token, tries = 20) {
+  for (let i = 0; i < tries; i++) {
+    const s = await call('GET', `${V}/${id}`, { fields: 'status,error_message', access_token: token });
+    if (s.status === 'FINISHED' || s.status === 'PUBLISHED') return;
+    if (s.status === 'ERROR' || s.status === 'EXPIRED') throw new ThreadsError(s.error_message || `Container ${s.status}`);
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new ThreadsError('Container Threads belum siap setelah menunggu. Coba lagi nanti.');
+}
+
+export async function publish(brand, post) {
+  if (isDryRun()) {
+    const id = `dry_${Date.now()}`;
+    return { mediaId: id, permalink: `https://www.threads.com/@${brand.username || brand.id}/post/${id}`, dryRun: true };
+  }
+  const token = tokenOf(brand);
+  const uid = brand.threads_user_id;
+  const media = JSON.parse(post.media_urls || '[]');
+  const base = { access_token: token, reply_control: post.reply_control, topic_tag: post.topic_tag };
+  let creation;
+
+  if (media.length === 0) {
+    creation = await call('POST', `${V}/${uid}/threads`, { ...base, media_type: 'TEXT', text: post.text });
+  } else if (media.length === 1) {
+    const v = isVideo(media[0]);
+    creation = await call('POST', `${V}/${uid}/threads`, {
+      ...base,
+      media_type: v ? 'VIDEO' : 'IMAGE',
+      [v ? 'video_url' : 'image_url']: media[0],
+      text: post.text,
+    });
+  } else {
+    const children = [];
+    for (const m of media) {
+      const v = isVideo(m);
+      const c = await call('POST', `${V}/${uid}/threads`, {
+        access_token: token,
+        media_type: v ? 'VIDEO' : 'IMAGE',
+        is_carousel_item: true,
+        [v ? 'video_url' : 'image_url']: m,
+      });
+      await waitFinished(c.id, token);
+      children.push(c.id);
+    }
+    creation = await call('POST', `${V}/${uid}/threads`, {
+      ...base,
+      media_type: 'CAROUSEL',
+      children: children.join(','),
+      text: post.text,
+    });
+  }
+
+  await waitFinished(creation.id, token);
+  const pub = await call('POST', `${V}/${uid}/threads_publish`, { creation_id: creation.id, access_token: token });
+  let permalink = null;
+  try {
+    permalink = (await call('GET', `${V}/${pub.id}`, { fields: 'permalink', access_token: token })).permalink;
+  } catch {
+    /* permalink opsional */
+  }
+  return { mediaId: pub.id, permalink };
+}
+
+/* ---------------- Replies ---------------- */
+export async function listReplies(brand, mediaId) {
+  if (isDryRun()) {
+    return [
+      { id: `${mediaId}_r1`, text: 'Kak, ini ada ukuran XL nggak?', username: 'pembeli_contoh', timestamp: new Date().toISOString(), hide_status: 'NOT_HUSHED' },
+      { id: `${mediaId}_r2`, text: 'Bahannya adem ya? Cocok buat kondangan siang.', username: 'ibu_rina', timestamp: new Date().toISOString(), hide_status: 'NOT_HUSHED' },
+      { id: `${mediaId}_r3`, text: 'Cantik banget motifnya 😍', username: 'dina.styles', timestamp: new Date().toISOString(), hide_status: 'NOT_HUSHED' },
+    ];
+  }
+  const r = await call('GET', `${V}/${mediaId}/replies`, {
+    fields: 'id,text,username,timestamp,hide_status',
+    reverse: 'true',
+    access_token: tokenOf(brand),
+  });
+  return r.data || [];
+}
+
+export async function replyTo(brand, targetId, text) {
+  if (isDryRun()) return { mediaId: `dry_reply_${Date.now()}`, dryRun: true };
+  const token = tokenOf(brand);
+  const c = await call('POST', `${V}/${brand.threads_user_id}/threads`, {
+    access_token: token,
+    media_type: 'TEXT',
+    text,
+    reply_to_id: targetId,
+  });
+  await waitFinished(c.id, token);
+  const p = await call('POST', `${V}/${brand.threads_user_id}/threads_publish`, { creation_id: c.id, access_token: token });
+  return { mediaId: p.id };
+}
+
+export async function hideReply(brand, replyId, hide = true) {
+  if (isDryRun()) return { success: true, dryRun: true };
+  return call('POST', `${V}/${replyId}/manage_reply`, { hide, access_token: tokenOf(brand) });
+}
+
+/* ---------------- Insights ---------------- */
+const seeded = (s, max) => {
+  let h = 0;
+  for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % max;
+};
+
+export async function mediaInsights(brand, mediaId) {
+  if (isDryRun()) {
+    return { views: 200 + seeded(mediaId, 4000), likes: seeded(mediaId + 'l', 120), replies: seeded(mediaId + 'r', 25), reposts: seeded(mediaId + 'p', 15), quotes: seeded(mediaId + 'q', 6), shares: seeded(mediaId + 's', 10) };
+  }
+  const r = await call('GET', `${V}/${mediaId}/insights`, {
+    metric: 'views,likes,replies,reposts,quotes,shares',
+    access_token: tokenOf(brand),
+  });
+  return Object.fromEntries((r.data || []).map((m) => [m.name, m.values?.[0]?.value ?? m.total_value?.value ?? 0]));
+}
+
+export async function userInsights(brand, days = 7) {
+  if (isDryRun()) {
+    return { views: 1500 + seeded(brand.id, 9000), likes: 80 + seeded(brand.id + 'l', 500), replies: 10 + seeded(brand.id + 'r', 90), reposts: seeded(brand.id + 'p', 60), quotes: seeded(brand.id + 'q', 20), followers_count: 300 + seeded(brand.id + 'f', 5000) };
+  }
+  const token = tokenOf(brand);
+  const until = Math.floor(Date.now() / 1000);
+  const since = until - days * 86400;
+  const totals = await call('GET', `${V}/${brand.threads_user_id}/threads_insights`, {
+    metric: 'views,likes,replies,reposts,quotes',
+    since,
+    until,
+    access_token: token,
+  });
+  const out = {};
+  for (const m of totals.data || []) {
+    out[m.name] = m.total_value?.value ?? (m.values || []).reduce((a, v) => a + (v.value || 0), 0);
+  }
+  try {
+    const f = await call('GET', `${V}/${brand.threads_user_id}/threads_insights`, { metric: 'followers_count', access_token: token });
+    out.followers_count = f.data?.[0]?.total_value?.value ?? null;
+  } catch {
+    out.followers_count = null;
+  }
+  return out;
+}
