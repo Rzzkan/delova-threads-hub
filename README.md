@@ -164,3 +164,7 @@ test/              Tes otomatis: npm test
 ## Tes
 
 `npm test` menjalankan 29 tes: login/CSRF, alur approval, pembatasan peran, mode simulasi, MCP (stdio dan HTTP), alur OAuth lengkap (PKCE, rotasi token, putus sesi), kebijakan Kontrol Claude, pembatas login di balik proxy, backup, dan fitur Claude memakai server Anthropic tiruan. Yang belum bisa diuji otomatis: koneksi ke Meta/Threads asli, panggilan ke Claude API sungguhan, dan pendaftaran konektor dari claude.ai itu sendiri (butuh domain HTTPS dan akun Anda). Lakukan satu post uji di akun asli setelah langkah go-live.
+
+## Kredensial Meta di dashboard
+
+Admin mengisi Threads App ID/Secret di menu **Pengaturan Meta** (global untuk semua akun, dengan override opsional per brand) dan memilih mode Otomatis / Live / Simulasi. Secret disimpan terenkripsi (AES-256-GCM), tidak pernah dikembalikan oleh API, dan endpoint-nya khusus manusia (tidak bisa dipakai Claude/MCP). Prioritas: brand → dashboard → `.env`.

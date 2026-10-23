@@ -163,10 +163,14 @@ Pastikan juga **delova.id dan wh.delova.id tetap normal** (buka keduanya di brow
 
 ## 8. Go-live Threads dan konektor Claude
 
-1. Di Meta for Developers, isi Redirect Callback URL: `https://threads.delova.id/auth/threads/callback` (detail langkah di `README.md`).
-2. Isi `THREADS_APP_ID` dan `THREADS_APP_SECRET` di `.env`, set `THREADS_DRY_RUN=false`, lalu terapkan: `docker compose up -d` (container dibuat ulang agar membaca `.env`).
-3. Dashboard → Brand & Akun → **Hubungkan ke Threads** untuk tiap brand.
+Kredensial Meta diisi dari dashboard, tidak perlu mengedit `.env` atau me-restart container.
+
+1. Di Meta for Developers, isi Redirect Callback URL: `https://threads.delova.id/auth/threads/callback` (detail langkah di `README.md`). Alamat ini juga tampil di menu **Pengaturan Meta**.
+2. Masuk dashboard sebagai admin → **Pengaturan Meta**. Isi Threads App ID dan App Secret, pilih mode **Live**, Simpan. Satu aplikasi Meta cukup untuk keempat akun. Isi bagian "per brand" hanya jika sebuah brand memakai aplikasi Meta sendiri.
+3. Menu **Brand & Akun** → **Hubungkan ke Threads** untuk tiap brand (login dengan akun Threads brand tersebut).
 4. claude.ai → Settings → Connectors → Add custom connector → URL `https://threads.delova.id/mcp`.
+
+Prioritas kredensial: milik brand → pengaturan dashboard → `.env` (`THREADS_APP_ID`/`THREADS_APP_SECRET`, masih didukung sebagai cadangan). Secret disimpan terenkripsi dengan `APP_SECRET` dan tidak bisa dibaca atau diubah lewat Claude/MCP.
 
 ## 9. Operasional
 

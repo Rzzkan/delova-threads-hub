@@ -20,8 +20,8 @@ const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 
 const publicBrand = (b) => {
   if (!b) return null;
-  const { token_enc, ...rest } = b;
-  return { ...rest, pillars: JSON.parse(b.pillars || '[]'), connected: !!token_enc, simulated: T.isDryRun() };
+  const { token_enc, app_secret_enc, ...rest } = b;
+  return { ...rest, pillars: JSON.parse(b.pillars || '[]'), connected: !!token_enc, simulated: T.isDryRun(b), has_own_creds: !!(b.app_id && app_secret_enc) };
 };
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, active: !!u.active, has_api_token: !!u.api_token_hash });
 const parsePost = (p) => (p ? { ...p, media_urls: JSON.parse(p.media_urls || '[]') } : null);
@@ -149,10 +149,10 @@ export function createApp() {
   app.get('/auth/threads/start', auth, need('manager'), (req, res) => {
     const b = brandOr404(String(req.query.brand));
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
-    if (T.isDryRun()) return bad(res, 'Mode simulasi aktif: isi THREADS_APP_ID/THREADS_APP_SECRET dan set THREADS_DRY_RUN=false untuk menghubungkan akun asli.');
+    if (T.isDryRun(b)) return bad(res, 'Mode simulasi aktif atau kredensial Meta belum diisi. Admin: buka menu Pengaturan Meta.');
     const state = C.randomToken('st');
     run('INSERT INTO oauth_states(state,brand_id,user_id,expires_at) VALUES (?,?,?,?)', state, b.id, req.user.id, Date.now() + 10 * 60_000);
-    res.redirect(T.authorizeUrl(state));
+    res.redirect(T.authorizeUrl(state, b));
   });
 
   app.get('/auth/threads/callback', auth, ah(async (req, res) => {
@@ -162,7 +162,7 @@ export function createApp() {
     run('DELETE FROM oauth_states WHERE state=?', st.state);
     if (!code) return res.redirect(`/#/brands?connect=gagal&msg=${encodeURIComponent(err || 'dibatalkan')}`);
     try {
-      const r = await T.exchangeCode(String(code));
+      const r = await T.exchangeCode(String(code), brandOr404(st.brand_id));
       run(
         'UPDATE brands SET token_enc=?, token_expires_at=?, token_refreshed_at=?, threads_user_id=?, username=? WHERE id=?',
         C.encrypt(r.token), new Date(Date.now() + r.expiresIn * 1000).toISOString(), now(), r.userId, r.username, st.brand_id,
@@ -383,13 +383,13 @@ export function createApp() {
       const metrics = await cached(`post:${p.threads_media_id}`, 30 * 60_000, () => T.mediaInsights(b, p.threads_media_id));
       posts.push({ id: p.id, text: p.text, permalink: p.permalink, published_at: p.published_at, metrics });
     }
-    return { account, posts, simulated: T.isDryRun() };
+    return { account, posts, simulated: T.isDryRun(b) };
   }
 
   api.get('/brands/:id/insights', need('viewer'), ah(async (req, res) => {
     const b = brandOr404(req.params.id);
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
-    if (!b.token_enc && !T.isDryRun()) return bad(res, 'Akun belum terhubung ke Threads.');
+    if (!b.token_enc && !T.isDryRun(b)) return bad(res, 'Akun belum terhubung ke Threads.');
     res.json(await brandInsights(b, Math.min(90, Number(req.query.days) || 7)));
   }));
 
@@ -426,7 +426,7 @@ export function createApp() {
     };
   }));
   api.post('/ai/analyze', ...aiRoute('manager', async (brand, b, req) => {
-    if (!brand.token_enc && !T.isDryRun()) { const e = new Error('Akun belum terhubung ke Threads.'); e.status = 400; throw e; }
+    if (!brand.token_enc && !T.isDryRun(brand)) { const e = new Error('Akun belum terhubung ke Threads.'); e.status = 400; throw e; }
     return { analysis: await AI.analyze(brand, await brandInsights(brand, Number(b.days) || 7)) };
   }));
 
@@ -480,6 +480,70 @@ export function createApp() {
       dashboard_url: `${baseUrl()}/#/queue?status=pending_approval`,
       now: now(),
     });
+  });
+
+  // ----- Kredensial Meta (admin, hanya manusia: tidak bisa lewat Claude/MCP)
+  const idOk = (v) => /^[0-9A-Za-z_-]{5,40}$/.test(v);
+  const secOk = (v) => /^[0-9A-Za-z_-]{16,128}$/.test(v);
+  const metaStatus = () => {
+    const g = T.creds();
+    return {
+      mode: T.modeSetting(),
+      env_dry_run: process.env.THREADS_DRY_RUN === 'true',
+      app_id: getSetting('meta_app_id') || '',
+      has_secret: !!getSetting('meta_app_secret_enc'),
+      env_has_creds: !!process.env.THREADS_APP_ID,
+      global_source: g.source,
+      redirect_uri: T.redirectUri(),
+      scopes: T.SCOPES,
+      simulated: T.isDryRun(),
+      brands: all('SELECT * FROM brands ORDER BY sort').map((b) => ({
+        id: b.id, name: b.name, app_id: b.app_id || '', has_secret: !!b.app_secret_enc,
+        source: T.creds(b).source, simulated: T.isDryRun(b), connected: !!b.token_enc, username: b.username,
+      })),
+    };
+  };
+  api.get('/settings/meta', humanOnly, need('admin'), (req, res) => res.json(metaStatus()));
+  api.put('/settings/meta', humanOnly, need('admin'), (req, res) => {
+    const f = req.body || {};
+    if (f.mode !== undefined && !['auto', 'live', 'sim'].includes(f.mode)) return bad(res, 'Mode tidak valid.');
+    if (f.mode === 'live') {
+      const nid = typeof f.app_id === 'string' ? f.app_id.trim() : getSetting('meta_app_id');
+      const nsec = (typeof f.app_secret === 'string' && f.app_secret.trim()) || getSetting('meta_app_secret_enc');
+      const brandOwn = all('SELECT 1 FROM brands WHERE app_id IS NOT NULL AND app_secret_enc IS NOT NULL LIMIT 1').length;
+      if (!f.clear && !(nid && nsec) && !process.env.THREADS_APP_ID && !brandOwn) return bad(res, 'Isi App ID dan App Secret dulu sebelum memilih mode Live.');
+    }
+    if (f.clear) { setSetting('meta_app_id', ''); setSetting('meta_app_secret_enc', ''); }
+    else {
+      const id = typeof f.app_id === 'string' ? f.app_id.trim() : undefined;
+      const sec = typeof f.app_secret === 'string' ? f.app_secret.trim() : '';
+      if (id !== undefined && id !== '' && !idOk(id)) return bad(res, 'App ID tidak valid (hanya huruf/angka, 5-40 karakter).');
+      if (sec && !secOk(sec)) return bad(res, 'App Secret tidak valid (16-128 karakter huruf/angka).');
+      const effId = id ?? getSetting('meta_app_id');
+      if (sec && !effId) return bad(res, 'Isi App ID bersama App Secret.');
+      if (id !== undefined) setSetting('meta_app_id', id);
+      if (sec) setSetting('meta_app_secret_enc', C.encrypt(sec));
+    }
+    if (f.mode !== undefined) setSetting('threads_mode', f.mode);
+    A(req, 'settings.meta.updated', { mode: f.mode, cleared: !!f.clear, app_id_changed: typeof f.app_id === 'string', secret_changed: !!(typeof f.app_secret === 'string' && f.app_secret.trim()) });
+    res.json(metaStatus());
+  });
+  api.put('/brands/:id/credentials', humanOnly, need('admin'), (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    const f = req.body || {};
+    if (f.clear) {
+      run('UPDATE brands SET app_id=NULL, app_secret_enc=NULL WHERE id=?', b.id);
+    } else {
+      const id = String(f.app_id || '').trim();
+      const sec = String(f.app_secret || '').trim();
+      if (!idOk(id)) return bad(res, 'App ID tidak valid (hanya huruf/angka, 5-40 karakter).');
+      if (sec && !secOk(sec)) return bad(res, 'App Secret tidak valid (16-128 karakter huruf/angka).');
+      if (!sec && !b.app_secret_enc) return bad(res, 'Isi App Secret untuk brand ini.');
+      run('UPDATE brands SET app_id=?, app_secret_enc=COALESCE(?, app_secret_enc) WHERE id=?', id, sec ? C.encrypt(sec) : null, b.id);
+    }
+    A(req, 'brand.credentials', { brand: b.id, cleared: !!f.clear });
+    res.json(metaStatus());
   });
 
   api.get('/settings/claude', humanOnly, need('admin'), (req, res) => res.json(policy()));

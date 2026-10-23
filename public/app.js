@@ -42,7 +42,7 @@ $('#logout').addEventListener('click', async () => { await api('POST', '/api/log
 const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer'], ['compose', 'Tulis Post', 'editor'], ['queue', 'Antrean & Approval', 'viewer'],
   ['plan', 'Rencana Mingguan', 'editor'], ['inbox', 'Inbox Reply', 'editor'], ['insights', 'Insight', 'viewer'],
-  ['brands', 'Brand & Akun', 'viewer'], ['claude', 'Hubungkan Claude', 'viewer'], ['control', 'Kontrol Claude', 'admin'], ['team', 'Tim', 'admin'],
+  ['brands', 'Brand & Akun', 'viewer'], ['claude', 'Hubungkan Claude', 'viewer'], ['control', 'Kontrol Claude', 'admin'], ['meta', 'Pengaturan Meta', 'admin'], ['team', 'Tim', 'admin'],
 ];
 const VIEWS = {};
 
@@ -368,6 +368,70 @@ VIEWS.control = async (v) => {
   v.onclick = (e) => {
     if (e.target.id === 'revall') busy(e.target, async () => { if (!confirm('Putuskan semua sesi Claude?')) return; await api('DELETE', '/api/claude/sessions'); toast('Semua sesi diputus.'); route(); });
     if (e.target.dataset.rev) busy(e.target, async () => { await api('DELETE', `/api/claude/sessions/${e.target.closest('tr').dataset.id}`); toast('Sesi diputus.'); route(); });
+  };
+};
+
+/* ---------- Pengaturan Meta (admin) ---------- */
+VIEWS.meta = async (v) => {
+  const m = await api('GET', '/api/settings/meta');
+  const SRC = { brand: 'Kredensial brand ini', dashboard: 'Kredensial global (dashboard)', env: 'Kredensial dari .env server', none: 'Belum diisi' };
+  const modeNow = m.simulated ? '<span class="badge">SIMULASI: tidak memposting ke Threads asli</span>' : '<span class="badge s-published">LIVE: memposting ke Threads asli</span>';
+  v.innerHTML = `<h1>Pengaturan Meta</h1>
+  <p class="muted">Kredensial aplikasi Meta (Threads API) disimpan terenkripsi di server. App Secret tidak pernah ditampilkan lagi setelah disimpan dan tidak bisa diubah lewat Claude/MCP. Status saat ini: ${modeNow}</p>
+  <form id="gf" class="card stack">
+    <h3>Aplikasi Meta (berlaku untuk semua akun)</h3>
+    <p class="small muted">Satu aplikasi Meta cukup untuk keempat akun: tiap akun tetap login sendiri lewat tombol <i>Hubungkan ke Threads</i> sehingga token-nya terpisah. Sumber aktif: <b>${esc(SRC[m.global_source])}</b>${m.env_has_creds && m.global_source !== 'env' ? ' (nilai di .env tertimpa oleh yang diisi di sini)' : ''}.</p>
+    <div class="grid g2">
+      <label>Threads App ID<input name="app_id" value="${esc(m.app_id)}" autocomplete="off" placeholder="mis. 1234567890123456"></label>
+      <label>Threads App Secret<input name="app_secret" type="password" autocomplete="new-password" placeholder="${m.has_secret ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel App Secret'}"></label>
+    </div>
+    <label>Redirect Callback URL (salin ke Meta for Developers)
+      <span class="row"><input id="ru" value="${esc(m.redirect_uri)}" readonly><button type="button" class="btn small" id="cp">Salin</button></span></label>
+    <label>Mode
+      <select name="mode">
+        <option value="auto" ${m.mode === 'auto' ? 'selected' : ''}>Otomatis (ikut .env: THREADS_DRY_RUN=${m.env_dry_run ? 'true' : 'false'})</option>
+        <option value="live" ${m.mode === 'live' ? 'selected' : ''}>Live (posting ke Threads asli)</option>
+        <option value="sim" ${m.mode === 'sim' ? 'selected' : ''}>Simulasi (aman untuk uji coba)</option>
+      </select></label>
+    <div class="row"><button class="btn primary">Simpan</button>${m.app_id || m.has_secret ? '<button type="button" class="btn small danger" id="gclear">Hapus kredensial global</button>' : ''}</div>
+  </form>
+  <div class="card stack" style="margin-top:14px">
+    <h3>Kredensial per brand (opsional)</h3>
+    <p class="small muted">Isi hanya jika sebuah brand memakai aplikasi Meta sendiri. Kosong berarti brand memakai kredensial global di atas.</p>
+    <div class="grid g2">${m.brands.map((b) => `<form class="card stack bf" data-id="${b.id}">
+      <div class="row between"><b>${esc(b.name)}</b>${b.connected ? `<span class="badge s-published">@${esc(b.username || 'terhubung')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
+      <div class="small muted">Sumber aktif: ${esc(SRC[b.source])}${b.simulated ? ' · simulasi' : ''}</div>
+      <label>App ID<input name="app_id" value="${esc(b.app_id)}" autocomplete="off"></label>
+      <label>App Secret<input name="app_secret" type="password" autocomplete="new-password" placeholder="${b.has_secret ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel App Secret'}"></label>
+      <div class="row"><button class="btn small primary">Simpan</button>${b.source === 'brand' ? '<button type="button" class="btn small" data-x="bclear">Pakai kredensial global</button>' : ''}</div>
+    </form>`).join('')}</div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>Cara mendapatkan kredensial</h3>
+    <ol class="small"><li>Buka <b>developers.facebook.com</b> → My Apps → buat aplikasi dengan use case <b>Access the Threads API</b>.</li>
+    <li>Di pengaturan use case Threads, salin <b>Threads App ID</b> dan <b>Threads App Secret</b> (bukan App ID Facebook utama).</li>
+    <li>Isi <b>Redirect Callback URLs</b> (juga Uninstall dan Delete callback bila diminta) dengan alamat di atas.</li>
+    <li>Tambahkan tiap akun Threads sebagai <b>Threads Tester</b> selama aplikasi belum Live, lalu terima undangannya di pengaturan akun Threads masing-masing.</li>
+    <li>Kembali ke sini, simpan, ubah mode ke <b>Live</b>, lalu buka menu <b>Brand &amp; Akun</b> dan klik <b>Hubungkan ke Threads</b> untuk tiap akun.</li></ol>
+    <p class="small muted">Izin yang diminta: ${m.scopes.map((x) => `<code>${esc(x)}</code>`).join(', ')}.</p></div>`;
+  v.onsubmit = (e) => {
+    e.preventDefault(); const f = e.target;
+    busy($('button', f), async () => {
+      if (f.id === 'gf') {
+        const d = { app_id: f.elements.app_id.value.trim(), mode: f.elements.mode.value };
+        if (f.elements.app_secret.value.trim()) d.app_secret = f.elements.app_secret.value.trim();
+        await api('PUT', '/api/settings/meta', d);
+      } else {
+        const d = { app_id: f.elements.app_id.value.trim() };
+        if (f.elements.app_secret.value.trim()) d.app_secret = f.elements.app_secret.value.trim();
+        await api('PUT', `/api/brands/${f.dataset.id}/credentials`, d);
+      }
+      toast('Tersimpan.'); route();
+    });
+  };
+  v.onclick = (e) => {
+    if (e.target.id === 'cp') busy(e.target, async () => { await navigator.clipboard.writeText($('#ru').value); toast('Alamat disalin.'); });
+    if (e.target.id === 'gclear') busy(e.target, async () => { if (!confirm('Hapus kredensial global? Akun yang sudah terhubung tetap jalan, tetapi tidak bisa menghubungkan akun baru.')) return; await api('PUT', '/api/settings/meta', { clear: true, mode: 'sim' }); toast('Kredensial global dihapus.'); route(); });
+    if (e.target.dataset.x === 'bclear') busy(e.target, async () => { await api('PUT', `/api/brands/${e.target.closest('form').dataset.id}/credentials`, { clear: true }); toast('Brand kembali memakai kredensial global.'); route(); });
   };
 };
 

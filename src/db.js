@@ -135,7 +135,14 @@ const SETTING_DEFAULTS = {
   claude_publish: '0',   // boleh publish langsung
   claude_reply: '0',     // boleh membalas / menyembunyikan reply
   claude_daily_cap: '30', // maks draft baru dari Claude per 24 jam
+  threads_mode: 'auto',  // auto = ikut THREADS_DRY_RUN di .env | live | sim
+  meta_app_id: '',       // kredensial Meta global (App Secret disimpan terenkripsi)
+  meta_app_secret_enc: '',
 };
+// Migrasi ringan: kredensial Meta opsional per brand (override kredensial global)
+for (const col of ['app_id TEXT', 'app_secret_enc TEXT']) {
+  try { db.exec(`ALTER TABLE brands ADD COLUMN ${col}`); } catch { /* kolom sudah ada */ }
+}
 for (const [k, v] of Object.entries(SETTING_DEFAULTS)) {
   db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)').run(k, v);
 }

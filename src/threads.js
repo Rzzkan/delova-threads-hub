@@ -5,6 +5,7 @@
  * Mode simulasi (THREADS_DRY_RUN=true, atau THREADS_APP_ID kosong) tidak memanggil Meta sama sekali.
  */
 import { decrypt } from './crypto.js';
+import { getSetting, get } from './db.js';
 
 const GRAPH = 'https://graph.threads.com';
 const V = `${GRAPH}/v1.0`;
@@ -17,7 +18,39 @@ export const SCOPES = [
   'threads_manage_insights',
 ];
 
-export const isDryRun = () => process.env.THREADS_DRY_RUN === 'true' || !process.env.THREADS_APP_ID;
+/**
+ * Kredensial Meta: prioritas  (1) milik brand  →  (2) pengaturan global di dashboard  →  (3) .env.
+ * Satu aplikasi Meta cukup untuk semua akun; override per brand hanya jika brand memakai aplikasi Meta sendiri.
+ */
+export function creds(brand) {
+  try {
+    if (brand?.app_id && brand?.app_secret_enc) return { appId: brand.app_id, appSecret: decrypt(brand.app_secret_enc), source: 'brand' };
+  } catch { /* secret tak terbaca (APP_SECRET berubah): jatuh ke global */ }
+  const gid = getSetting('meta_app_id');
+  const genc = getSetting('meta_app_secret_enc');
+  if (gid && genc) {
+    try { return { appId: gid, appSecret: decrypt(genc), source: 'dashboard' }; } catch { /* lanjut ke .env */ }
+  }
+  if (process.env.THREADS_APP_ID) return { appId: process.env.THREADS_APP_ID, appSecret: process.env.THREADS_APP_SECRET || '', source: 'env' };
+  return { appId: '', appSecret: '', source: 'none' };
+}
+
+/** Saklar mode: 'sim' memaksa simulasi, 'live' memaksa nyata, 'auto' mengikuti THREADS_DRY_RUN di .env. */
+export const modeSetting = () => {
+  const m = getSetting('threads_mode');
+  return m === 'live' || m === 'sim' ? m : 'auto';
+};
+const forcedSim = () => {
+  const m = modeSetting();
+  return m === 'sim' || (m === 'auto' && process.env.THREADS_DRY_RUN === 'true');
+};
+/** Tanpa argumen: simulasi jika saklar simulasi, atau tidak ada kredensial sama sekali (global maupun brand). */
+export const isDryRun = (brand) => {
+  if (forcedSim()) return true;
+  if (brand) return !creds(brand).appId;
+  if (creds().appId) return false;
+  return !get("SELECT 1 AS x FROM brands WHERE app_id IS NOT NULL AND app_id<>'' AND app_secret_enc IS NOT NULL LIMIT 1");
+};
 export const redirectUri = () => `${(process.env.APP_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/auth/threads/callback`;
 
 export class ThreadsError extends Error {
@@ -52,9 +85,9 @@ const tokenOf = (brand) => {
 };
 
 /* ---------------- OAuth ---------------- */
-export function authorizeUrl(state) {
+export function authorizeUrl(state, brand) {
   const q = new URLSearchParams({
-    client_id: process.env.THREADS_APP_ID,
+    client_id: creds(brand).appId,
     redirect_uri: redirectUri(),
     scope: SCOPES.join(','),
     response_type: 'code',
@@ -63,17 +96,19 @@ export function authorizeUrl(state) {
   return `https://threads.com/oauth/authorize?${q}`;
 }
 
-export async function exchangeCode(code) {
+export async function exchangeCode(code, brand) {
+  const { appId, appSecret } = creds(brand);
+  if (!appId || !appSecret) throw new ThreadsError('Kredensial Meta (App ID / App Secret) belum diisi.');
   const short = await call('POST', `${GRAPH}/oauth/access_token`, {
-    client_id: process.env.THREADS_APP_ID,
-    client_secret: process.env.THREADS_APP_SECRET,
+    client_id: appId,
+    client_secret: appSecret,
     grant_type: 'authorization_code',
     redirect_uri: redirectUri(),
     code,
   });
   const long = await call('GET', `${GRAPH}/access_token`, {
     grant_type: 'th_exchange_token',
-    client_secret: process.env.THREADS_APP_SECRET,
+    client_secret: appSecret,
     access_token: short.access_token,
   });
   const profile = await call('GET', `${V}/me`, { fields: 'id,username,name', access_token: long.access_token });
@@ -107,7 +142,7 @@ async function waitFinished(id, token, tries = 20) {
 }
 
 export async function publish(brand, post) {
-  if (isDryRun()) {
+  if (isDryRun(brand)) {
     const id = `dry_${Date.now()}`;
     return { mediaId: id, permalink: `https://www.threads.com/@${brand.username || brand.id}/post/${id}`, dryRun: true };
   }
@@ -161,7 +196,7 @@ export async function publish(brand, post) {
 
 /* ---------------- Replies ---------------- */
 export async function listReplies(brand, mediaId) {
-  if (isDryRun()) {
+  if (isDryRun(brand)) {
     return [
       { id: `${mediaId}_r1`, text: 'Kak, ini ada ukuran XL nggak?', username: 'pembeli_contoh', timestamp: new Date().toISOString(), hide_status: 'NOT_HUSHED' },
       { id: `${mediaId}_r2`, text: 'Bahannya adem ya? Cocok buat kondangan siang.', username: 'ibu_rina', timestamp: new Date().toISOString(), hide_status: 'NOT_HUSHED' },
@@ -177,7 +212,7 @@ export async function listReplies(brand, mediaId) {
 }
 
 export async function replyTo(brand, targetId, text) {
-  if (isDryRun()) return { mediaId: `dry_reply_${Date.now()}`, dryRun: true };
+  if (isDryRun(brand)) return { mediaId: `dry_reply_${Date.now()}`, dryRun: true };
   const token = tokenOf(brand);
   const c = await call('POST', `${V}/${brand.threads_user_id}/threads`, {
     access_token: token,
@@ -191,7 +226,7 @@ export async function replyTo(brand, targetId, text) {
 }
 
 export async function hideReply(brand, replyId, hide = true) {
-  if (isDryRun()) return { success: true, dryRun: true };
+  if (isDryRun(brand)) return { success: true, dryRun: true };
   return call('POST', `${V}/${replyId}/manage_reply`, { hide, access_token: tokenOf(brand) });
 }
 
@@ -203,7 +238,7 @@ const seeded = (s, max) => {
 };
 
 export async function mediaInsights(brand, mediaId) {
-  if (isDryRun()) {
+  if (isDryRun(brand)) {
     return { views: 200 + seeded(mediaId, 4000), likes: seeded(mediaId + 'l', 120), replies: seeded(mediaId + 'r', 25), reposts: seeded(mediaId + 'p', 15), quotes: seeded(mediaId + 'q', 6), shares: seeded(mediaId + 's', 10) };
   }
   const r = await call('GET', `${V}/${mediaId}/insights`, {
@@ -214,7 +249,7 @@ export async function mediaInsights(brand, mediaId) {
 }
 
 export async function userInsights(brand, days = 7) {
-  if (isDryRun()) {
+  if (isDryRun(brand)) {
     return { views: 1500 + seeded(brand.id, 9000), likes: 80 + seeded(brand.id + 'l', 500), replies: 10 + seeded(brand.id + 'r', 90), reposts: seeded(brand.id + 'p', 60), quotes: seeded(brand.id + 'q', 20), followers_count: 300 + seeded(brand.id + 'f', 5000) };
   }
   const token = tokenOf(brand);
