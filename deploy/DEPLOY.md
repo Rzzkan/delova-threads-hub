@@ -170,6 +170,8 @@ Kredensial Meta diisi dari dashboard, tidak perlu mengedit `.env` atau me-restar
 3. Menu **Brand & Akun** → **Hubungkan ke Threads** untuk tiap brand (login dengan akun Threads brand tersebut).
 4. claude.ai → Settings → Connectors → Add custom connector → URL `https://threads.delova.id/mcp`.
 
+Alamat untuk formulir Meta (Privacy Policy, Terms, Data Deletion, Deauthorize) tersedia di menu Pengaturan Meta dan sudah publik di `/privacy`, `/terms`, dan `/data-deletion`. Isi `CONTACT_EMAIL` di `.env` dengan email yang benar-benar Anda pantau, karena tampil di halaman itu.
+
 Prioritas kredensial: milik brand → pengaturan dashboard → `.env` (`THREADS_APP_ID`/`THREADS_APP_SECRET`, masih didukung sebagai cadangan). Secret disimpan terenkripsi dengan `APP_SECRET` dan tidak bisa dibaca atau diubah lewat Claude/MCP.
 
 ## 9. Operasional

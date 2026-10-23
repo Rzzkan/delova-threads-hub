@@ -406,6 +406,10 @@ VIEWS.meta = async (v) => {
       <div class="row"><button class="btn small primary">Simpan</button>${b.source === 'brand' ? '<button type="button" class="btn small" data-x="bclear">Pakai kredensial global</button>' : ''}</div>
     </form>`).join('')}</div>
   </div>
+  <div class="card stack" style="margin-top:14px"><h3>Alamat untuk formulir Meta</h3>
+    <p class="small muted">Tempel alamat ini di Meta for Developers (Settings aplikasi Threads dan form Publish). Halaman-halaman ini publik dan sudah tersedia dalam Bahasa Indonesia dan Inggris.</p>
+    ${[['Privacy Policy URL', m.legal.privacy], ['Terms of Service URL', m.legal.terms], ['Data Deletion Requests URL', m.legal.delete_cb], ['Deauthorize Callback URL', m.legal.deauthorize], ['Halaman petunjuk penghapusan data', m.legal.deletion]].map(([l, u]) => `<label>${l}<span class="row"><input value="${esc(u)}" readonly><a class="btn small" href="${esc(u)}" target="_blank" rel="noopener">${u.includes('/auth/') ? '' : 'Buka'}</a></span></label>`).join('')}
+  </div>
   <div class="card" style="margin-top:14px"><h3>Cara mendapatkan kredensial</h3>
     <ol class="small"><li>Buka <b>developers.facebook.com</b> → My Apps → buat aplikasi dengan use case <b>Access the Threads API</b>.</li>
     <li>Di pengaturan use case Threads, salin <b>Threads App ID</b> dan <b>Threads App Secret</b> (bukan App ID Facebook utama).</li>

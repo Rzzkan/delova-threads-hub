@@ -129,3 +129,22 @@ test('hapus override brand → kembali ke global; mode Simulasi menahan koneksi 
   assert.equal(gone.json.has_secret, false);
   assert.equal(gone.json.app_id, '');
 });
+
+test('halaman legal publik (tanpa login) dan callback Meta tanpa efek samping', async () => {
+  for (const [p, kata] of [['/privacy', 'Kebijakan Privasi'], ['/terms', 'Ketentuan Layanan'], ['/data-deletion', 'Penghapusan Data']]) {
+    const r = await call(null, 'GET', p);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /text\/html/);
+    assert.ok(r.text.includes(kata));
+    assert.ok(r.text.includes('admin@test.local'));
+    assert.match(r.text, /Privacy Policy|Terms of Service|Data Deletion/);
+  }
+  assert.equal((await call(null, 'GET', '/privasi')).status, 301);
+  const d = await call(null, 'POST', '/auth/threads/deauthorize', {});
+  assert.equal(d.status, 200);
+  const del = await call(null, 'POST', '/auth/threads/delete', {});
+  assert.equal(del.json.url, 'https://threads.test.local/data-deletion');
+  assert.match(del.json.confirmation_code, /^[0-9a-f]{16}$/);
+  const st = (await admin('GET', '/api/settings/meta')).json;
+  assert.equal(st.legal.privacy, 'https://threads.test.local/privacy');
+});

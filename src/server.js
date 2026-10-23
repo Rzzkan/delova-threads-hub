@@ -11,6 +11,7 @@ import * as AI from './claude.js';
 import { startScheduler, publishPost, threadsLength } from './scheduler.js';
 import { registerTools } from './mcp-tools.js';
 import { mountOAuth, baseUrl } from './oauth.js';
+import { mountLegal } from './legal.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
 const need = (min) => (req, res, next) =>
@@ -127,6 +128,7 @@ export function createApp() {
   };
 
   mountOAuth(app, { sessionUser: cookieUser, login: tryLogin, setCookie });
+  mountLegal(app);
 
   app.get('/api/health', (req, res) =>
     res.json({ ok: true, simulated: T.isDryRun(), ai: AI.aiEnabled(), model: AI.aiEnabled() ? AI.aiModel() : null }),
@@ -495,6 +497,7 @@ export function createApp() {
       env_has_creds: !!process.env.THREADS_APP_ID,
       global_source: g.source,
       redirect_uri: T.redirectUri(),
+      legal: { privacy: `${baseUrl()}/privacy`, terms: `${baseUrl()}/terms`, deletion: `${baseUrl()}/data-deletion`, deauthorize: `${baseUrl()}/auth/threads/deauthorize`, delete_cb: `${baseUrl()}/auth/threads/delete` },
       scopes: T.SCOPES,
       simulated: T.isDryRun(),
       brands: all('SELECT * FROM brands ORDER BY sort').map((b) => ({
