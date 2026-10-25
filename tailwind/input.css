@@ -1,0 +1,128 @@
+@import "tailwindcss";
+@source "../public/index.html";
+@source "../public/app.js";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Token tema: dipetakan ke warna Tailwind supaya utilitas (bg-panel, text-muted, dst.) otomatis ikut mode gelap */
+:root {
+  --bg: #f1f5f9; --panel: #ffffff; --ink: #1c2434; --muted: #64748b; --line: #e2e8f0; --field: #ffffff;
+  --accent: #8a4b38; --accent-ink: #ffffff; --accent-soft: #f6ebe6;
+  --ok: #059669; --warn: #b45309; --bad: #dc2626;
+  --side: #1c2434; --side-ink: #aeb7c4; --side-line: #2e3a47;
+}
+.dark {
+  --bg: #1a222c; --panel: #24303f; --ink: #e2e8f0; --muted: #94a3b8; --line: #2e3a47; --field: #1d2a39;
+  --accent: #e0a48c; --accent-ink: #1a1410; --accent-soft: #3a2c28;
+  --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+  --side: #111827; --side-ink: #9aa6b8; --side-line: #243041;
+}
+@theme inline {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-bg: var(--bg); --color-panel: var(--panel); --color-ink: var(--ink); --color-muted: var(--muted);
+  --color-line: var(--line); --color-field: var(--field); --color-accent: var(--accent); --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft); --color-ok: var(--ok); --color-warn: var(--warn); --color-bad: var(--bad);
+  --color-side: var(--side); --color-side-ink: var(--side-ink); --color-side-line: var(--side-line);
+  --shadow-card: 0 1px 3px rgb(15 23 42 / .08), 0 1px 2px rgb(15 23 42 / .04);
+}
+
+@layer base {
+  html { color-scheme: light; } html.dark { color-scheme: dark; }
+  body { @apply bg-bg text-ink font-sans text-[15px] leading-relaxed antialiased; }
+  h1 { @apply text-2xl font-bold tracking-tight mb-1; }
+  h2 { @apply text-lg font-semibold mb-1; }
+  h3 { @apply text-base font-semibold mb-1; }
+  a { @apply text-accent; }
+  code { @apply rounded bg-bg px-1 py-0.5 text-[.85em]; }
+  ol, ul { @apply pl-5; } ol { @apply list-decimal; } ul { @apply list-disc; } li { @apply my-1; }
+}
+
+.hidden { display: none !important; }
+
+@layer components {
+.muted { @apply text-muted; } .small { @apply text-[.85rem]; } .err { @apply text-bad min-h-[1.2em] m-0; }
+
+/* ---------- Login ---------- */
+.login { @apply min-h-screen grid place-items-center p-4 bg-bg; }
+.login-card { @apply w-full max-w-[400px] grid gap-3 p-8 shadow-card; }
+.logo { @apply grid place-items-center size-12 rounded-xl bg-accent text-accent-ink text-2xl font-bold; font-family: Georgia, serif; }
+.logo.sm { @apply size-9 rounded-lg text-lg; }
+
+/* ---------- Kerangka admin ---------- */
+.side { @apply fixed inset-y-0 left-0 z-40 flex w-72 -translate-x-full flex-col bg-side text-side-ink transition-transform duration-200 lg:translate-x-0; }
+.side.open { @apply translate-x-0; }
+.backdrop { @apply fixed inset-0 z-30 bg-slate-900/50 lg:hidden; }
+.brandmark { @apply flex items-center gap-3 px-6 py-5 text-white border-b border-side-line; }
+.brandmark b { @apply text-lg tracking-tight; } .brandmark small { @apply block text-xs font-normal text-side-ink; }
+#nav { @apply flex-1 overflow-y-auto px-4 py-4; }
+.nav-group { @apply mb-1 mt-4 px-3 text-[.7rem] font-semibold uppercase tracking-wider text-slate-500 first:mt-0; }
+#nav a { @apply flex items-center gap-3 rounded-md px-3 py-2.5 text-[.92rem] font-medium text-side-ink no-underline transition-colors hover:bg-white/5 hover:text-white; }
+#nav a svg { @apply size-[18px] shrink-0 opacity-80; }
+#nav a.on { @apply bg-white/10 text-white; } #nav a.on svg { @apply opacity-100; }
+.side-foot { @apply border-t border-side-line px-6 py-4 text-xs text-slate-500; }
+
+.shell { @apply min-h-screen lg:pl-72; }
+.topbar { @apply sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-line bg-panel/90 px-4 backdrop-blur sm:px-6; }
+.topbar .crumb { @apply flex-1 min-w-0 truncate text-sm text-muted; } .topbar .crumb b { @apply text-ink font-semibold; }
+.icon-btn { @apply grid size-9 place-items-center rounded-full border border-line bg-bg text-muted cursor-pointer hover:text-ink; }
+.icon-btn svg { @apply size-[18px]; }
+.userbox { @apply flex items-center gap-3; }
+.avatar { @apply grid size-9 place-items-center rounded-full bg-accent-soft text-sm font-bold text-accent; }
+.userbox .who { @apply hidden text-right leading-tight sm:block; } .userbox .who b { @apply block text-sm; } .userbox .who span { @apply text-xs text-muted capitalize; }
+main { @apply mx-auto w-full max-w-[1280px] p-4 pb-16 sm:p-6; }
+
+/* ---------- Komponen ---------- */
+.card { @apply rounded-lg border border-line bg-panel p-5 shadow-card; }
+.grid { @apply grid gap-4; } .g2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); } .g4 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.row { @apply flex flex-wrap items-center gap-2.5; } .between { @apply justify-between; }
+.stack { @apply grid gap-3 content-start; }
+label > .row { @apply flex-nowrap; } label.row { @apply flex-nowrap items-start; }
+.row > input:not([type=checkbox]):not([type=radio]) { @apply min-w-0 flex-1; }
+.g2w { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+.bcard { @apply border-t-4; border-top-color: var(--c, var(--accent)); }
+.stats { @apply grid grid-cols-4 gap-1.5 rounded-md bg-bg p-3 text-center; }
+.stats b { @apply block text-xl font-bold; } .stats span { @apply text-[.68rem] uppercase tracking-normal text-muted; }
+
+.kpi { @apply flex items-center gap-4 rounded-lg border border-line bg-panel p-5 shadow-card; }
+.kpi .ic { @apply grid size-12 shrink-0 place-items-center rounded-full bg-accent-soft text-accent; } .kpi .ic svg { @apply size-6; }
+.kpi b { @apply block text-2xl font-bold leading-none; } .kpi span { @apply text-sm text-muted; }
+.kpi.bad .ic { @apply bg-bad/10 text-bad; } .kpi.ok .ic { @apply bg-ok/10 text-ok; } .kpi.warn .ic { @apply bg-warn/10 text-warn; }
+
+label { @apply grid gap-1.5 text-sm font-medium; }
+input, select, textarea { @apply w-full rounded-md border border-line bg-field px-3.5 py-2.5 text-[.95rem] text-ink outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:cursor-not-allowed disabled:opacity-60; font: inherit; }
+input[type=checkbox], input[type=radio] { @apply size-4 w-4 p-0 accent-[var(--accent)]; }
+input[readonly] { @apply bg-bg; }
+textarea { @apply min-h-[120px] resize-y; }
+::placeholder { @apply text-slate-400; }
+
+.btn { @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-panel px-4 py-2 text-sm font-semibold text-ink no-underline transition hover:border-accent hover:text-accent disabled:cursor-wait disabled:opacity-50; font-family: inherit; }
+.btn.primary { @apply border-accent bg-accent text-accent-ink hover:opacity-90 hover:text-accent-ink; }
+.btn.danger { @apply text-bad hover:border-bad hover:text-bad; } .btn.ghost { @apply bg-transparent; }
+.btn.small { @apply px-3 py-1.5 text-[.8rem]; }
+.side-foot .btn { @apply w-full; }
+
+.badge { @apply inline-flex items-center rounded-full border border-line bg-bg px-2.5 py-0.5 text-xs font-semibold; }
+.s-published { @apply border-ok/30 bg-ok/10 text-ok; } .s-scheduled { @apply border-accent/30 bg-accent-soft text-accent; }
+.s-pending_approval { @apply border-warn/30 bg-warn/10 text-warn; } .s-failed { @apply border-bad/30 bg-bad/10 text-bad; } .s-draft { @apply text-muted; }
+.counter { @apply text-xs text-muted; } .counter.over { @apply font-bold text-bad; }
+
+table { @apply w-full border-collapse; }
+th, td { @apply border-b border-line px-3 py-3 text-left align-top; }
+th { @apply bg-bg text-xs font-semibold uppercase tracking-wider text-muted; }
+tbody tr:last-child td { @apply border-b-0; } tbody tr:hover { @apply bg-bg/60; }
+.card:has(> table) { @apply overflow-x-auto p-0; } .card:has(> table) > h3 { @apply px-5 pt-4; }
+
+.variant { @apply grid gap-2 rounded-md border border-line bg-bg p-3; } .variant p { @apply m-0 whitespace-pre-wrap; }
+.banner { @apply mb-4 rounded-md border border-warn/40 bg-warn/10 px-4 py-3 text-sm; }
+.toast { @apply fixed bottom-5 left-1/2 z-50 max-w-[90vw] -translate-x-1/2 rounded-md bg-slate-900 px-5 py-3 text-sm font-medium text-white shadow-lg; }
+.toast.bad { @apply bg-bad text-white; }
+pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]; }
+.chips { @apply flex flex-wrap gap-2; }
+.chip { @apply rounded-full border border-line bg-panel px-3.5 py-1 text-[.82rem] font-medium text-ink no-underline hover:border-accent hover:text-accent; }
+.page-head { @apply mb-5; }
+
+@media (max-width: 800px) {
+  .stats { @apply grid-cols-2; }
+  table, thead, tbody, tr, th, td { display: block; } thead { display: none; }
+  tr { @apply border-b border-line py-2; } td { @apply border-0 px-3 py-1; }
+}
+}

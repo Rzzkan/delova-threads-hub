@@ -38,12 +38,45 @@ $('#loginForm').addEventListener('submit', async (e) => {
 });
 $('#logout').addEventListener('click', async () => { await api('POST', '/api/logout'); showLogin(); });
 
+/* ---------- kerangka: drawer mobile & tema ---------- */
+const closeDrawer = () => { $('#side').classList.remove('open'); $('#backdrop').classList.add('hidden'); };
+$('#burger').addEventListener('click', () => { $('#side').classList.add('open'); $('#backdrop').classList.remove('hidden'); });
+$('#backdrop').addEventListener('click', closeDrawer);
+const paintTheme = () => { const dark = document.documentElement.classList.contains('dark'); $('#theme').innerHTML = ico(dark ? 'sun' : 'moon'); $('#theme').title = dark ? 'Mode terang' : 'Mode gelap'; };
+$('#theme').addEventListener('click', () => {
+  const dark = document.documentElement.classList.toggle('dark');
+  try { localStorage.setItem('hub-theme', dark ? 'dark' : 'light'); } catch { /* abaikan */ }
+  paintTheme();
+});
+
 /* ---------- routing ---------- */
+const ICON = {
+  dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  compose: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  queue: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
+  plan: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>',
+  insights: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
+  research: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  mentions: '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+  creators: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  brands: '<path d="M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><path d="M9 21V12h6v9"/>',
+  claude: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 17v4M17 19h4"/>',
+  control: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>',
+  meta: '<path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8Zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+  team: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>', send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+};
+const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
+// [id, label, peran minimal, grup]
 const ROUTES = [
-  ['dashboard', 'Dashboard', 'viewer'], ['compose', 'Tulis Post', 'editor'], ['queue', 'Antrean & Approval', 'viewer'],
-  ['plan', 'Rencana Mingguan', 'editor'], ['inbox', 'Inbox Reply', 'editor'], ['insights', 'Insight', 'viewer'],
-  ['research', 'Riset', 'viewer'], ['mentions', 'Mention', 'viewer'], ['creators', 'Kolaborasi', 'viewer'],
-  ['brands', 'Brand & Akun', 'viewer'], ['claude', 'Hubungkan Claude', 'viewer'], ['control', 'Kontrol Claude', 'admin'], ['meta', 'Pengaturan Meta', 'admin'], ['team', 'Tim', 'admin'],
+  ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
+  ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
+  ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
+  ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
+  ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
 ];
 const VIEWS = {};
 
@@ -52,8 +85,13 @@ async function boot() {
   health = await fetch('/api/health').then((r) => r.json());
   brands = await api('GET', '/api/brands');
   $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
-  $('#who').textContent = `${me.name} · ${me.role}`;
-  $('#nav').innerHTML = ROUTES.filter((r) => can(r[2])).map((r) => `<a href="#/${r[0]}" data-r="${r[0]}">${r[1]}</a>`).join('');
+  $('#whoName').textContent = me.name; $('#whoRole').textContent = me.role; $('#avatar').textContent = (me.name || '?').trim().charAt(0).toUpperCase();
+  paintTheme();
+  let grp = '';
+  $('#nav').innerHTML = ROUTES.filter((r) => can(r[2])).map((r) => {
+    const head = r[3] !== grp ? `<div class="nav-group">${r[3]}</div>` : ''; grp = r[3];
+    return `${head}<a href="#/${r[0]}" data-r="${r[0]}">${ico(r[0])}<span>${r[1]}</span></a>`;
+  }).join('');
   $('#banner').innerHTML = [
     health.simulated ? '<div class="banner"><b>Mode simulasi:</b> post tidak dikirim ke Threads asli. Isi kredensial Meta di <code>.env</code> dan set <code>THREADS_DRY_RUN=false</code> untuk go-live (lihat README).</div>' : '',
     !health.ai ? '<div class="banner">Fitur Claude di dalam dashboard belum aktif: isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.</div>' : '',
@@ -65,6 +103,7 @@ async function route() {
   const name = (location.hash.slice(2).split('?')[0]) || 'dashboard';
   const r = ROUTES.find((x) => x[0] === name && can(x[2])) || ROUTES[0];
   $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === r[0]));
+  $('#crumb').textContent = r[1]; closeDrawer(); window.scrollTo(0, 0);
   const v = $('#view'); v.onclick = v.onsubmit = v.onchange = null; v.innerHTML = '<p class="muted">Memuat…</p>';
   try { await VIEWS[r[0]](v); } catch (e) { v.innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
 }
@@ -73,8 +112,11 @@ window.addEventListener('hashchange', route);
 /* ---------- Dashboard ---------- */
 VIEWS.dashboard = async (v) => {
   const d = await api('GET', '/api/dashboard');
-  v.innerHTML = `<h1>Dashboard</h1><p class="muted">Ringkasan 4 akun Threads Delova.</p>
-  <div class="grid g4">${d.brands.map((b) => {
+  const sum = (k) => d.brands.reduce((n, b) => n + ((b.counts || {})[k] || 0), 0);
+  const kpi = (cls, ic, n, l) => `<div class="kpi ${cls}"><div class="ic">${ico(ic)}</div><div><b>${n}</b><span>${l}</span></div></div>`;
+  v.innerHTML = `<div class="page-head"><h1>Dashboard</h1><p class="muted">Ringkasan 4 akun Threads Delova.</p></div>
+  <div class="grid g4" style="margin-bottom:16px">${kpi('ok', 'check', sum('published'), 'Post terbit')}${kpi('', 'clock', sum('scheduled'), 'Terjadwal')}${kpi('warn', 'send', sum('pending_approval'), 'Menunggu approval')}${kpi('bad', 'alert', sum('failed'), 'Gagal')}</div>
+  <div class="grid g2w">${d.brands.map((b) => {
     const c = b.counts || {};
     return `<div class="card bcard" style="--c:${b.color}">
       <div class="row between"><h2>${esc(b.name)}</h2>${b.connected ? `<span class="badge s-published">@${esc(b.username || 'terhubung')}</span>` : b.simulated ? '<span class="badge">Simulasi</span>' : '<span class="badge s-failed">Belum terhubung</span>'}</div>

@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Delova Threads Hub</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%238a4b38'/><text x='32' y='44' font-size='34' text-anchor='middle' fill='white' font-family='Georgia'>D</text></svg>" />
-  <link rel="stylesheet" href="/style.css" />
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
   <div id="login" class="login hidden">
@@ -21,19 +22,29 @@
     </form>
   </div>
 
-  <div id="app" class="app hidden">
-    <aside class="side">
-      <div class="brandmark"><span class="logo sm">D</span><b>Threads Hub</b></div>
-      <nav id="nav"></nav>
-      <div class="side-foot">
-        <div id="who" class="muted small"></div>
-        <button id="logout" class="btn ghost small">Keluar</button>
-      </div>
+  <div id="app" class="hidden">
+    <div id="backdrop" class="backdrop hidden"></div>
+    <aside class="side" id="side">
+      <div class="brandmark"><span class="logo sm">D</span><div><b>Threads Hub</b><small>Delova Wardrobe</small></div></div>
+      <nav id="nav" aria-label="Menu utama"></nav>
+      <div class="side-foot">© Delova · <a href="/privacy" class="text-slate-400">Privasi</a> · <a href="/terms" class="text-slate-400">Ketentuan</a></div>
     </aside>
-    <main>
-      <div id="banner"></div>
-      <div id="view"></div>
-    </main>
+    <div class="shell">
+      <header class="topbar">
+        <button id="burger" class="icon-btn lg:hidden" type="button" aria-label="Buka menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <div class="crumb">Hub / <b id="crumb">Dashboard</b></div>
+        <button id="theme" class="icon-btn" type="button" aria-label="Ganti tema"></button>
+        <div class="userbox">
+          <div class="who"><b id="whoName"></b><span id="whoRole"></span></div>
+          <div class="avatar" id="avatar"></div>
+          <button id="logout" class="btn small" type="button">Keluar</button>
+        </div>
+      </header>
+      <main>
+        <div id="banner"></div>
+        <div id="view"></div>
+      </main>
+    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

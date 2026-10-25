@@ -178,3 +178,13 @@ Tiga menu tambahan (butuh izin `threads_keyword_search`, `threads_manage_mention
 - **Kolaborasi**: pipeline kandidat endorse (prospek → dihubungi → negosiasi → deal/ditolak) lengkap dengan pengikut dan engagement, plus 5+ draf pesan penawaran dari Claude.
 
 Izin ini **tidak diminta** sampai admin mencentang "Izin riset, mention & kolaborasi" di Pengaturan Meta (setelah izinnya ditambahkan di Use cases aplikasi Meta), lalu akun dihubungkan ulang. Sebelum Meta menyetujui Advanced Access, pencarian hanya menjangkau post akun sendiri, mention hanya dari tester, dan lookup profil hanya akun resmi Meta. Claude (MCP) mendapat tool `research_threads`, `list_mentions`, `list_creators`, `add_creator`, `update_creator` serta prompt `riset_tren` dan `cari_endorse`; semuanya hanya membaca/mencatat dan tidak memposting apa pun ke publik.
+
+## Mengubah tampilan (Tailwind)
+
+Dashboard memakai Tailwind CSS v4 yang **dibangun saat pengembangan** (CSP melarang skrip CDN). Sumber gaya ada di `tailwind/input.css`; hasilnya `public/app.css` ikut di-commit sehingga Docker/VPS tidak perlu build.
+
+```bash
+npm install          # sekali, memasang Tailwind (devDependency)
+npm run css          # bangun ulang public/app.css setelah mengubah tailwind/input.css, public/app.js, atau public/index.html
+npm run css:watch    # otomatis saat mengedit
+```
