@@ -138,7 +138,60 @@ const SETTING_DEFAULTS = {
   threads_mode: 'auto',  // auto = ikut THREADS_DRY_RUN di .env | live | sim
   meta_app_id: '',       // kredensial Meta global (App Secret disimpan terenkripsi)
   meta_app_secret_enc: '',
+  threads_extra_scopes: '0', // 1 = minta izin riset/mention/profile discovery saat menghubungkan akun
+  mentions_auto: '1',        // kumpulkan mention otomatis tiap ±1 jam bila aktif & mode Live
 };
+// Riset, mention, dan kandidat kolaborasi (endorse)
+db.exec(`
+CREATE TABLE IF NOT EXISTS research_saves (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT,
+  query TEXT NOT NULL,
+  mode TEXT,
+  search_type TEXT,
+  media_type TEXT,
+  result TEXT NOT NULL DEFAULT '[]',
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mentions (
+  id TEXT PRIMARY KEY,              -- brand_id:media_id (satu mention bisa menyebut beberapa brand)
+  media_id TEXT NOT NULL,
+  brand_id TEXT NOT NULL,
+  username TEXT,
+  text TEXT,
+  permalink TEXT,
+  media_type TEXT,
+  posted_at TEXT,
+  status TEXT NOT NULL DEFAULT 'baru' CHECK (status IN ('baru','ditandai','dibalas','diabaikan')),
+  note TEXT,
+  collected_at TEXT NOT NULL,
+  handled_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mentions_brand ON mentions(brand_id, posted_at DESC);
+CREATE TABLE IF NOT EXISTS creators (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  name TEXT,
+  bio TEXT,
+  followers INTEGER,
+  verified INTEGER NOT NULL DEFAULT 0,
+  stats TEXT NOT NULL DEFAULT '{}',
+  niche TEXT,
+  status TEXT NOT NULL DEFAULT 'prospek' CHECK (status IN ('prospek','dihubungi','negosiasi','deal','ditolak')),
+  brand_id TEXT,
+  fee TEXT,
+  note TEXT,
+  source TEXT NOT NULL DEFAULT 'manual',
+  sample_url TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  looked_up_at TEXT
+);
+`);
+
 // Migrasi ringan: kredensial Meta opsional per brand (override kredensial global)
 for (const col of ['app_id TEXT', 'app_secret_enc TEXT']) {
   try { db.exec(`ALTER TABLE brands ADD COLUMN ${col}`); } catch { /* kolom sudah ada */ }

@@ -12,6 +12,7 @@ import { startScheduler, publishPost, threadsLength } from './scheduler.js';
 import { registerTools } from './mcp-tools.js';
 import { mountOAuth, baseUrl } from './oauth.js';
 import { mountLegal } from './legal.js';
+import * as R from './research.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
 const need = (min) => (req, res, next) =>
@@ -432,6 +433,153 @@ export function createApp() {
     return { analysis: await AI.analyze(brand, await brandInsights(brand, Number(b.days) || 7)) };
   }));
 
+  // ----- Riset post publik (threads_keyword_search)
+  const fresh = (min) => need(min);
+  api.get('/research/status', (req, res) => res.json({ extra_scopes: T.extraScopesOn(), mentions_auto: getSetting('mentions_auto') === '1', scopes: T.scopes() }));
+
+  api.post('/research/search', fresh('editor'), ah(async (req, res) => {
+    const f = req.body || {};
+    const b = brandOr404(f.brand_id);
+    if (!b) return bad(res, 'Pilih akun brand yang dipakai untuk mencari.');
+    const q = String(f.q || '').trim();
+    if (q.length < 2 || q.length > 200) return bad(res, 'Kata kunci harus 2-200 karakter.');
+    if (!b.token_enc && !T.isDryRun(b)) return bad(res, 'Akun belum terhubung ke Threads.');
+    const opts = {
+      q,
+      searchType: f.search_type === 'RECENT' ? 'RECENT' : 'TOP',
+      searchMode: f.search_mode === 'TAG' ? 'TAG' : 'KEYWORD',
+      mediaType: ['TEXT', 'IMAGE', 'VIDEO'].includes(f.media_type) ? f.media_type : undefined,
+      days: Math.min(Math.max(Number(f.days) || 7, 1), 365),
+      author: f.author ? String(f.author).replace(/^@/, '').trim().slice(0, 60) : undefined,
+      limit: Math.min(Math.max(Number(f.limit) || 25, 1), 100),
+    };
+    // hasil identik dipakai ulang 10 menit: Meta membatasi 2.200 query per 24 jam
+    const posts = await cached(`rs:${b.id}:${JSON.stringify(opts)}`, 10 * 60_000, () => T.keywordSearch(b, opts));
+    A(req, 'research.search', { brand: b.id, q });
+    res.json({ posts, simulated: T.isDryRun(b) });
+  }));
+
+  api.get('/research/saves', (req, res) =>
+    res.json(all('SELECT * FROM research_saves ORDER BY created_at DESC LIMIT 100').map((r) => ({ ...r, result: JSON.parse(r.result || '[]') }))));
+  api.post('/research/saves', fresh('editor'), (req, res) => {
+    const f = req.body || {};
+    const q = String(f.q || '').trim();
+    if (!q || !Array.isArray(f.posts) || !f.posts.length) return bad(res, 'Tidak ada hasil untuk disimpan.');
+    const posts = f.posts.slice(0, 100).map((p) => ({ id: String(p.id || ''), text: String(p.text || '').slice(0, 2000), username: String(p.username || ''), permalink: String(p.permalink || ''), timestamp: p.timestamp || null, media_type: p.media_type || 'TEXT' }));
+    const id = uid();
+    run('INSERT INTO research_saves(id,brand_id,query,mode,search_type,media_type,result,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      id, f.brand_id || null, q.slice(0, 200), f.search_mode || null, f.search_type || null, f.media_type || null, JSON.stringify(posts), String(f.note || '').slice(0, 500) || null, req.user.id, now());
+    A(req, 'research.saved', { id, q });
+    res.status(201).json({ id });
+  });
+  api.delete('/research/saves/:id', fresh('editor'), (req, res) => {
+    run('DELETE FROM research_saves WHERE id=?', req.params.id);
+    res.json({ ok: true });
+  });
+  api.post('/ai/research', ...aiRoute('editor', async (brand, b) => {
+    const posts = (Array.isArray(b.posts) ? b.posts : []).slice(0, 40).map((p) => ({ username: String(p.username || ''), text: String(p.text || '') }));
+    if (!posts.length) { const e = new Error('Belum ada hasil riset untuk dianalisis.'); e.status = 400; throw e; }
+    return { insights: await AI.researchInsights(brand, { query: String(b.q || '').slice(0, 200), posts }) };
+  }));
+
+  // ----- Mention (threads_manage_mentions)
+  api.get('/mentions', (req, res) => {
+    const { brand_id: bid, status } = req.query;
+    const where = []; const p = [];
+    if (bid) { where.push('brand_id=?'); p.push(String(bid)); }
+    if (status && R.MENTION_STATUS.includes(String(status))) { where.push('status=?'); p.push(String(status)); }
+    const rows = all(`SELECT * FROM mentions ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY posted_at DESC LIMIT 500`, ...p);
+    const counts = Object.fromEntries(all(`SELECT status, COUNT(*) AS n FROM mentions ${bid ? 'WHERE brand_id=?' : ''} GROUP BY status`, ...(bid ? [String(bid)] : [])).map((r) => [r.status, r.n]));
+    res.json({ items: rows, counts, last_collected: bid ? Number(getSetting(`mentions_last:${bid}`) || 0) || null : null });
+  });
+  api.post('/mentions/collect', fresh('editor'), ah(async (req, res) => {
+    const b = brandOr404(req.body?.brand_id);
+    if (!b) return bad(res, 'Pilih akun brand.');
+    if (!b.token_enc && !T.isDryRun(b)) return bad(res, 'Akun belum terhubung ke Threads.');
+    const r = await R.collectMentions(b, { days: Math.min(Math.max(Number(req.body?.days) || 30, 1), 365) });
+    A(req, 'mentions.collected', { brand: b.id, added: r.added });
+    res.json({ ...r, simulated: T.isDryRun(b) });
+  }));
+  api.put('/mentions/:id', fresh('editor'), (req, res) => {
+    const m = get('SELECT * FROM mentions WHERE id=?', req.params.id);
+    if (!m) return bad(res, 'Mention tidak ditemukan.', 404);
+    const f = req.body || {};
+    if (f.status !== undefined && !R.MENTION_STATUS.includes(f.status)) return bad(res, 'Status tidak valid.');
+    run('UPDATE mentions SET status=?, note=?, handled_by=? WHERE id=?', f.status ?? m.status, f.note !== undefined ? String(f.note).slice(0, 1000) : m.note, req.user.id, m.id);
+    res.json(get('SELECT * FROM mentions WHERE id=?', m.id));
+  });
+  api.post('/mentions/:id/reply', fresh('manager'), gate('claude_reply'), ah(async (req, res) => {
+    const m = get('SELECT * FROM mentions WHERE id=?', req.params.id);
+    const text = String(req.body?.text || '').trim();
+    if (!m || !text) return bad(res, 'Teks balasan wajib diisi.');
+    if (threadsLength(text) > 500) return bad(res, 'Balasan maksimal 500 karakter.');
+    const b = brandOr404(m.brand_id);
+    const r = await T.replyTo(b, m.media_id, text);
+    run("UPDATE mentions SET status='dibalas', handled_by=? WHERE id=?", req.user.id, m.id);
+    A(req, 'mention.replied', { brand: b.id, to: m.media_id });
+    res.json(r);
+  }));
+  api.get('/mentions.csv', (req, res) => {
+    const bid = req.query.brand_id ? String(req.query.brand_id) : null;
+    const rows = all(`SELECT * FROM mentions ${bid ? 'WHERE brand_id=?' : ''} ORDER BY posted_at DESC`, ...(bid ? [bid] : []));
+    const cell = (v) => { let t = String(v ?? '').replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = `'${t}`; return `"${t.replace(/"/g, '""')}"`; };
+    const csv = ['brand,username,waktu,status,isi,catatan,link', ...rows.map((r) => [r.brand_id, '@' + r.username, r.posted_at, r.status, r.text, r.note, r.permalink].map(cell).join(','))].join('\n');
+    res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="mention-threads.csv"' }).send('\ufeff' + csv);
+  });
+
+  // ----- Kolaborasi / endorse (threads_profile_discovery + pipeline kandidat)
+  api.get('/creators', (req, res) => {
+    const st = String(req.query.status || '');
+    const rows = R.CREATOR_STATUS.includes(st) ? all('SELECT * FROM creators WHERE status=? ORDER BY updated_at DESC', st) : all('SELECT * FROM creators ORDER BY updated_at DESC');
+    res.json(rows.map(R.publicCreator));
+  });
+  api.post('/creators', fresh('editor'), ah(async (req, res) => {
+    const f = req.body || {};
+    const { creator, existed } = R.createCreator(f, req.user.id);
+    let lookup_error = null;
+    if (f.lookup && !existed) {
+      const lb = brandOr404(f.lookup_brand_id || f.brand_id);
+      try {
+        if (!lb) throw new Error('Pilih akun brand untuk lookup.');
+        if (!lb.token_enc && !T.isDryRun(lb)) throw new Error('Akun belum terhubung ke Threads.');
+        R.applyProfile(creator.id, await T.profileLookup(lb, creator.username));
+      } catch (e) { lookup_error = e.message; }
+    }
+    A(req, existed ? 'creator.exists' : 'creator.added', { username: creator.username, source: creator.source });
+    res.status(existed ? 200 : 201).json({ creator: R.publicCreator(get('SELECT * FROM creators WHERE id=?', creator.id)), existed, lookup_error });
+  }));
+  api.put('/creators/:id', fresh('editor'), (req, res) => {
+    const c = get('SELECT * FROM creators WHERE id=?', req.params.id);
+    if (!c) return bad(res, 'Kandidat tidak ditemukan.', 404);
+    const f = req.body || {};
+    if (f.status !== undefined && !R.CREATOR_STATUS.includes(f.status)) return bad(res, 'Status tidak valid.');
+    const s = (k, max) => (f[k] !== undefined ? String(f[k] ?? '').slice(0, max) || null : c[k]);
+    const fol = f.followers !== undefined ? (f.followers === '' || f.followers === null ? null : Math.max(0, Number(f.followers) || 0)) : c.followers;
+    run('UPDATE creators SET status=?, name=?, bio=?, niche=?, note=?, fee=?, brand_id=?, followers=?, updated_at=? WHERE id=?',
+      f.status ?? c.status, s('name', 100), s('bio', 500), s('niche', 100), s('note', 2000), s('fee', 100), f.brand_id !== undefined ? (brandOr404(f.brand_id)?.id || null) : c.brand_id, fol, now(), c.id);
+    if (f.status && f.status !== c.status) A(req, 'creator.status', { username: c.username, from: c.status, to: f.status });
+    res.json(R.publicCreator(get('SELECT * FROM creators WHERE id=?', c.id)));
+  });
+  api.delete('/creators/:id', fresh('manager'), (req, res) => {
+    run('DELETE FROM creators WHERE id=?', req.params.id);
+    A(req, 'creator.deleted', { id: req.params.id });
+    res.json({ ok: true });
+  });
+  api.post('/creators/:id/lookup', fresh('editor'), ah(async (req, res) => {
+    const c = get('SELECT * FROM creators WHERE id=?', req.params.id);
+    const b = brandOr404(req.body?.brand_id);
+    if (!c) return bad(res, 'Kandidat tidak ditemukan.', 404);
+    if (!b) return bad(res, 'Pilih akun brand untuk lookup.');
+    if (!b.token_enc && !T.isDryRun(b)) return bad(res, 'Akun belum terhubung ke Threads.');
+    R.applyProfile(c.id, await T.profileLookup(b, c.username));
+    res.json(R.publicCreator(get('SELECT * FROM creators WHERE id=?', c.id)));
+  }));
+  api.post('/ai/outreach', ...aiRoute('editor', async (brand, b) => {
+    const c = get('SELECT * FROM creators WHERE id=?', b.creator_id);
+    if (!c) { const e = new Error('Pilih kandidat.'); e.status = 400; throw e; }
+    return { drafts: await AI.outreachDrafts(brand, { creator: c, offer: String(b.offer || '').slice(0, 600), count: b.count }) };
+  }));
+
   // ----- Tim (admin)
   api.get('/users', humanOnly, need('admin'), (req, res) => res.json(all('SELECT * FROM users ORDER BY created_at').map(publicUser)));
   api.post('/users', humanOnly, need('admin'), (req, res) => {
@@ -498,7 +646,9 @@ export function createApp() {
       global_source: g.source,
       redirect_uri: T.redirectUri(),
       legal: { privacy: `${baseUrl()}/privacy`, terms: `${baseUrl()}/terms`, deletion: `${baseUrl()}/data-deletion`, deauthorize: `${baseUrl()}/auth/threads/deauthorize`, delete_cb: `${baseUrl()}/auth/threads/delete` },
-      scopes: T.SCOPES,
+      scopes: T.scopes(),
+      extra_scopes: T.extraScopesOn(),
+      mentions_auto: getSetting('mentions_auto') === '1',
       simulated: T.isDryRun(),
       brands: all('SELECT * FROM brands ORDER BY sort').map((b) => ({
         id: b.id, name: b.name, app_id: b.app_id || '', has_secret: !!b.app_secret_enc,
@@ -528,6 +678,8 @@ export function createApp() {
       if (sec) setSetting('meta_app_secret_enc', C.encrypt(sec));
     }
     if (f.mode !== undefined) setSetting('threads_mode', f.mode);
+    if (typeof f.extra_scopes === 'boolean') setSetting('threads_extra_scopes', f.extra_scopes ? '1' : '0');
+    if (typeof f.mentions_auto === 'boolean') setSetting('mentions_auto', f.mentions_auto ? '1' : '0');
     A(req, 'settings.meta.updated', { mode: f.mode, cleared: !!f.clear, app_id_changed: typeof f.app_id === 'string', secret_changed: !!(typeof f.app_secret === 'string' && f.app_secret.trim()) });
     res.json(metaStatus());
   });

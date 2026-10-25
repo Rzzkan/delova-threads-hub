@@ -17,6 +17,10 @@ export const SCOPES = [
   'threads_manage_replies',
   'threads_manage_insights',
 ];
+/** Izin tambahan untuk Riset, Mention, dan Kolaborasi. Hanya diminta bila admin mengaktifkannya (izin harus sudah ditambahkan di app Meta). */
+export const EXTRA_SCOPES = ['threads_keyword_search', 'threads_manage_mentions', 'threads_profile_discovery'];
+export const extraScopesOn = () => getSetting('threads_extra_scopes') === '1';
+export const scopes = () => (extraScopesOn() ? [...SCOPES, ...EXTRA_SCOPES] : SCOPES);
 
 /**
  * Kredensial Meta: prioritas  (1) milik brand  →  (2) pengaturan global di dashboard  →  (3) .env.
@@ -89,7 +93,7 @@ export function authorizeUrl(state, brand) {
   const q = new URLSearchParams({
     client_id: creds(brand).appId,
     redirect_uri: redirectUri(),
-    scope: SCOPES.join(','),
+    scope: scopes().join(','),
     response_type: 'code',
     state,
   });
@@ -272,4 +276,100 @@ export async function userInsights(brand, days = 7) {
     out.followers_count = null;
   }
   return out;
+}
+
+/* ---------------- Riset, Mention, Profil (izin tambahan) ---------------- */
+const needExtra = (brand) => {
+  if (isDryRun(brand)) return;
+  if (!extraScopesOn()) throw new ThreadsError('Fitur ini butuh izin tambahan. Admin: aktifkan "Izin riset, mention & kolaborasi" di Pengaturan Meta, lalu hubungkan ulang akun.');
+};
+const POST_FIELDS = 'id,text,media_type,permalink,timestamp,username,has_replies,is_quote_post,is_reply';
+const mapPost = (m) => ({
+  id: String(m.id), text: m.text || '', media_type: m.media_type || 'TEXT', permalink: m.permalink || '',
+  timestamp: m.timestamp || null, username: m.username || '', has_replies: !!m.has_replies, is_quote_post: !!m.is_quote_post, is_reply: !!m.is_reply,
+});
+
+const NAMES = ['kebaya.nusantara', 'batik.by.laras', 'ibu.stylish.jogja', 'mom.and.mini', 'hijab.daily.id', 'wastra_story', 'ootd.keluarga', 'rinaberbusana'];
+const SNIPS = [
+  'Lagi cari {q} buat kondangan akhir pekan, ada rekomendasi yang adem dipakai seharian?',
+  'Akhirnya nemu {q} yang jahitannya rapi dan nggak gerah. Worth it banget!',
+  'Tips padu padan {q} biar nggak terlihat kaku, cocok buat ke kantor maupun acara keluarga.',
+  'Thread: kenapa {q} lagi naik daun tahun ini? Ini 5 alasannya.',
+  'Ada yang pernah pakai {q} untuk anak? Bahannya aman nggak buat kulit sensitif?',
+  'Budget terbatas tapi pengin {q} yang kelihatan mewah. Ada saran?',
+  'Review jujur {q} setelah dipakai 3 bulan: warna tetap, bahan nggak melar.',
+  'Mau tanya, {q} yang bagus belinya di mana ya? Yang ready stock dan pengirimannya cepat.',
+];
+const seed = (str, max) => {
+  let h = 0;
+  for (const ch of String(str)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % max;
+};
+
+export async function keywordSearch(brand, { q, searchType = 'TOP', searchMode = 'KEYWORD', mediaType, days = 7, author, limit = 25 }) {
+  needExtra(brand);
+  const until = Math.floor(Date.now() / 1000);
+  const since = until - Math.min(Math.max(Number(days) || 7, 1), 365) * 86400;
+  if (isDryRun(brand)) {
+    const base = seed(q, 1000);
+    return SNIPS.slice(0, Math.min(limit, 8)).map((t, i) => ({
+      id: `dry_s_${base}_${i}`,
+      text: t.replaceAll('{q}', q),
+      media_type: i % 4 === 3 ? 'IMAGE' : 'TEXT',
+      permalink: `https://www.threads.com/@${NAMES[i % NAMES.length]}/post/dry${base}${i}`,
+      timestamp: new Date(Date.now() - (i + 1) * 5 * 3600_000).toISOString(),
+      username: author || NAMES[(base + i) % NAMES.length],
+      has_replies: i % 2 === 0, is_quote_post: false, is_reply: false,
+    }));
+  }
+  const r = await call('GET', `${V}/keyword_search`, {
+    q, search_type: searchType, search_mode: searchMode, media_type: mediaType, since, until,
+    author_username: author ? String(author).replace(/^@/, '') : undefined,
+    limit: Math.min(Math.max(Number(limit) || 25, 1), 100), fields: POST_FIELDS, access_token: tokenOf(brand),
+  });
+  return (r.data || []).map(mapPost);
+}
+
+export async function listMentions(brand, { days = 30 } = {}) {
+  needExtra(brand);
+  if (isDryRun(brand)) {
+    const n = Date.now();
+    return [
+      { id: `dry_m_${brand.id}_1`, text: `@${brand.username || brand.id} kebayanya cantik banget, ukuran XL masih ada kak?`, username: 'dina.styles', media_type: 'TEXT', permalink: 'https://www.threads.com/@dina.styles/post/dry1', timestamp: new Date(n - 3 * 3600_000).toISOString() },
+      { id: `dry_m_${brand.id}_2`, text: `Rekomendasi banget @${brand.username || brand.id}, paket sampai dengan aman dan bahan adem!`, username: 'ibu_rina', media_type: 'TEXT', permalink: 'https://www.threads.com/@ibu_rina/post/dry2', timestamp: new Date(n - 26 * 3600_000).toISOString() },
+      { id: `dry_m_${brand.id}_3`, text: `Review outfit lebaran bareng @${brand.username || brand.id} 🥰`, username: 'mom.and.mini', media_type: 'IMAGE', permalink: 'https://www.threads.com/@mom.and.mini/post/dry3', timestamp: new Date(n - 50 * 3600_000).toISOString() },
+      { id: `dry_m_${brand.id}_4`, text: `Ada yang tahu @${brand.username || brand.id} buka reseller nggak?`, username: 'warung.fashion', media_type: 'TEXT', permalink: 'https://www.threads.com/@warung.fashion/post/dry4', timestamp: new Date(n - 80 * 3600_000).toISOString() },
+    ];
+  }
+  const until = Math.floor(Date.now() / 1000);
+  const since = until - Math.min(Math.max(Number(days) || 30, 1), 365) * 86400;
+  const out = [];
+  let after;
+  for (let page = 0; page < 5; page++) {
+    const r = await call('GET', `${V}/${brand.threads_user_id}/mentions`, { fields: POST_FIELDS, since, until, limit: 50, after, access_token: tokenOf(brand) });
+    out.push(...(r.data || []).map(mapPost));
+    after = r.paging?.next ? r.paging?.cursors?.after : undefined;
+    if (!after) break;
+  }
+  return out;
+}
+
+export async function profileLookup(brand, username) {
+  needExtra(brand);
+  const u = String(username || '').replace(/^@/, '').trim();
+  if (!u) throw new ThreadsError('Username wajib diisi.');
+  if (isDryRun(brand)) {
+    const followers = 1200 + seed(u, 90000);
+    const views = 8000 + seed(u + 'v', 400000);
+    const likes = Math.round(views * (0.02 + seed(u + 'l', 40) / 1000));
+    return {
+      username: u, name: u.replace(/[._]/g, ' '), biography: 'Konten fashion & gaya hidup keluarga. Kolaborasi: DM.', is_verified: false,
+      profile_picture_url: '', follower_count: followers, likes_count: likes, quotes_count: seed(u + 'q', 40), reposts_count: seed(u + 'r', 120), views_count: views, replies_count: seed(u + 'p', 200),
+    };
+  }
+  return call('GET', `${V}/profile_lookup`, {
+    username: u,
+    fields: 'username,name,profile_picture_url,biography,is_verified,follower_count,likes_count,quotes_count,reposts_count,views_count,replies_count',
+    access_token: tokenOf(brand),
+  });
 }

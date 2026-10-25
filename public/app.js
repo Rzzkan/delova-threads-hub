@@ -42,6 +42,7 @@ $('#logout').addEventListener('click', async () => { await api('POST', '/api/log
 const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer'], ['compose', 'Tulis Post', 'editor'], ['queue', 'Antrean & Approval', 'viewer'],
   ['plan', 'Rencana Mingguan', 'editor'], ['inbox', 'Inbox Reply', 'editor'], ['insights', 'Insight', 'viewer'],
+  ['research', 'Riset', 'viewer'], ['mentions', 'Mention', 'viewer'], ['creators', 'Kolaborasi', 'viewer'],
   ['brands', 'Brand & Akun', 'viewer'], ['claude', 'Hubungkan Claude', 'viewer'], ['control', 'Kontrol Claude', 'admin'], ['meta', 'Pengaturan Meta', 'admin'], ['team', 'Tim', 'admin'],
 ];
 const VIEWS = {};
@@ -393,6 +394,8 @@ VIEWS.meta = async (v) => {
         <option value="live" ${m.mode === 'live' ? 'selected' : ''}>Live (posting ke Threads asli)</option>
         <option value="sim" ${m.mode === 'sim' ? 'selected' : ''}>Simulasi (aman untuk uji coba)</option>
       </select></label>
+    <label class="row" style="align-items:flex-start;font-weight:400"><input type="checkbox" name="extra_scopes" ${m.extra_scopes ? 'checked' : ''} style="width:auto;margin-top:4px"><span><b>Izin riset, mention &amp; kolaborasi</b><br><span class="muted small">Aktifkan hanya setelah <code>threads_keyword_search</code>, <code>threads_manage_mentions</code>, dan <code>threads_profile_discovery</code> ditambahkan di Use cases aplikasi Meta. Setelah diaktifkan, hubungkan ulang tiap akun agar izin barunya diminta.</span></span></label>
+    <label class="row" style="align-items:flex-start;font-weight:400"><input type="checkbox" name="mentions_auto" ${m.mentions_auto ? 'checked' : ''} style="width:auto;margin-top:4px"><span><b>Kumpulkan mention otomatis</b> <span class="muted small">(sekitar tiap jam, hanya saat mode Live)</span></span></label>
     <div class="row"><button class="btn primary">Simpan</button>${m.app_id || m.has_secret ? '<button type="button" class="btn small danger" id="gclear">Hapus kredensial global</button>' : ''}</div>
   </form>
   <div class="card stack" style="margin-top:14px">
@@ -421,7 +424,7 @@ VIEWS.meta = async (v) => {
     e.preventDefault(); const f = e.target;
     busy($('button', f), async () => {
       if (f.id === 'gf') {
-        const d = { app_id: f.elements.app_id.value.trim(), mode: f.elements.mode.value };
+        const d = { app_id: f.elements.app_id.value.trim(), mode: f.elements.mode.value, extra_scopes: f.elements.extra_scopes.checked, mentions_auto: f.elements.mentions_auto.checked };
         if (f.elements.app_secret.value.trim()) d.app_secret = f.elements.app_secret.value.trim();
         await api('PUT', '/api/settings/meta', d);
       } else {
@@ -436,6 +439,164 @@ VIEWS.meta = async (v) => {
     if (e.target.id === 'cp') busy(e.target, async () => { await navigator.clipboard.writeText($('#ru').value); toast('Alamat disalin.'); });
     if (e.target.id === 'gclear') busy(e.target, async () => { if (!confirm('Hapus kredensial global? Akun yang sudah terhubung tetap jalan, tetapi tidak bisa menghubungkan akun baru.')) return; await api('PUT', '/api/settings/meta', { clear: true, mode: 'sim' }); toast('Kredensial global dihapus.'); route(); });
     if (e.target.dataset.x === 'bclear') busy(e.target, async () => { await api('PUT', `/api/brands/${e.target.closest('form').dataset.id}/credentials`, { clear: true }); toast('Brand kembali memakai kredensial global.'); route(); });
+  };
+};
+
+/* ---------- Riset, Mention, Kolaborasi ---------- */
+const copyText = async (t) => { try { await navigator.clipboard.writeText(t); toast('Disalin.'); } catch { toast('Gagal menyalin.', true); } };
+const num = (n) => (n == null ? '-' : Number(n).toLocaleString('id-ID'));
+const accessBanner = (st, list) => {
+  const live = list.some((b) => !b.simulated);
+  if (!live) return '<div class="banner"><b>Mode simulasi:</b> data di halaman ini adalah contoh, bukan dari Threads asli.</div>';
+  if (!st.extra_scopes) return `<div class="banner"><b>Izin tambahan belum aktif.</b> ${can('admin') ? 'Aktifkan "Izin riset, mention &amp; kolaborasi" di menu Pengaturan Meta, lalu hubungkan ulang akun.' : 'Minta admin mengaktifkannya di Pengaturan Meta.'}</div>`;
+  return '<div class="banner">Selama izin tambahan belum disetujui Meta (Advanced Access), pencarian hanya menjangkau post akun kita sendiri, mention hanya dari akun tester, dan lookup profil hanya akun resmi Meta.</div>';
+};
+
+VIEWS.research = async (v) => {
+  const [st, saves] = await Promise.all([api('GET', '/api/research/status'), api('GET', '/api/research/saves')]);
+  if (!brands.length) brands = await api('GET', '/api/brands');
+  let last = null;
+  const postCard = (p, i) => `<div class="card stack" data-i="${i}">
+    <div class="row between"><b>@${esc(p.username)}</b><span class="small muted">${wib(p.timestamp)}</span></div>
+    <div style="white-space:pre-wrap">${esc(p.text) || '<span class="muted">(tanpa teks)</span>'}</div>
+    <div class="row"><span class="badge">${esc(p.media_type)}</span>${p.permalink ? `<a class="btn small" href="${esc(p.permalink)}" target="_blank" rel="noopener">Buka di Threads</a>` : ''}${can('editor') ? '<button type="button" class="btn small" data-a="cand">Jadikan kandidat endorse</button>' : ''}</div></div>`;
+  const insightsHtml = (a) => {
+    const ul = (l) => `<ul>${(l || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+    return `<div class="card stack"><h3>Analisis Claude</h3><p>${esc(a.summary)}</p>
+      <div class="grid g2"><div><b>Tema yang sering muncul</b>${ul(a.themes)}<b>Pertanyaan audiens</b>${ul(a.audience_questions)}</div><div><b>Celah konten</b>${ul(a.content_gaps)}<b>Ciri kreator yang cocok</b>${ul(a.creator_signals)}</div></div>
+      <b>Ide post (${(a.post_ideas || []).length})</b>
+      ${(a.post_ideas || []).map((x, i) => `<div class="card stack" data-idea="${i}"><div class="small muted">${esc(x.angle || '')} · ${x.length ?? ''} karakter</div><div style="white-space:pre-wrap">${esc(x.text)}</div><div class="row"><button type="button" class="btn small" data-a="copy">Salin</button>${can('editor') ? '<button type="button" class="btn small primary" data-a="draft">Jadikan draft</button>' : ''}</div></div>`).join('')}</div>`;
+  };
+  v.innerHTML = `<h1>Riset</h1><p class="muted">Cari post publik di Threads berdasarkan kata kunci atau topic tag untuk melihat tren, pertanyaan audiens, dan ide konten. Hasil yang sama disimpan 10 menit agar kuota pencarian Meta (2.200 per 24 jam) tidak terbuang.</p>
+  ${accessBanner(st, brands)}
+  <form id="sf" class="card stack"><div class="grid g2">
+    <label>Akun yang dipakai mencari${brandPick(brands[0]?.id, 'brand')}</label>
+    <label>Kata kunci / topic tag<input name="q" required minlength="2" maxlength="200" placeholder="mis. kebaya modern, batik anak"></label>
+    <label>Mode<select name="search_mode"><option value="KEYWORD">Kata kunci</option><option value="TAG">Topic tag</option></select></label>
+    <label>Urutan<select name="search_type"><option value="TOP">Teratas</option><option value="RECENT">Terbaru</option></select></label>
+    <label>Jenis post<select name="media_type"><option value="">Semua</option><option value="TEXT">Teks</option><option value="IMAGE">Gambar</option><option value="VIDEO">Video</option></select></label>
+    <label>Rentang waktu<select name="days"><option value="1">24 jam</option><option value="7" selected>7 hari</option><option value="30">30 hari</option><option value="90">90 hari</option></select></label>
+    <label>Hanya dari username (opsional)<input name="author" placeholder="tanpa @"></label></div>
+    <div class="row"><button class="btn primary" id="go">Cari</button></div></form>
+  <div id="res" class="stack" style="margin-top:14px"></div>
+  <div class="card stack" style="margin-top:14px"><h3>Riset tersimpan</h3>
+    ${saves.map((r) => `<div class="row between" data-sid="${r.id}"><span><b>${esc(r.query)}</b> <span class="small muted">${r.result.length} post · ${wib(r.created_at)}</span></span><span class="row"><button type="button" class="btn small" data-a="open">Buka</button>${can('editor') ? '<button type="button" class="btn small danger" data-a="del">Hapus</button>' : ''}</span></div>`).join('') || '<span class="muted">Belum ada riset yang disimpan.</span>'}</div>`;
+  const show = () => {
+    $('#res').innerHTML = `<div class="row between"><b>${last.posts.length} post untuk "${esc(last.q)}"</b><span class="row">${can('editor') && last.posts.length ? '<button type="button" class="btn small" data-a="save">Simpan hasil</button>' : ''}${can('editor') && health.ai && last.posts.length ? '<button type="button" class="btn small primary" data-a="ai">Analisis dengan Claude</button>' : ''}</span></div>
+      ${last.posts.map(postCard).join('') || '<div class="card muted">Tidak ada hasil. Coba kata kunci lain atau perluas rentang waktu.</div>'}<div id="ai"></div>`;
+  };
+  $('#sf').onsubmit = (e) => {
+    e.preventDefault(); const f = e.target; const d = Object.fromEntries(new FormData(f));
+    busy($('#go'), async () => {
+      const r = await api('POST', '/api/research/search', { brand_id: d.brand, q: d.q, search_mode: d.search_mode, search_type: d.search_type, media_type: d.media_type, days: Number(d.days), author: d.author });
+      last = { q: d.q.trim(), posts: r.posts, brand_id: d.brand, d }; show();
+    });
+  };
+  v.onclick = (e) => {
+    const a = e.target.dataset.a; if (!a) return;
+    if (a === 'cand') return busy(e.target, async () => {
+      const p = last.posts[e.target.closest('[data-i]').dataset.i];
+      const r = await api('POST', '/api/creators', { username: p.username, source: 'riset', sample_url: p.permalink, niche: last.q, lookup: true, lookup_brand_id: last.brand_id });
+      toast(r.existed ? 'Sudah ada di daftar kandidat.' : r.lookup_error ? `Ditambahkan. Data profil belum terambil: ${r.lookup_error}` : 'Ditambahkan ke Kolaborasi.', !!r.lookup_error);
+    });
+    if (a === 'save') return busy(e.target, async () => { await api('POST', '/api/research/saves', { brand_id: last.brand_id, q: last.q, search_mode: last.d.search_mode, search_type: last.d.search_type, media_type: last.d.media_type, posts: last.posts }); toast('Riset disimpan.'); route(); });
+    if (a === 'ai') return busy(e.target, async () => { const r = await api('POST', '/api/ai/research', { brand_id: last.brand_id, q: last.q, posts: last.posts }); last.ins = r.insights; $('#ai').innerHTML = insightsHtml(r.insights); });
+    if (a === 'copy') return copyText(last.ins.post_ideas[e.target.closest('[data-idea]').dataset.idea].text);
+    if (a === 'draft') return busy(e.target, async () => { await api('POST', '/api/posts', { brand_id: last.brand_id, text: last.ins.post_ideas[e.target.closest('[data-idea]').dataset.idea].text }); toast('Draft dibuat di Antrean.'); });
+    if (a === 'open') { const r = saves.find((x) => x.id === e.target.closest('[data-sid]').dataset.sid); last = { q: r.query, posts: r.result, brand_id: r.brand_id || brands[0].id, d: { search_mode: r.mode, search_type: r.search_type, media_type: r.media_type } }; show(); return $('#res').scrollIntoView(); }
+    if (a === 'del') return busy(e.target, async () => { if (!confirm('Hapus riset tersimpan ini?')) return; await api('DELETE', `/api/research/saves/${e.target.closest('[data-sid]').dataset.sid}`); route(); });
+  };
+};
+
+const M_STATUS = { baru: 'Baru', ditandai: 'Ditandai', dibalas: 'Dibalas', diabaikan: 'Diabaikan' };
+VIEWS.mentions = async (v) => {
+  const st = await api('GET', '/api/research/status');
+  if (!brands.length) brands = await api('GET', '/api/brands');
+  const q = params(); const bid = q.get('brand') || brands[0].id; const status = q.get('status') || '';
+  const data = await api('GET', `/api/mentions?brand_id=${bid}${status ? `&status=${status}` : ''}`);
+  const sel = brands.find((b) => b.id === bid);
+  v.innerHTML = `<h1>Mention</h1><p class="muted">Post publik yang menyebut akun brand kita. Dikumpulkan otomatis sekitar tiap jam (mode Live), atau klik Kumpulkan sekarang. Status dan catatan tim tidak tertimpa saat pengumpulan ulang.</p>
+  ${accessBanner(st, [sel])}
+  <div class="row">${brandPick(bid, 'brand')}${can('editor') ? '<button type="button" class="btn primary" id="col">Kumpulkan sekarang</button>' : ''}<a class="btn" href="/api/mentions.csv?brand_id=${bid}">Ekspor CSV</a>${data.last_collected ? `<span class="small muted">Terakhir dikumpulkan ${wib(new Date(data.last_collected).toISOString())}</span>` : ''}</div>
+  <div class="chips" style="margin:12px 0"><a class="chip" href="#/mentions?brand=${bid}">Semua</a>${Object.entries(M_STATUS).map(([k, l]) => `<a class="chip" href="#/mentions?brand=${bid}&status=${k}">${l} (${data.counts[k] || 0})</a>`).join('')}</div>
+  <div class="stack">${data.items.map((m) => `<div class="card stack" data-id="${esc(m.id)}">
+    <div class="row between"><b>@${esc(m.username)}</b><span class="small muted">${wib(m.posted_at)}</span></div>
+    <div style="white-space:pre-wrap">${esc(m.text)}</div>
+    <div class="row"><select data-f="status" ${can('editor') ? '' : 'disabled'}>${Object.entries(M_STATUS).map(([k, l]) => `<option value="${k}" ${k === m.status ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <input data-f="note" value="${esc(m.note)}" placeholder="Catatan tim" maxlength="1000" ${can('editor') ? '' : 'disabled'} style="flex:1;min-width:140px">
+      ${m.permalink ? `<a class="btn small" href="${esc(m.permalink)}" target="_blank" rel="noopener">Buka</a>` : ''}
+      ${can('manager') ? '<button type="button" class="btn small" data-a="reply">Balas</button>' : ''}
+      ${can('editor') ? '<button type="button" class="btn small" data-a="cand">Kandidat endorse</button>' : ''}</div></div>`).join('') || '<div class="card muted">Belum ada mention. Klik "Kumpulkan sekarang".</div>'}</div>`;
+  v.onchange = (e) => {
+    const f = e.target.dataset.f; if (!f) return; const id = e.target.closest('[data-id]').dataset.id;
+    busy(e.target, async () => { await api('PUT', `/api/mentions/${encodeURIComponent(id)}`, { [f]: e.target.value }); toast('Tersimpan.'); if (f === 'status') route(); });
+  };
+  v.onclick = (e) => {
+    if (e.target.id === 'col') return busy(e.target, async () => { const r = await api('POST', '/api/mentions/collect', { brand_id: bid }); toast(`${r.added} mention baru dari ${r.total} yang ditemukan.`); route(); });
+    const a = e.target.dataset.a; if (!a) return; const id = e.target.closest('[data-id]').dataset.id; const m = data.items.find((x) => x.id === id);
+    if (a === 'reply') return busy(e.target, async () => { const t = prompt(`Balasan untuk @${m.username} (maks 500 karakter):`); if (!t || !t.trim()) return; await api('POST', `/api/mentions/${encodeURIComponent(id)}/reply`, { text: t.trim() }); toast('Balasan terkirim.'); route(); });
+    if (a === 'cand') return busy(e.target, async () => { const r = await api('POST', '/api/creators', { username: m.username, source: 'mention', sample_url: m.permalink, brand_id: bid, lookup: true, lookup_brand_id: bid }); toast(r.existed ? 'Sudah ada di daftar kandidat.' : r.lookup_error ? `Ditambahkan. Data profil belum terambil: ${r.lookup_error}` : 'Ditambahkan ke Kolaborasi.', !!r.lookup_error); });
+  };
+  const bs = $('[name=brand]', v); if (bs) bs.onchange = () => { location.hash = `#/mentions?brand=${bs.value}`; };
+};
+
+const C_STATUS = { prospek: 'Prospek', dihubungi: 'Dihubungi', negosiasi: 'Negosiasi', deal: 'Deal', ditolak: 'Ditolak' };
+VIEWS.creators = async (v) => {
+  const st = await api('GET', '/api/research/status');
+  if (!brands.length) brands = await api('GET', '/api/brands');
+  const filter = params().get('status') || '';
+  const all_ = await api('GET', '/api/creators');
+  const list = filter ? all_.filter((c) => c.status === filter) : all_;
+  const cnt = (k) => all_.filter((c) => c.status === k).length;
+  v.innerHTML = `<h1>Kolaborasi &amp; Endorse</h1><p class="muted">Kandidat kreator/endorser dan tahap negosiasinya. Tambahkan dari menu Riset atau Mention, atau manual di bawah. Data profil (pengikut dan engagement 7 hari) diambil lewat Threads bila izin Profile Discovery aktif; selain itu isi manual.</p>
+  ${accessBanner(st, brands)}
+  ${can('editor') ? `<form id="nf" class="card stack"><h3>Tambah kandidat</h3><div class="grid g2">
+    <label>Username Threads<input name="username" required placeholder="@username atau link profil"></label>
+    <label>Untuk brand${brandPick('', 'brand')}</label>
+    <label>Niche / catatan<input name="niche" placeholder="mis. ibu muda, batik, hijab"></label>
+    <label>Perkiraan fee / barter<input name="fee" placeholder="mis. produk gratis + Rp300 rb"></label></div>
+    <label class="row" style="font-weight:400"><input type="checkbox" name="lookup" checked style="width:auto"> Ambil data profil dari Threads (pakai akun brand di atas)</label>
+    <div><button class="btn primary">Tambah</button></div></form>` : ''}
+  <div class="chips" style="margin:12px 0"><a class="chip" href="#/creators">Semua (${all_.length})</a>${Object.entries(C_STATUS).map(([k, l]) => `<a class="chip" href="#/creators?status=${k}">${l} (${cnt(k)})</a>`).join('')}</div>
+  <div class="stack">${list.map((c) => `<div class="card stack" data-id="${c.id}">
+    <div class="row between"><b>@${esc(c.username)} ${c.verified ? '✔' : ''}</b><span class="small muted">${esc(c.name || '')} · sumber: ${esc(c.source)}</span></div>
+    ${c.bio ? `<div class="small">${esc(c.bio)}</div>` : ''}
+    <div class="row"><span class="badge">Pengikut ${num(c.followers)}</span><span class="badge">Views 7 hari ${num(c.stats.views_count)}</span><span class="badge">Engagement ${c.engagement_rate == null ? '-' : c.engagement_rate + '%'}</span>${c.looked_up_at ? `<span class="small muted">profil diperbarui ${wib(c.looked_up_at)}</span>` : '<span class="small muted">profil belum diambil</span>'}</div>
+    <div class="grid g2">
+      <label>Tahap<select data-f="status" ${can('editor') ? '' : 'disabled'}>${Object.entries(C_STATUS).map(([k, l]) => `<option value="${k}" ${k === c.status ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Untuk brand<select data-f="brand_id" ${can('editor') ? '' : 'disabled'}><option value="">-</option>${brands.map((b) => `<option value="${b.id}" ${b.id === c.brand_id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
+      <label>Niche<input data-f="niche" value="${esc(c.niche)}" ${can('editor') ? '' : 'disabled'}></label>
+      <label>Fee / barter<input data-f="fee" value="${esc(c.fee)}" ${can('editor') ? '' : 'disabled'}></label></div>
+    <label>Catatan<textarea data-f="note" style="min-height:56px" ${can('editor') ? '' : 'disabled'}>${esc(c.note)}</textarea></label>
+    <div class="row"><a class="btn small" href="https://www.threads.com/@${esc(c.username)}" target="_blank" rel="noopener">Buka profil</a>
+      ${c.sample_url ? `<a class="btn small" href="${esc(c.sample_url)}" target="_blank" rel="noopener">Post contoh</a>` : ''}
+      ${can('editor') ? '<button type="button" class="btn small" data-a="lookup">Perbarui profil</button>' : ''}
+      ${can('editor') && health.ai ? '<button type="button" class="btn small primary" data-a="ai">Draf pesan penawaran</button>' : ''}
+      ${can('manager') ? '<button type="button" class="btn small danger" data-a="del">Hapus</button>' : ''}</div>
+    <div class="stack" data-out></div></div>`).join('') || '<div class="card muted">Belum ada kandidat di tahap ini.</div>'}</div>`;
+  const nf = $('#nf');
+  if (nf) nf.onsubmit = (e) => {
+    e.preventDefault(); const d = Object.fromEntries(new FormData(nf));
+    busy($('button', nf), async () => {
+      const r = await api('POST', '/api/creators', { username: d.username, niche: d.niche, fee: d.fee, brand_id: d.brand, lookup: !!d.lookup, lookup_brand_id: d.brand, source: 'manual' });
+      toast(r.existed ? 'Username ini sudah ada di daftar.' : r.lookup_error ? `Ditambahkan. Data profil belum terambil: ${r.lookup_error}` : 'Kandidat ditambahkan.', !!r.lookup_error); route();
+    });
+  };
+  v.onchange = (e) => {
+    const f = e.target.dataset.f; if (!f) return; const id = e.target.closest('[data-id]').dataset.id;
+    busy(e.target, async () => { await api('PUT', `/api/creators/${id}`, { [f]: e.target.value }); toast('Tersimpan.'); if (f === 'status') route(); });
+  };
+  v.onclick = (e) => {
+    const a = e.target.dataset.a; if (!a) return; const card = e.target.closest('[data-id]'); const id = card.dataset.id; const c = all_.find((x) => x.id === id);
+    const lb = c.brand_id || brands[0].id;
+    if (a === 'lookup') return busy(e.target, async () => { await api('POST', `/api/creators/${id}/lookup`, { brand_id: lb }); toast('Profil diperbarui.'); route(); });
+    if (a === 'del') return busy(e.target, async () => { if (!confirm(`Hapus @${c.username} dari daftar?`)) return; await api('DELETE', `/api/creators/${id}`); route(); });
+    if (a === 'ai') return busy(e.target, async () => {
+      const offer = prompt('Tawaran yang boleh disebut dalam pesan (kosongkan untuk "produk gratis untuk dicoba"):') ?? '';
+      const r = await api('POST', '/api/ai/outreach', { brand_id: lb, creator_id: id, offer });
+      $('[data-out]', card).innerHTML = r.drafts.map((d, i) => `<div class="card stack" data-d="${i}"><div class="small muted">${esc(d.label)}</div><div style="white-space:pre-wrap">${esc(d.message)}</div><div><button type="button" class="btn small" data-a="copy">Salin</button></div></div>`).join('');
+      $('[data-out]', card).onclick = (ev) => { if (ev.target.dataset.a === 'copy') copyText(r.drafts[ev.target.closest('[data-d]').dataset.d].message); ev.stopPropagation(); };
+    });
   };
 };
 

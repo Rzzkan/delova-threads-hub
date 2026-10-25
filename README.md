@@ -168,3 +168,13 @@ test/              Tes otomatis: npm test
 ## Kredensial Meta di dashboard
 
 Admin mengisi Threads App ID/Secret di menu **Pengaturan Meta** (global untuk semua akun, dengan override opsional per brand) dan memilih mode Otomatis / Live / Simulasi. Secret disimpan terenkripsi (AES-256-GCM), tidak pernah dikembalikan oleh API, dan endpoint-nya khusus manusia (tidak bisa dipakai Claude/MCP). Prioritas: brand → dashboard → `.env`.
+
+## Riset, Mention, dan Kolaborasi
+
+Tiga menu tambahan (butuh izin `threads_keyword_search`, `threads_manage_mentions`, `threads_profile_discovery`):
+
+- **Riset**: cari post publik berdasarkan kata kunci atau topic tag, simpan hasilnya, minta Claude merangkum tema, pertanyaan audiens, celah konten, dan 5+ ide post.
+- **Mention**: kumpulkan post yang menyebut akun brand (otomatis ±1 jam di mode Live), beri status dan catatan, balas (manager), ekspor CSV.
+- **Kolaborasi**: pipeline kandidat endorse (prospek → dihubungi → negosiasi → deal/ditolak) lengkap dengan pengikut dan engagement, plus 5+ draf pesan penawaran dari Claude.
+
+Izin ini **tidak diminta** sampai admin mencentang "Izin riset, mention & kolaborasi" di Pengaturan Meta (setelah izinnya ditambahkan di Use cases aplikasi Meta), lalu akun dihubungkan ulang. Sebelum Meta menyetujui Advanced Access, pencarian hanya menjangkau post akun sendiri, mention hanya dari tester, dan lookup profil hanya akun resmi Meta. Claude (MCP) mendapat tool `research_threads`, `list_mentions`, `list_creators`, `add_creator`, `update_creator` serta prompt `riset_tren` dan `cari_endorse`; semuanya hanya membaca/mencatat dan tidak memposting apa pun ke publik.

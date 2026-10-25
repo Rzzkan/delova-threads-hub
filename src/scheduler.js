@@ -1,6 +1,7 @@
 import { all, get, run, now, audit } from './db.js';
 import * as T from './threads.js';
 import { encrypt } from './crypto.js';
+import { collectDueMentions } from './research.js';
 
 const DAILY_LIMIT = 240; // batas resmi Threads: 250 post / 24 jam per akun
 
@@ -68,7 +69,9 @@ export function startScheduler() {
   run("UPDATE posts SET status='failed', error='Server restart saat publish. Periksa Threads lalu coba lagi.' WHERE status='publishing'");
   const a = setInterval(safe(tick), 30_000);
   const b = setInterval(safe(refreshTokens), 6 * 3600 * 1000);
+  const c = setInterval(safe(collectDueMentions), 10 * 60_000);
   setTimeout(safe(tick), 3000);
   setTimeout(safe(refreshTokens), 10_000);
-  return () => { clearInterval(a); clearInterval(b); };
+  setTimeout(safe(collectDueMentions), 20_000);
+  return () => { clearInterval(a); clearInterval(b); clearInterval(c); };
 }

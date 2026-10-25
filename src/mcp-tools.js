@@ -95,6 +95,75 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
     wrap(({ brand }) => call('GET', `/api/brands/${brand}/replies`)),
   );
 
+  /* ---------- Riset, mention, kolaborasi (tidak memposting apa pun ke publik) ---------- */
+  server.registerTool(
+    'research_threads',
+    {
+      title: 'Riset post publik',
+      description:
+        'Cari post publik di Threads berdasarkan kata kunci atau topic tag (butuh izin tambahan aktif; di mode simulasi hasilnya contoh). Pakai untuk riset tren, pertanyaan audiens, dan ide konten. Jangan menyalin teks orang lain; ambil pola dan peluangnya.',
+      inputSchema: {
+        brand: z.string().describe(`${brandIds} (akun yang dipakai mencari)`),
+        q: z.string().min(2).max(200),
+        mode: z.enum(['KEYWORD', 'TAG']).optional(),
+        urutan: z.enum(['TOP', 'RECENT']).optional(),
+        media: z.enum(['TEXT', 'IMAGE', 'VIDEO']).optional(),
+        hari: z.number().int().min(1).max(365).optional(),
+        author: z.string().optional().describe('username tanpa @'),
+      },
+    },
+    wrap(({ brand, q, mode, urutan, media, hari, author }) =>
+      call('POST', '/api/research/search', { brand_id: brand, q, search_mode: mode, search_type: urutan, media_type: media, days: hari, author })),
+  );
+
+  server.registerTool(
+    'list_mentions',
+    {
+      title: 'Mention masuk',
+      description: 'Post publik yang menyebut akun brand (tersimpan di dashboard). collect=true mengambil yang terbaru dari Threads dulu.',
+      inputSchema: { brand: z.string().describe(brandIds), status: z.enum(['baru', 'ditandai', 'dibalas', 'diabaikan']).optional(), collect: z.boolean().optional() },
+    },
+    wrap(async ({ brand, status, collect }) => {
+      const c = collect ? await call('POST', '/api/mentions/collect', { brand_id: brand }) : null;
+      const r = await call('GET', `/api/mentions?brand_id=${brand}${status ? `&status=${status}` : ''}`);
+      return { collected: c, ...r };
+    }),
+  );
+
+  server.registerTool(
+    'list_creators',
+    {
+      title: 'Kandidat kolaborasi / endorse',
+      description: 'Daftar kandidat endorser beserta tahap (prospek, dihubungi, negosiasi, deal, ditolak), pengikut, dan engagement.',
+      inputSchema: { status: z.enum(['prospek', 'dihubungi', 'negosiasi', 'deal', 'ditolak']).optional() },
+    },
+    wrap(({ status }) => call('GET', `/api/creators${status ? `?status=${status}` : ''}`)),
+  );
+
+  server.registerTool(
+    'add_creator',
+    {
+      title: 'Tambah kandidat endorse',
+      description: 'Simpan satu akun Threads sebagai kandidat kolaborasi (hanya mencatat; tidak menghubungi siapa pun). lookup=true mencoba mengambil data profil.',
+      inputSchema: {
+        username: z.string(), brand: z.string().optional().describe(brandIds), niche: z.string().optional(), note: z.string().optional(),
+        fee: z.string().optional(), sample_url: z.string().url().optional(), lookup: z.boolean().optional(),
+      },
+    },
+    wrap(({ username, brand, niche, note, fee, sample_url, lookup }) =>
+      call('POST', '/api/creators', { username, brand_id: brand, niche, note, fee, sample_url, lookup, lookup_brand_id: brand, source: 'manual' })),
+  );
+
+  server.registerTool(
+    'update_creator',
+    {
+      title: 'Ubah tahap / catatan kandidat',
+      description: 'Ubah tahap negosiasi, catatan, atau fee kandidat endorse. Hanya data internal.',
+      inputSchema: { id: z.string(), status: z.enum(['prospek', 'dihubungi', 'negosiasi', 'deal', 'ditolak']).optional(), note: z.string().optional(), fee: z.string().optional() },
+    },
+    wrap(({ id, ...body }) => call('PUT', `/api/creators/${id}`, body)),
+  );
+
   /* ---------- Tulis (draft & ajukan) ---------- */
   server.registerTool(
     'create_post',
@@ -255,5 +324,26 @@ Langkah:
     },
     ({ brand, hari }) =>
       msg(`Ambil get_account_insights untuk "${brand}" (${hari || 7} hari) dan list_posts yang terbit. Jelaskan post mana yang paling bagus dan kenapa, apa yang kurang, lalu beri minimal 5 tindakan konkret minggu depan dan 5 ide post baru yang sesuai brand voice. Tawarkan untuk membuatnya sebagai draft.`),
+  );
+  server.registerPrompt(
+    'riset_tren',
+    {
+      title: 'Riset tren & ide konten',
+      description: 'Riset post publik untuk satu topik, lalu ubah menjadi 5+ ide post sesuai brand voice.',
+      argsSchema: { brand: z.string().describe(brandIds), topik: z.string() },
+    },
+    ({ brand, topik }) =>
+      msg(`Riset topik "${topik}" untuk brand "${brand}". Panggil get_brand_voice, lalu research_threads (coba urutan TOP dan RECENT, dan satu pencarian TAG bila relevan). Rangkum tema yang sering muncul, pertanyaan audiens, dan celah konten yang belum diisi siapa pun. Beri minimal 5 ide post berbeda sudut dengan naskah siap pakai (maks 500 karakter, jangan menyalin teks orang lain). Tawarkan membuatnya sebagai draft.`),
+  );
+
+  server.registerPrompt(
+    'cari_endorse',
+    {
+      title: 'Cari kandidat endorse',
+      description: 'Cari akun yang cocok diajak kolaborasi dari riset/mention, simpan sebagai kandidat, dan siapkan draf pesan.',
+      argsSchema: { brand: z.string().describe(brandIds), niche: z.string().optional() },
+    },
+    ({ brand, niche }) =>
+      msg(`Bantu cari kandidat endorse untuk brand "${brand}"${niche ? ` (niche: ${niche})` : ''}. Langkah: get_brand_voice; list_mentions (collect=true) untuk pelanggan yang sudah menyebut kita; research_threads untuk akun yang aktif membahas topik terkait; list_creators agar tidak duplikat. Pilih minimal 5 akun yang paling relevan dan jelaskan alasannya (jangan menilai dari asumsi; pakai isi post yang terlihat). Setelah aku setuju, simpan dengan add_creator, lalu tulis 5 draf pesan pembuka yang personal untuk tiap akun. Jangan menghubungi siapa pun; aku yang mengirimnya.`),
   );
 }

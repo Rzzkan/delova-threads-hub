@@ -130,3 +130,40 @@ Berikan analisis singkat dan tindakan. Format: {"summary": "2-3 kalimat", "whats
   );
   return parseJson(out);
 }
+
+/** Ringkas hasil riset post publik menjadi tema, celah konten, dan ide post untuk brand. */
+export async function researchInsights(brand, { query, posts }) {
+  const rows = posts
+    .slice(0, 40)
+    .map((p, i) => `${i + 1}. @${p.username}: ${String(p.text).slice(0, 220).replace(/\n/g, ' ')}`)
+    .join('\n');
+  const out = await ask(
+    brand,
+    `Riset Threads untuk kata kunci/topik: "${query}". Berikut ${posts.length} post publik terkait:
+${rows || '(tidak ada hasil)'}
+Analisis untuk brand kami. Jangan menyalin teks post orang lain; ambil pola dan peluangnya saja.
+Format: {"summary": "2-3 kalimat", "themes": ["tema yang sering muncul"], "audience_questions": ["pertanyaan/keluhan yang diulang audiens"], "content_gaps": ["celah yang bisa kami isi"], "post_ideas": [{"text": "naskah post siap pakai maks 500 karakter, sesuai brand voice", "angle": "sudut"}], "creator_signals": ["ciri akun yang cocok diajak kolaborasi dari hasil ini"]}
+Wajib: post_ideas minimal 5 item dan semuanya berbeda sudut.`,
+    4500,
+  );
+  const r = parseJson(out);
+  r.post_ideas = fit(r.post_ideas || []);
+  return r;
+}
+
+/** Draf pesan penawaran kolaborasi/endorse untuk satu kandidat. */
+export async function outreachDrafts(brand, { creator, offer, count }) {
+  const n = clampCount(count, 5, 7);
+  const out = await ask(
+    brand,
+    `Buat ${n} draf pesan pembuka (DM/reply) untuk mengajak kreator berikut berkolaborasi/endorse produk ${brand.name}.
+Kreator: @${creator.username}${creator.name ? ` (${creator.name})` : ''}
+Bio: ${creator.bio || '-'}
+Pengikut: ${creator.followers ?? 'tidak diketahui'}
+Niche/catatan: ${creator.niche || '-'} ${creator.note ? `| ${creator.note}` : ''}
+Tawaran yang boleh disebut: ${offer || 'produk gratis untuk dicoba dan diskusi kerja sama lebih lanjut. Jangan menyebut nominal fee.'}
+Aturan: sopan dan personal (sebut sesuatu yang spesifik dari bio/niche), singkat (maks 600 karakter), jelas ajakannya, jangan menjanjikan harga/komisi yang tidak disebut di tawaran, tanpa tekanan. Variasikan pendekatan (santai, profesional, berbasis produk, berbasis nilai, singkat to-the-point).
+Format: [{"label": "pendekatan", "message": "..."}]`,
+  );
+  return parseJson(out);
+}
