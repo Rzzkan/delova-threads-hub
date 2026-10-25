@@ -10,7 +10,8 @@ services:
     build: .
     container_name: delova-threads-hub
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       PORT: "3000"
