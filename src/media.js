@@ -5,6 +5,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
+import dns from 'node:dns';
+import https from 'node:https';
+import http from 'node:http';
+import net from 'node:net';
 import { all, get, run, now, db } from './db.js';
 
 export const MEDIA_DIR = path.resolve(process.env.DATA_DIR || 'data', 'media');
@@ -121,4 +125,79 @@ export function cleanupMedia(at = Date.now()) {
     if (at - st.mtimeMs > 3600 * 1000) fs.rmSync(path.join(MEDIA_DIR, f), { force: true });
   }
   return dead.length;
+}
+
+/* ---------------- Impor dari URL / base64 (dipakai Claude lewat MCP) ---------------- */
+const ALLOW_LOCAL = () => process.env.MEDIA_IMPORT_ALLOW_LOCAL === '1'; // HANYA untuk tes/dev
+
+/** Alamat privat/loopback/link-local tidak boleh dijangkau (cegah SSRF ke jaringan internal VPS). */
+export function isPrivateIp(ip) {
+  if (net.isIPv6(ip)) {
+    const l = ip.toLowerCase();
+    if (l === '::1' || l === '::' || l.startsWith('fe8') || l.startsWith('fe9') || l.startsWith('fea') || l.startsWith('feb') || l.startsWith('fc') || l.startsWith('fd')) return true;
+    const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(l);
+    return m ? isPrivateIp(m[1]) : false;
+  }
+  const [a, b] = ip.split('.').map(Number);
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+}
+
+// lookup yang memeriksa alamat HASIL resolve yang benar-benar dipakai koneksi (menutup DNS rebinding)
+const safeLookup = (host, opts, cb) => dns.lookup(host, opts, (err, addr, fam) => {
+  if (err) return cb(err);
+  const list = Array.isArray(addr) ? addr : [{ address: addr, family: fam }];
+  if (!ALLOW_LOCAL() && list.some((a) => isPrivateIp(a.address))) return cb(Object.assign(new Error('Alamat tujuan tidak diizinkan.'), { status: 400 }));
+  return Array.isArray(addr) ? cb(null, list) : cb(null, addr, fam);
+});
+
+function fetchLimited(urlStr, limit, hops = 0) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(urlStr); } catch { return reject(Object.assign(new Error('URL tidak valid.'), { status: 400 })); }
+    if (u.protocol !== 'https:' && !(ALLOW_LOCAL() && u.protocol === 'http:')) return reject(Object.assign(new Error('URL harus HTTPS.'), { status: 400 }));
+    if (u.username || u.password) return reject(Object.assign(new Error('URL tidak boleh memuat kredensial.'), { status: 400 }));
+    if (net.isIP(u.hostname) && !ALLOW_LOCAL() && isPrivateIp(u.hostname)) return reject(Object.assign(new Error('Alamat tujuan tidak diizinkan.'), { status: 400 }));
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.get(u, { lookup: safeLookup, timeout: 20_000, headers: { 'user-agent': 'DelovaThreadsHub/1 (+media-import)', accept: 'image/*,video/*' } }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        res.resume();
+        if (hops >= 3) return reject(Object.assign(new Error('Terlalu banyak pengalihan.'), { status: 400 }));
+        return resolve(fetchLimited(new URL(res.headers.location, u).toString(), limit, hops + 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(Object.assign(new Error(`Sumber gambar membalas ${res.statusCode}.`), { status: 400 })); }
+      const chunks = []; let size = 0;
+      res.on('data', (c) => {
+        size += c.length;
+        if (size > limit) { req.destroy(); reject(Object.assign(new Error(`File terlalu besar (maks ${limit / 1024 / 1024} MB).`), { status: 413 })); } else chunks.push(c);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(Object.assign(new Error('Sumber gambar terlalu lama merespons.'), { status: 504 })));
+    req.on('error', (e) => reject(e.status ? e : Object.assign(new Error(`Gagal mengunduh: ${e.message}`), { status: 400 })));
+  });
+}
+
+/** Simpan buffer yang sudah ada di memori (jenis ditentukan dari isi file). */
+export function saveBuffer(buf, { originalName, brandId, userId }) {
+  const mime = sniff(buf);
+  if (!mime) throw Object.assign(new Error('Format tidak didukung. Pakai JPG, PNG, WEBP, GIF, MP4, atau MOV.'), { status: 415 });
+  if (buf.length > limitFor(mime)) throw Object.assign(new Error(`File terlalu besar (maks ${limitFor(mime) / 1024 / 1024} MB).`), { status: 413 });
+  if (totalBytes() + buf.length > MAX_TOTAL) throw Object.assign(new Error('Penyimpanan sementara penuh.'), { status: 507 });
+  const name = `${randomBytes(16).toString('hex')}.${TYPES[mime]}`;
+  fs.writeFileSync(path.join(MEDIA_DIR, name), buf);
+  run('INSERT INTO media(name,brand_id,mime,bytes,original_name,uploaded_by,created_at) VALUES (?,?,?,?,?,?,?)', name, brandId || null, mime, buf.length, String(originalName || '').slice(0, 120) || null, userId || null, now());
+  return get('SELECT * FROM media WHERE name=?', name);
+}
+
+export async function importMedia({ url, base64, filename, brandId, userId }) {
+  if (!!url === !!base64) throw Object.assign(new Error('Isi salah satu: source_url atau base64.'), { status: 400 });
+  let buf;
+  if (url) buf = await fetchLimited(String(url), MAX_VIDEO);
+  else {
+    const raw = String(base64).replace(/^data:[^,]*,/, '').replace(/\s+/g, '');
+    if (raw.length > Math.ceil((MAX_IMAGE * 4) / 3) + 8) throw Object.assign(new Error(`Base64 terlalu besar (maks ${MAX_IMAGE / 1024 / 1024} MB). Gunakan source_url untuk file besar.`), { status: 413 });
+    buf = Buffer.from(raw, 'base64');
+  }
+  return saveBuffer(buf, { originalName: filename || (url ? new URL(url).pathname.split('/').pop() : null), brandId, userId });
 }

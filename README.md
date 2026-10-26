@@ -198,3 +198,11 @@ dicatat di tabel `media`, dan disajikan publik di `https://<domain>/media/<nama-
 - Unggahan yang tak pernah dipakai dihapus setelah 48 jam; post yang dihapus ikut membersihkan filenya.
 - Batas: gambar 8 MB, video 50 MB, total penyimpanan `MEDIA_MAX_TOTAL_MB` (default 500).
 - Isi file diperiksa (bukan hanya ekstensi); hanya JPG, PNG, WEBP, GIF, MP4, MOV.
+
+### Foto lewat Claude (MCP)
+
+Tool `upload_media` memungkinkan Claude mengambil foto dari URL HTTPS publik (mis. foto produk Shopee) atau base64,
+menyimpannya sementara, lalu memakai URL hasilnya di `media_urls` pada `create_post` (2+ foto = carousel).
+Pengamanan: hanya HTTPS, alamat internal/loopback/link-local ditolak (anti-SSRF, dicek pada koneksi sebenarnya),
+maks 3 pengalihan, timeout 20 detik, batas ukuran, isi file diperiksa. Tunduk pada saklar "Buat & edit draft" di Kontrol Claude.
+`MEDIA_IMPORT_ALLOW_LOCAL=1` hanya untuk tes/dev lokal — jangan diset di produksi.

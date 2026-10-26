@@ -91,3 +91,17 @@ test('media: post dihapus -> filenya ikut dibersihkan', async () => {
   assert.equal((await api('DELETE', `/api/posts/${post.id}`)).status, 200);
   assert.equal(M.cleanupMedia(Date.now() + 49 * 3600e3), 1);
 });
+
+test('media: impor URL menolak alamat internal (SSRF) dan skema selain HTTPS', async () => {
+  for (const u of ['https://127.0.0.1/a.png', 'https://localhost/a.png', 'https://10.0.0.5/a.png', 'https://169.254.169.254/latest/meta-data', 'https://192.168.1.1/a.png', 'https://[::1]/a.png', 'http://example.com/a.png', 'ftp://example.com/a.png', 'https://user:pw@example.com/a.png']) {
+    const r = await api('POST', '/api/media/import', { source_url: u });
+    assert.equal(r.status, 400, `${u} harus ditolak, dapat ${r.status}`);
+  }
+  assert.equal(M.isPrivateIp('172.20.0.1'), true);
+  assert.equal(M.isPrivateIp('100.64.0.1'), true);
+  assert.equal(M.isPrivateIp('::ffff:10.1.2.3'), true);
+  assert.equal(M.isPrivateIp('fd00::1'), true);
+  assert.equal(M.isPrivateIp('8.8.8.8'), false);
+  assert.equal(M.isPrivateIp('172.32.0.1'), false);
+  assert.equal(fs.readdirSync(M.MEDIA_DIR).filter((f) => M.isMediaName(f) && !get('SELECT 1 AS x FROM media WHERE name=?', f)).length, 0);
+});

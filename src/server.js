@@ -65,7 +65,7 @@ export function createApp() {
     });
     next();
   });
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '9mb' })); // 9 MB: muat base64 gambar 6 MB dari Claude (MCP)
   app.use(express.urlencoded({ extended: false }));
 
   /* ---------------- Auth ---------------- */
@@ -765,6 +765,13 @@ export function createApp() {
     const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
     const row = await M.saveUpload(req, { mime, originalName: decodeURIComponent(String(req.headers['x-filename'] || '')), brandId: String(req.query.brand || '') || null, userId: req.user.id });
     A(req, 'media.uploaded', { name: row.name, bytes: row.bytes });
+    res.status(201).json({ name: row.name, url: M.urlFor(baseUrl(), row.name), mime: row.mime, bytes: row.bytes, expires: 'Dihapus otomatis 24 jam setelah post terbit.' });
+  });
+  // Dipakai Claude (MCP): ambil gambar dari URL publik atau base64, simpan sementara, kembalikan URL hub
+  api.post('/media/import', need('editor'), gate('claude_create'), claudeCap, async (req, res) => {
+    const b = req.body || {};
+    const row = await M.importMedia({ url: b.source_url, base64: b.base64, filename: b.filename, brandId: b.brand_id || null, userId: req.user.id });
+    A(req, 'media.imported', { name: row.name, bytes: row.bytes, from: b.source_url ? new URL(b.source_url).hostname : 'base64' });
     res.status(201).json({ name: row.name, url: M.urlFor(baseUrl(), row.name), mime: row.mime, bytes: row.bytes, expires: 'Dihapus otomatis 24 jam setelah post terbit.' });
   });
   api.get('/media/usage', need('viewer'), (req, res) => {

@@ -166,6 +166,22 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
 
   /* ---------- Tulis (draft & ajukan) ---------- */
   server.registerTool(
+    'upload_media',
+    {
+      title: 'Unggah foto/video untuk post',
+      description:
+        'Simpan foto/video sementara di hub lalu kembalikan URL HTTPS publik untuk dipakai di media_urls pada create_post/update_post. Isi SALAH SATU: source_url (URL HTTPS publik, mis. foto produk Shopee; paling disarankan) atau base64 (gambar kecil, maks ~6 MB). Format: JPG, PNG, WEBP, GIF (maks 8 MB), MP4/MOV (maks 50 MB). Panggil sekali per file; 2+ file di media_urls = carousel. File dihapus otomatis 24 jam setelah post terbit (atau 48 jam bila tak dipakai).',
+      inputSchema: {
+        source_url: z.string().url().optional().describe('URL HTTPS publik gambar/video'),
+        base64: z.string().optional().describe('Isi file base64 (boleh berawalan data:image/png;base64,)'),
+        filename: z.string().max(120).optional(),
+        brand: z.string().optional().describe(brandIds),
+      },
+    },
+    wrap(({ source_url, base64, filename, brand }) => call('POST', '/api/media/import', { source_url, base64, filename, brand_id: brand })),
+  );
+
+  server.registerTool(
     'create_post',
     {
       title: 'Buat draft / ajukan post',
@@ -174,7 +190,7 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
       inputSchema: {
         brand: z.string().describe(brandIds),
         text: z.string().min(1).max(500),
-        media_urls: z.array(z.string().url()).max(20).optional().describe('URL HTTPS publik gambar/video; 2+ = carousel'),
+        media_urls: z.array(z.string().url()).max(20).optional().describe('URL HTTPS publik gambar/video; 2+ = carousel. Untuk foto dari luar, panggil upload_media dulu lalu pakai url hasilnya'),
         topic_tag: z.string().max(50).optional().describe('Tanpa #, tanpa titik atau &'),
         scheduled_at: z.string().optional(),
         submit: z.boolean().optional(),

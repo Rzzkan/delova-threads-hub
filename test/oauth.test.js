@@ -10,6 +10,7 @@ process.env.APP_SECRET = 'test-secret';
 process.env.THREADS_DRY_RUN = 'true';
 process.env.ADMIN_EMAIL = 'admin@test.local';
 process.env.ADMIN_PASSWORD = 'password-123';
+process.env.MEDIA_IMPORT_ALLOW_LOCAL = '1'; // tes saja: izinkan sumber gambar di 127.0.0.1
 delete process.env.ANTHROPIC_API_KEY;
 
 const { createApp, bootstrapAdmin } = await import('../src/server.js');
@@ -200,6 +201,43 @@ test('refresh token berotasi: token lama mati, baru hidup', async () => {
   const reuse = await http('POST', '/oauth/token', { body: form({ grant_type: 'refresh_token', client_id: clientId, refresh_token: tokens.refresh_token }), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
   assert.equal(reuse.body.error, 'invalid_grant');
   tokens = r.body;
+});
+
+test('MCP: Claude unggah foto (URL & base64) lalu menempelkannya ke draft → carousel', async () => {
+  const http_ = await import('node:http');
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(80, 7)]);
+  const src = http_.createServer((req, res) => (req.url === '/produk.png' ? res.writeHead(200, { 'content-type': 'image/png' }).end(PNG) : res.writeHead(404).end())).listen(0);
+  const srcUrl = `http://127.0.0.1:${src.address().port}`;
+  try {
+    const tl = await mcp(tokens.access_token, 'tools/list', {}, 20);
+    assert.ok(tl.msg.result.tools.map((x) => x.name).includes('upload_media'));
+
+    const call_ = async (name, args, id) => { const r = await mcp(tokens.access_token, 'tools/call', { name, arguments: args }, id); assert.ok(!r.msg.result.isError, r.msg.result.content?.[0]?.text); return JSON.parse(r.msg.result.content[0].text); };
+    const a = await call_('upload_media', { source_url: `${srcUrl}/produk.png`, brand: 'kids' }, 21);
+    const b = await call_('upload_media', { base64: `data:image/png;base64,${PNG.toString('base64')}`, filename: 'kedua.png' }, 22);
+    assert.match(a.url, /\/media\/[a-f0-9]{32}\.png$/);
+    assert.equal(a.mime, 'image/png');
+
+    // URL hub tersaji publik (dipakai Threads), tanpa login
+    const pub = await fetch(`${base}${new URL(a.url).pathname}`);
+    assert.equal(pub.status, 200);
+    assert.equal(Buffer.from(await pub.arrayBuffer()).length, PNG.length);
+
+    // di produksi URL-nya sudah https://threads.delova.id/...; tes ini berjalan di http lokal, jadi skemanya disamakan
+    const https_ = (u) => u.replace(/^http:/, 'https:');
+    const post = await call_('create_post', { brand: 'kids', text: 'Koleksi baru, geser ya ➡️', media_urls: [https_(a.url), https_(b.url)] }, 23);
+    assert.equal(post.media_urls.length, 2);
+    const { get: dbget } = await import('../src/db.js');
+    assert.equal(dbget('SELECT COUNT(*) AS n FROM media WHERE post_id=?', post.id).n, 2);
+
+    // gagal: sumber 404, isi bukan gambar, dua sumber sekaligus
+    const bad1 = await mcp(tokens.access_token, 'tools/call', { name: 'upload_media', arguments: { source_url: `${srcUrl}/tidak-ada.png` } }, 24);
+    assert.equal(bad1.msg.result.isError, true);
+    const bad2 = await mcp(tokens.access_token, 'tools/call', { name: 'upload_media', arguments: { base64: Buffer.from('bukan gambar sama sekali').toString('base64') } }, 25);
+    assert.equal(bad2.msg.result.isError, true);
+    const bad3 = await mcp(tokens.access_token, 'tools/call', { name: 'upload_media', arguments: { source_url: `${srcUrl}/produk.png`, base64: 'AAAA' } }, 26);
+    assert.equal(bad3.msg.result.isError, true);
+  } finally { src.close(); }
 });
 
 test('saklar utama: Claude dimatikan → semua jalur Claude 403, dashboard tetap jalan', async () => {
