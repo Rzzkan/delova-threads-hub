@@ -157,3 +157,18 @@ test('cek izin: status izin per brand, cek mode simulasi, viewer ditolak', async
   assert.equal((await admin('POST', '/api/brands/wardrobe/permission-check')).status, 400); // belum terhubung
   await admin('PUT', '/api/settings/meta', { mode: 'sim', clear: true });
 });
+
+test('kalender: post bertanggal per brand dalam rentang, validasi rentang', async () => {
+  const when = '2026-11-05T02:00:00.000Z';
+  const a = await admin('POST', '/api/posts', { brand_id: 'kids', text: 'Jadwal kalender kids', scheduled_at: when });
+  assert.equal(a.status, 201);
+  await admin('POST', '/api/posts', { brand_id: 'scarf', text: 'Jadwal kalender scarf', scheduled_at: '2026-11-06T02:00:00.000Z' });
+  const q = '/api/calendar?from=2026-10-31T17:00:00.000Z&to=2026-11-30T17:00:00.000Z';
+  const all_ = (await call(viewerCookie, 'GET', q)).json;
+  assert.equal(all_.filter((p) => p.text.startsWith('Jadwal kalender')).length, 2);
+  const kids = (await admin('GET', `${q}&brand=kids`)).json;
+  assert.ok(kids.length >= 1 && kids.every((p) => p.brand_id === 'kids'));
+  assert.equal((await admin('GET', '/api/calendar?from=2026-12-31T17:00:00.000Z&to=2027-01-31T17:00:00.000Z&brand=kids')).json.filter((p) => p.text.startsWith('Jadwal')).length, 0);
+  assert.equal((await admin('GET', '/api/calendar?from=x&to=y')).status, 400);
+  assert.equal((await admin('GET', '/api/calendar?from=2026-01-01T00:00:00Z&to=2027-01-01T00:00:00Z')).status, 400);
+});

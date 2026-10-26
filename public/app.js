@@ -119,6 +119,7 @@ const ICON = {
   compose: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   queue: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
   plan: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>', chevl: '<path d="m15 18-6-6 6-6"/>', chevr: '<path d="m9 18 6-6-6-6"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>',
   insights: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
   research: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
@@ -137,7 +138,7 @@ const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none
 // [id, label, peran minimal, grup]
 const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
-  ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
+  ['calendar', 'Kalender', 'viewer', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
   ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
@@ -212,7 +213,7 @@ VIEWS.compose = async (v) => {
         <label>Topic tag (opsional)<input id="tag" value="${esc(post?.topic_tag || '')}" placeholder="mis. KebayaModern" /></label>
         <label>Siapa boleh reply<select id="rc"><option value="">Semua orang</option><option value="accounts_you_follow">Akun yang kami ikuti</option><option value="mentioned_only">Hanya yang di-mention</option><option value="followers_only">Followers</option></select></label>
       </div>
-      <label>Jadwal tayang (WIB)<input id="when" class="dtp" value="${toInput(post?.scheduled_at)}" placeholder="Pilih tanggal &amp; jam" /></label>
+      <label>Jadwal tayang (WIB)<input id="when" class="dtp" value="${toInput(post?.scheduled_at) || (/^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '') ? `${q.get('date')}T09:00` : '')}" placeholder="Pilih tanggal &amp; jam" /></label>
       <div class="row">
         <button class="btn" id="save">Simpan draft</button>
         <button class="btn primary" id="submit">Ajukan approval</button>
@@ -307,6 +308,68 @@ function actions(p) {
   if (can('editor')) out.push(b('delete', 'Hapus', 'danger'));
   return out.join('');
 }
+
+
+/* ---------- Kalender ---------- */
+const wibKey = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
+const pad2 = (n) => String(n).padStart(2, '0');
+const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const SET_STATUS = ['scheduled', 'publishing', 'published'];
+const PLAN_STATUS = ['pending_approval', 'draft'];
+VIEWS.calendar = async (v) => {
+  const q = params(); const todayKey = wibKey(new Date());
+  const [Y, M] = (/^\d{4}-\d{2}$/.test(q.get('m') || '') ? q.get('m') : todayKey.slice(0, 7)).split('-').map(Number);
+  const bid = brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : '';
+  const monthKey = `${Y}-${pad2(M)}`;
+  const nextM = M === 12 ? `${Y + 1}-01` : `${Y}-${pad2(M + 1)}`; const prevM = M === 1 ? `${Y - 1}-12` : `${Y}-${pad2(M - 1)}`;
+  const from = new Date(`${monthKey}-01T00:00:00+07:00`).toISOString(); const to = new Date(`${nextM}-01T00:00:00+07:00`).toISOString();
+  const items = await api('GET', `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${bid ? `&brand=${bid}` : ''}`);
+  const days = new Date(Date.UTC(Y, M, 0)).getUTCDate(); const lead = (new Date(Date.UTC(Y, M - 1, 1)).getUTCDay() + 6) % 7;
+  const shown = bid ? brands.filter((b) => b.id === bid) : brands;
+  const byDay = {}; // 'YYYY-MM-DD' -> posts
+  for (const it of items) (byDay[wibKey(it.published_at || it.scheduled_at)] ||= []).push(it);
+  const key = (d) => `${monthKey}-${pad2(d)}`;
+  const stateOf = (d, b) => { const ps = (byDay[key(d)] || []).filter((p) => p.brand_id === b); return ps.some((p) => SET_STATUS.includes(p.status)) ? 'set' : ps.some((p) => PLAN_STATUS.includes(p.status)) ? 'plan' : ps.length ? 'failed' : 'none'; };
+  const nav = (m, b = bid) => `#/calendar?m=${m}${b ? `&brand=${b}` : ''}`;
+  // ringkasan per akun: hari mulai hari ini yang sudah/belum terisi
+  const summary = shown.map((b) => {
+    let set = 0, plan = 0, empty = 0;
+    for (let d = 1; d <= days; d++) { if (key(d) < todayKey) continue; const st = stateOf(d, b.id); if (st === 'set') set++; else if (st === 'plan') plan++; else empty++; }
+    return `<div class="cal-sum" style="--c:${b.color}"><b>${esc(b.name)}</b><span><i class="cal-dot on" style="--c:${b.color}"></i>${set} terjadwal</span><span><i class="cal-dot half" style="--c:${b.color}"></i>${plan} menunggu</span><span><i class="cal-dot off"></i>${empty} kosong</span></div>`;
+  }).join('');
+  const dot = (b, st) => `<i class="cal-dot ${st === 'set' ? 'on' : st === 'plan' ? 'half' : st === 'failed' ? 'bad' : 'off'}" style="--c:${b.color}" title="${esc(b.name)}"></i>`;
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell void"></div>');
+  for (let d = 1; d <= days; d++) {
+    const k = key(d); const past = k < todayKey; const ps = byDay[k] || [];
+    let inner;
+    if (bid) {
+      const b = shown[0]; const st = stateOf(d, b.id);
+      inner = ps.slice(0, 2).map((p) => `<span class="cal-chip ${SET_STATUS.includes(p.status) ? 'on' : p.status === 'failed' ? 'bad' : 'half'}" style="--c:${b.color}">${new Date(p.published_at || p.scheduled_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).replace('.', ':')} ${esc(p.text.slice(0, 22))}</span>`).join('') + (ps.length > 2 ? `<span class="cal-more">+${ps.length - 2} lagi</span>` : '') + (!ps.length && !past ? '<span class="cal-empty">Kosong</span>' : '');
+      void st;
+    } else inner = `<span class="cal-dots">${shown.map((b) => dot(b, stateOf(d, b.id))).join('')}</span>`;
+    cells.push(`<button type="button" class="cal-cell ${k === todayKey ? 'today' : ''} ${past ? 'past' : ''} ${!ps.length && !past && bid ? 'free' : ''}" data-day="${k}"><span class="cal-num">${d}</span>${inner}</button>`);
+  }
+  v.innerHTML = `<div class="page-head row between"><div><h1>Kalender</h1><p class="muted">Tanggal yang sudah dan belum punya jadwal post untuk tiap akun (WIB). Klik tanggal untuk melihat detail atau menjadwalkan.</p></div></div>
+  <div class="row between" style="margin-bottom:12px"><div class="chips"><a class="chip" href="${nav(monthKey, '')}" ${bid ? '' : 'style="border-color:var(--accent);color:var(--accent)"'}>Semua akun</a>${brands.map((b) => `<a class="chip" href="${nav(monthKey, b.id)}" ${bid === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}</a>`).join('')}</div>
+    <div class="row"><a class="btn small" href="${nav(prevM)}" aria-label="Bulan sebelumnya">${ico('chevl')}</a><b style="min-width:9.5rem;text-align:center">${MONTHS[M - 1]} ${Y}</b><a class="btn small" href="${nav(nextM)}" aria-label="Bulan berikutnya">${ico('chevr')}</a><a class="btn small" href="${nav(todayKey.slice(0, 7))}">Hari ini</a></div></div>
+  <div class="cal-sums">${summary}</div>
+  <div class="card cal"><div class="cal-grid">${['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((x) => `<div class="cal-dow">${x}</div>`).join('')}${cells.join('')}</div>
+    <div class="cal-legend small muted"><span><i class="cal-dot on" style="--c:var(--accent)"></i> Terjadwal / terbit</span><span><i class="cal-dot half" style="--c:var(--accent)"></i> Menunggu approval / draft bertanggal</span><span><i class="cal-dot bad" style="--c:var(--bad)"></i> Gagal</span><span><i class="cal-dot off"></i> Belum ada jadwal</span></div></div>
+  <div id="day" class="card stack" style="margin-top:14px"><span class="muted">Pilih tanggal di kalender untuk melihat detailnya.</span></div>`;
+  const showDay = (k) => {
+    const d = Number(k.slice(8)); const ps = byDay[k] || []; const label = new Date(`${k}T12:00:00+07:00`).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const rowFor = (b) => {
+      const mine = ps.filter((p) => p.brand_id === b.id); const past = k < todayKey;
+      return `<div class="cal-day-brand" style="--c:${b.color}"><div class="row between"><b>${esc(b.name)}</b>${can('editor') && !past ? `<a class="btn small primary" href="#/compose?brand=${b.id}&date=${k}">${mine.length ? 'Tambah post' : 'Jadwalkan post'}</a>` : ''}</div>
+        ${mine.length ? mine.map((p) => `<div class="row between cal-post"><span><span class="small muted">${wib(p.published_at || p.scheduled_at).replace(' WIB', '')}</span> ${esc(p.text)}</span><span class="row">${badge(p.status)}${can('editor') && p.status !== 'published' ? `<a class="btn small" href="#/compose?edit=${p.id}">Edit</a>` : ''}</span></div>`).join('') : `<span class="muted small">${past ? 'Tidak ada post pada tanggal ini.' : 'Belum ada jadwal pada tanggal ini.'}</span>`}</div>`;
+    };
+    $('#day').innerHTML = `<h3>${esc(label)}</h3>${(bid ? shown : brands).map(rowFor).join('')}`; void d;
+    $$('.cal-cell.sel', v).forEach((c) => c.classList.remove('sel')); $(`.cal-cell[data-day="${k}"]`, v)?.classList.add('sel');
+  };
+  v.onclick = (e) => { const c = e.target.closest('[data-day]'); if (c) showDay(c.dataset.day); };
+  showDay(todayKey.startsWith(monthKey) ? todayKey : `${monthKey}-01`);
+};
 
 /* ---------- Rencana mingguan ---------- */
 VIEWS.plan = async (v) => {

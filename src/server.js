@@ -229,6 +229,21 @@ export function createApp() {
   });
 
   // ----- Posts
+  // Kalender: post yang punya tanggal (jadwal atau terbit) dalam rentang [from, to), opsional per brand
+  api.get('/calendar', need('viewer'), (req, res) => {
+    const from = new Date(String(req.query.from || '')); const to = new Date(String(req.query.to || ''));
+    if (Number.isNaN(+from) || Number.isNaN(+to) || to <= from || to - from > 100 * 86400_000) return bad(res, 'Rentang tanggal tidak valid (maksimal 100 hari).');
+    const args = [from.toISOString(), to.toISOString()];
+    let brandSql = '';
+    if (req.query.brand) { brandSql = 'AND brand_id=?'; args.push(String(req.query.brand)); }
+    res.json(all(
+      `SELECT id, brand_id, substr(text,1,140) AS text, status, scheduled_at, published_at FROM posts
+       WHERE COALESCE(published_at, scheduled_at) >= ? AND COALESCE(published_at, scheduled_at) < ? ${brandSql}
+       ORDER BY COALESCE(published_at, scheduled_at)`,
+      ...args,
+    ));
+  });
+
   api.get('/posts', (req, res) => {
     const { brand, status } = req.query;
     const limit = Math.min(200, Number(req.query.limit) || 100);
