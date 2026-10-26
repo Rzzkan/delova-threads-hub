@@ -774,6 +774,16 @@ export function createApp() {
     A(req, 'media.imported', { name: row.name, bytes: row.bytes, from: b.source_url ? new URL(b.source_url).hostname : 'base64' });
     res.status(201).json({ name: row.name, url: M.urlFor(baseUrl(), row.name), mime: row.mime, bytes: row.bytes, expires: 'Dihapus otomatis 24 jam setelah post terbit.' });
   });
+  api.get('/media', need('viewer'), (req, res) => {
+    res.json(M.listMedia(req.query.limit).map((m) => ({ ...m, url: M.urlFor(baseUrl(), m.name) })));
+  });
+  // Tautan unggah sekali-pakai-waktu (15 menit): user membuka di HP/laptop tanpa login, menjatuhkan foto,
+  // lalu Claude mengambilnya lewat list_media. Solusi untuk foto yang hanya "terlihat" Claude di chat.
+  api.post('/media/upload-link', need('editor'), gate('claude_create'), claudeCap, (req, res) => {
+    const token = C.sign({ k: 'upl', uid: req.user.id, b: String(req.body?.brand_id || '') }, 15 * 60);
+    A(req, 'media.upload_link', {});
+    res.status(201).json({ url: `${baseUrl()}/upload/${token}`, expires_in_minutes: 15, max_files: 20 });
+  });
   api.get('/media/usage', need('viewer'), (req, res) => {
     const r = get('SELECT COUNT(*) AS files, COALESCE(SUM(bytes),0) AS bytes FROM media');
     res.json({ ...r, max_bytes: M.MAX_TOTAL, keep_hours_after_post: 24 });
@@ -785,6 +795,28 @@ export function createApp() {
     M.removeMedia(m.name);
     A(req, 'media.deleted', { name: m.name });
     res.json({ ok: true });
+  });
+  const uploadUser = (tok) => { const p = C.verify(String(tok)); return p && p.k === 'upl' ? p : null; };
+  const uploadCount = new Map(); // token -> jumlah file (batas 20 per tautan)
+  app.get('/upload/:token', (req, res) => {
+    if (!uploadUser(req.params.token)) return res.status(410).type('text/plain; charset=utf-8').send('Tautan unggah sudah kedaluwarsa. Minta Claude membuat tautan baru.');
+    res.set('Cache-Control', 'no-store').sendFile('upload.html', { root: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public') });
+  });
+  app.post('/upload/:token/file', async (req, res) => {
+    const p = uploadUser(req.params.token);
+    if (!p) return bad(res, 'Tautan unggah kedaluwarsa. Minta Claude membuat tautan baru.', 410);
+    const user = get('SELECT id FROM users WHERE id=? AND active=1', p.uid);
+    if (!user) return bad(res, 'Pembuat tautan sudah tidak aktif.', 403);
+    const n = uploadCount.get(req.params.token) || 0;
+    if (n >= 20) return bad(res, 'Batas 20 file per tautan tercapai.', 429);
+    uploadCount.set(req.params.token, n + 1);
+    if (uploadCount.size > 500) uploadCount.delete(uploadCount.keys().next().value);
+    const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    try {
+      const row = await M.saveUpload(req, { mime, originalName: decodeURIComponent(String(req.headers['x-filename'] || '')), brandId: p.b || null, userId: p.uid });
+      audit(p.uid, 'media.uploaded', { name: row.name, bytes: row.bytes, via: 'upload-link' });
+      res.status(201).json({ name: row.name, url: M.urlFor(baseUrl(), row.name), mime: row.mime });
+    } catch (e) { uploadCount.set(req.params.token, n); throw e; }
   });
   // Publik tanpa login: Threads mengunduh media lewat URL ini. Nama acak 128-bit.
   app.get('/media/:name', (req, res) => {

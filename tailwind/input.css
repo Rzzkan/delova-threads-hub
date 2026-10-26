@@ -129,6 +129,7 @@ pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]
 .thumb-x { @apply absolute right-1 top-1 grid size-6 cursor-pointer place-items-center rounded-full border-0 bg-black/65 text-base leading-none text-white hover:bg-bad; }
 .thumb-n { @apply absolute bottom-1 left-1 rounded bg-black/60 px-1.5 text-[.7rem] text-white; }
 .lbl { @apply text-sm font-medium; }
+.upl { @apply mx-auto grid min-h-screen max-w-xl content-start gap-4 p-4 sm:pt-12; }
 .cal-sums { @apply mb-3 grid gap-2; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
 .cal-sum { @apply grid gap-0.5 rounded-lg border border-line border-l-4 bg-panel px-3 py-2 text-sm shadow-card; border-left-color: var(--c); }
 .cal-sum span { @apply flex items-center gap-2 text-xs text-muted; }

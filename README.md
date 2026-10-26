@@ -206,3 +206,10 @@ menyimpannya sementara, lalu memakai URL hasilnya di `media_urls` pada `create_p
 Pengamanan: hanya HTTPS, alamat internal/loopback/link-local ditolak (anti-SSRF, dicek pada koneksi sebenarnya),
 maks 3 pengalihan, timeout 20 detik, batas ukuran, isi file diperiksa. Tunduk pada saklar "Buat & edit draft" di Kontrol Claude.
 `MEDIA_IMPORT_ALLOW_LOCAL=1` hanya untuk tes/dev lokal — jangan diset di produksi.
+
+### Foto yang hanya "terlihat" Claude di chat
+
+Gambar yang dilampirkan di chat tidak bisa disalin Claude menjadi base64 (ia hanya melihatnya). Jalurnya:
+Claude memanggil `request_photo_upload` → user membuka tautan (15 menit, tanpa login, maks 20 file) dan menjatuhkan foto →
+Claude memanggil `list_media` untuk mengambil URL-nya → dipakai di `create_post`. Foto juga bisa diunggah dulu dari
+Tulis Post, lalu Claude tinggal memakai `list_media`.

@@ -210,7 +210,11 @@ test('MCP: Claude unggah foto (URL & base64) lalu menempelkannya ke draft → ca
   const srcUrl = `http://127.0.0.1:${src.address().port}`;
   try {
     const tl = await mcp(tokens.access_token, 'tools/list', {}, 20);
-    assert.ok(tl.msg.result.tools.map((x) => x.name).includes('upload_media'));
+    for (const n of ['upload_media', 'request_photo_upload', 'list_media']) assert.ok(tl.msg.result.tools.map((x) => x.name).includes(n), n);
+    const rl = await mcp(tokens.access_token, 'tools/call', { name: 'request_photo_upload', arguments: { brand: 'kids' } }, 19);
+    assert.match(JSON.parse(rl.msg.result.content[0].text).url, /\/upload\/.+/);
+    const lm = await mcp(tokens.access_token, 'tools/call', { name: 'list_media', arguments: {} }, 18);
+    assert.ok(Array.isArray(JSON.parse(lm.msg.result.content[0].text)));
 
     const call_ = async (name, args, id) => { const r = await mcp(tokens.access_token, 'tools/call', { name, arguments: args }, id); assert.ok(!r.msg.result.isError, r.msg.result.content?.[0]?.text); return JSON.parse(r.msg.result.content[0].text); };
     const a = await call_('upload_media', { source_url: `${srcUrl}/produk.png`, brand: 'kids' }, 21);

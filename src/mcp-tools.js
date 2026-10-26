@@ -182,6 +182,28 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
   );
 
   server.registerTool(
+    'request_photo_upload',
+    {
+      title: 'Minta user mengunggah foto',
+      description:
+        'Gunakan ketika user melampirkan/menyebut foto di chat tetapi kamu TIDAK bisa mengirim isi file-nya (foto yang kamu lihat di chat tidak bisa kamu salin sebagai base64). Mengembalikan tautan unggah (berlaku 15 menit, tanpa login). Tampilkan tautan itu ke user, minta ia menjatuhkan foto di sana, lalu setelah user bilang sudah, panggil list_media untuk mengambil URL fotonya dan pakai di create_post.',
+      inputSchema: { brand: z.string().optional().describe(brandIds) },
+    },
+    wrap(({ brand }) => call('POST', '/api/media/upload-link', { brand_id: brand })),
+  );
+
+  server.registerTool(
+    'list_media',
+    {
+      title: 'Daftar foto/video tersimpan',
+      description:
+        'Foto/video yang sudah diunggah ke hub (terbaru dulu). free=true berarti belum dipakai post mana pun dan siap dipakai: salin url-nya ke media_urls pada create_post/update_post. Gunakan setelah user mengunggah lewat tautan dari request_photo_upload atau lewat dashboard. Cocokkan dengan original_name dan created_at; bila ragu, tanya user.',
+      inputSchema: { limit: z.number().int().min(1).max(100).optional() },
+    },
+    wrap(({ limit }) => call('GET', `/api/media?limit=${limit || 20}`)),
+  );
+
+  server.registerTool(
     'create_post',
     {
       title: 'Buat draft / ajukan post',

@@ -105,3 +105,28 @@ test('media: impor URL menolak alamat internal (SSRF) dan skema selain HTTPS', a
   assert.equal(M.isPrivateIp('172.32.0.1'), false);
   assert.equal(fs.readdirSync(M.MEDIA_DIR).filter((f) => M.isMediaName(f) && !get('SELECT 1 AS x FROM media WHERE name=?', f)).length, 0);
 });
+
+test('media: tautan unggah (untuk foto dari chat Claude) + list_media', async () => {
+  const link = await api('POST', '/api/media/upload-link', { brand_id: 'kids' });
+  assert.equal(link.status, 201);
+  const u = new URL(link.json.url);
+  assert.match(u.pathname, /^\/upload\/.+/);
+  const page = await fetch(base + u.pathname); // tanpa login
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Unggah foto untuk Claude/);
+
+  const send = (p, buf, type = 'image/png') => fetch(base + p + '/file', { method: 'POST', headers: { 'content-type': type, 'x-filename': encodeURIComponent('kebaya sage.png') }, body: buf });
+  const ok = await send(u.pathname, PNG);
+  assert.equal(ok.status, 201);
+  const j = await ok.json();
+  assert.equal((await send(u.pathname, Buffer.from('bukan gambar'))).status, 415);
+
+  const list = (await api('GET', '/api/media?limit=5')).json;
+  const mine = list.find((m) => m.name === j.name);
+  assert.ok(mine && mine.free === true && mine.original_name === 'kebaya sage.png' && mine.brand_id === 'kids');
+  assert.match(mine.url, /^https:\/\/threads\.test\.local\/media\//);
+
+  assert.equal((await send(u.pathname + 'x', PNG)).status, 410); // token rusak
+  assert.equal((await fetch(base + '/upload/abc.def')).status, 410);
+  assert.equal((await fetch(base + '/upload/' + u.pathname.split('/')[2] + '/../..')).status !== 500, true);
+});
