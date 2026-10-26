@@ -128,6 +128,11 @@ pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]
 .thumb img, .thumb video { @apply size-full object-cover; }
 .thumb-x { @apply absolute right-1 top-1 grid size-6 cursor-pointer place-items-center rounded-full border-0 bg-black/65 text-base leading-none text-white hover:bg-bad; }
 .thumb-n { @apply absolute bottom-1 left-1 rounded bg-black/60 px-1.5 text-[.7rem] text-white; }
+.meter { @apply mb-3 h-1.5 overflow-hidden rounded-full bg-line; } .meter i { @apply block h-full rounded-full bg-accent; }
+.mgrid { @apply grid gap-3; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); }
+.mcard { @apply grid gap-3 p-3; } .mcard input { @apply text-xs; }
+.mthumb { @apply aspect-[4/3] overflow-hidden rounded-md border border-line bg-bg; } .mthumb img, .mthumb video { @apply size-full object-cover; }
+.trunc { @apply block truncate; }
 .lbl { @apply text-sm font-medium; }
 .upl { @apply mx-auto grid min-h-screen max-w-xl content-start gap-4 p-4 sm:pt-12; }
 .cal-sums { @apply mb-3 grid gap-2; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }

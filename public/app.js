@@ -119,6 +119,7 @@ const ICON = {
   compose: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   queue: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
   plan: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  media: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>', chevl: '<path d="m15 18-6-6 6-6"/>', chevr: '<path d="m9 18 6-6-6-6"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>',
   insights: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
@@ -137,7 +138,7 @@ const ICON = {
 const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
 // [id, label, peran minimal, grup]
 const ROUTES = [
-  ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
+  ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
   ['calendar', 'Kalender', 'viewer', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
@@ -344,6 +345,58 @@ function actions(p) {
   return out.join('');
 }
 
+
+/* ---------- Foto sementara ---------- */
+const fmtBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const leftText = (iso) => {
+  if (!iso) return 'Dihapus 24 jam setelah post terbit';
+  const ms = Date.parse(iso) - Date.now(); if (ms <= 0) return 'Segera dihapus';
+  const h = Math.floor(ms / 3600e3); const m = Math.floor((ms % 3600e3) / 60e3);
+  return `Terhapus ${h >= 1 ? `${h} jam ${m} mnt` : `${m} mnt`} lagi`;
+};
+VIEWS.media = async (v) => {
+  const [list, usage] = await Promise.all([api('GET', '/api/media?limit=200'), api('GET', '/api/media/usage')]);
+  const pct = Math.min(100, Math.round((usage.bytes / usage.max_bytes) * 100));
+  const brandName = (id) => brands.find((b) => b.id === id)?.name.replace('Delova ', '') || '';
+  v.innerHTML = `<div class="page-head"><h1>Foto Sementara</h1><p class="muted">Unggah foto/video, dapatkan URL publik untuk post. File dihapus otomatis <b>24 jam setelah post terbit</b> (atau 48 jam jika tak dipakai).</p></div>
+  ${can('editor') ? `<div class="card stack"><div id="drop" class="dropzone" tabindex="0"><input id="file" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime" hidden />
+    <b>Klik atau seret foto/video ke sini</b><span class="small muted">JPG, PNG, WEBP, GIF (maks 8 MB) · MP4/MOV (maks 50 MB)</span></div>
+    <div class="row"><span class="small muted">Akun (opsional)</span><select id="mb" style="width:auto"><option value="">Tanpa akun</option>${brands.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select>
+    <button type="button" class="btn small" id="lnk">Buat tautan unggah dari HP (15 mnt)</button></div></div>` : ''}
+  <div class="row between" style="margin:14px 0 8px"><b>${list.length} file tersimpan</b><span class="small muted">${fmtBytes(usage.bytes)} dari ${fmtBytes(usage.max_bytes)}</span></div>
+  <div class="meter"><i style="width:${pct}%"></i></div>
+  <div class="mgrid">${list.length ? list.map((m) => `<div class="card mcard" data-n="${m.name}">
+    <div class="mthumb">${m.mime.startsWith('video/') ? `<video src="${esc(m.url)}" muted preload="metadata"></video>` : `<img src="${esc(m.url)}" alt="${esc(m.original_name || m.name)}" loading="lazy" />`}</div>
+    <div class="stack" style="gap:6px"><b class="trunc" title="${esc(m.original_name || m.name)}">${esc(m.original_name || m.name)}</b>
+      <div class="small muted">${fmtBytes(m.bytes)} · ${esc(wib(m.created_at).replace(' WIB', ''))}${m.brand_id ? ` · ${esc(brandName(m.brand_id))}` : ''}</div>
+      <div class="row"><span class="badge ${m.free ? 's-draft' : 's-scheduled'}">${m.free ? 'Belum dipakai' : 'Dipakai post'}</span><span class="small muted">${esc(leftText(m.expires_at))}</span></div>
+      <input readonly value="${esc(m.url)}" aria-label="URL publik" />
+      <div class="row"><button type="button" class="btn small primary" data-a="copy">Salin URL</button><a class="btn small" href="${esc(m.url)}" target="_blank" rel="noopener">Buka</a>${can('editor') && m.free ? '<button type="button" class="btn small danger" data-a="del">Hapus</button>' : ''}</div></div></div>`).join('') : '<div class="card muted">Belum ada file. Unggah foto di atas untuk mendapatkan URL publik.</div>'}</div>`;
+  const send = async (files) => {
+    const box = $('#drop'); box.classList.add('busy'); let ok = 0;
+    for (const f of files) {
+      const r = await fetch(`/api/media${$('#mb').value ? `?brand=${$('#mb').value}` : ''}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) ok++; else toast(`${f.name}: ${j.error || 'gagal diunggah'}`, true);
+    }
+    box.classList.remove('busy');
+    if (ok) { toast(`${ok} file terunggah.`); route(); }
+  };
+  if (can('editor')) {
+    $('#drop').onclick = (e) => { if (e.target.id !== 'file') $('#file').click(); };
+    $('#drop').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); } };
+    $('#file').onchange = (e) => send([...e.target.files]);
+    ['dragenter', 'dragover'].forEach((ev) => $('#drop').addEventListener(ev, (e) => { e.preventDefault(); $('#drop').classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((ev) => $('#drop').addEventListener(ev, (e) => { e.preventDefault(); $('#drop').classList.remove('over'); }));
+    $('#drop').addEventListener('drop', (e) => send([...e.dataTransfer.files]));
+    $('#lnk').onclick = (e) => busy(e.target, async () => { const r = await api('POST', '/api/media/upload-link', { brand_id: $('#mb').value || undefined }); await copyText(r.url); toast('Tautan unggah disalin (berlaku 15 menit). Buka di HP Anda.'); });
+  }
+  v.onclick = (e) => {
+    const a = e.target.dataset.a; if (!a) return; const card = e.target.closest('[data-n]'); const m = list.find((x) => x.name === card.dataset.n);
+    if (a === 'copy') copyText(m.url);
+    if (a === 'del') ui.confirm({ title: 'Hapus file ini?', message: 'File akan dihapus permanen dan URL-nya tidak bisa dibuka lagi.', quote: m.original_name || m.name, ok: 'Hapus', danger: true }).then(async (yes) => { if (yes) { await api('DELETE', `/api/media/${m.name}`); toast('File dihapus.'); route(); } });
+  };
+};
 
 /* ---------- Kalender ---------- */
 const wibKey = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });

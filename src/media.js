@@ -205,5 +205,5 @@ export async function importMedia({ url, base64, filename, brandId, userId }) {
 /** Daftar file tersimpan (terbaru dulu). `free` = belum dipakai post mana pun. */
 export function listMedia(limit = 50) {
   return all('SELECT name, mime, bytes, original_name, brand_id, post_id, created_at, delete_after FROM media ORDER BY created_at DESC LIMIT ?', Math.min(Math.max(Number(limit) || 50, 1), 200))
-    .map((m) => ({ ...m, free: !m.post_id }));
+    .map((m) => ({ ...m, free: !m.post_id, expires_at: m.delete_after || (m.post_id ? null : new Date(Date.parse(m.created_at) + ORPHAN_MS).toISOString()) }));
 }
