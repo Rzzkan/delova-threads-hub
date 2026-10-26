@@ -27,6 +27,21 @@ const fromInput = (v) => (v ? new Date(v + ':00+07:00').toISOString() : null);
 const brandOf = (id) => brands.find((b) => b.id === id) || { name: id, color: '#888' };
 const brandPick = (id, name = 'brand') => `<select name="${name}">${brands.map((b) => `<option value="${b.id}" ${b.id === id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>`;
 const badge = (s) => `<span class="badge s-${s}">${STATUS[s] || s}</span>`;
+/* Date-time picker (flatpickr, disajikan dari server sendiri karena CSP). Nilai input asli tetap 'YYYY-MM-DDTHH:mm' (WIB). */
+const pickers = (root = document) => {
+  if (!window.flatpickr) return;
+  $$('.dtp', root).forEach((el) => {
+    if (el._flatpickr) return;
+    flatpickr(el, {
+      enableTime: true, time_24hr: true, minuteIncrement: 5, dateFormat: 'Y-m-d\\TH:i', altInput: true, altFormat: 'D, d M Y · H:i', altInputClass: 'dtp-alt',
+      locale: 'id', disableMobile: true, minDate: el.value ? undefined : 'today', allowInput: false,
+      onReady: (_, __, fp) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'fp-clear'; b.textContent = 'Kosongkan';
+        b.onclick = () => { fp.clear(); fp.close(); }; fp.calendarContainer.appendChild(b);
+      },
+    });
+  });
+};
 const busy = async (btn, fn) => { btn.disabled = true; try { return await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; } };
 const params = () => new URLSearchParams((location.hash.split('?')[1] || ''));
 
@@ -148,7 +163,7 @@ VIEWS.compose = async (v) => {
         <label>Topic tag (opsional)<input id="tag" value="${esc(post?.topic_tag || '')}" placeholder="mis. KebayaModern" /></label>
         <label>Siapa boleh reply<select id="rc"><option value="">Semua orang</option><option value="accounts_you_follow">Akun yang kami ikuti</option><option value="mentioned_only">Hanya yang di-mention</option><option value="followers_only">Followers</option></select></label>
       </div>
-      <label>Jadwal tayang (WIB)<input id="when" type="datetime-local" value="${toInput(post?.scheduled_at)}" /></label>
+      <label>Jadwal tayang (WIB)<input id="when" class="dtp" value="${toInput(post?.scheduled_at)}" placeholder="Pilih tanggal &amp; jam" /></label>
       <div class="row">
         <button class="btn" id="save">Simpan draft</button>
         <button class="btn primary" id="submit">Ajukan approval</button>
@@ -162,7 +177,7 @@ VIEWS.compose = async (v) => {
       <div class="row"><input id="instr" placeholder="Instruksi perbaikan (opsional), mis. lebih singkat & lebih lucu" /><button class="btn" id="imp">Perbaiki teks di kiri</button></div>
       <div id="vars" class="stack"></div>` : '<p class="muted">Aktifkan dengan mengisi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>. Sementara itu Anda tetap bisa menulis manual, atau minta Claude lewat MCP (menu Hubungkan Claude).</p>'}
     </div></div>`;
-  $('#rc').value = post?.reply_control || '';
+  $('#rc').value = post?.reply_control || ''; pickers(v);
   const text = $('#text'); const upd = () => { const n = len(text.value); const c = $('#cnt'); c.textContent = `${n}/500`; c.className = 'counter' + (n > 500 ? ' over' : ''); };
   text.addEventListener('input', upd); upd();
   const body = () => ({
@@ -257,9 +272,10 @@ VIEWS.plan = async (v) => {
       const brand = $('[name=brand]').value;
       const { items } = await api('POST', '/api/ai/weekly-plan', { brand_id: brand, goal: $('#goal').value, promo: $('#promo').value, days: $('#days').value });
       $('#out').innerHTML = items.map((it, i) => `<div class="card stack" data-i="${i}"><div class="row between"><b>Hari ${i + 1} · ${esc(it.pillar || '')}</b><label class="row" style="font-weight:400"><input type="checkbox" checked style="width:auto" class="inc"> Simpan</label></div>
-        <label>Tayang (WIB)<input type="datetime-local" class="w" value="${toInput(it.scheduled_at)}"></label>
+        <label>Tayang (WIB)<input class="w dtp" value="${toInput(it.scheduled_at)}" placeholder="Pilih tanggal &amp; jam"></label>
         <textarea class="t">${esc(it.text)}</textarea><input class="tg" value="${esc(it.topic_tag || '')}" placeholder="topic tag"><span class="counter">${it.length}/500</span></div>`).join('') +
         `<div><button class="btn primary" id="saveall">Simpan yang dicentang sebagai draft</button></div>`;
+      pickers($('#out'));
       $('#saveall').onclick = (e2) => busy(e2.target, async () => {
         let n = 0;
         for (const c of $$('#out [data-i]')) {
