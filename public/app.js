@@ -45,6 +45,55 @@ const pickers = (root = document) => {
 const busy = async (btn, fn) => { btn.disabled = true; try { return await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; } };
 const params = () => new URLSearchParams((location.hash.split('?')[1] || ''));
 
+/* ---------- Modal (pengganti alert/confirm/prompt bawaan browser) ---------- */
+const ui = (() => {
+  let seq = 0;
+  function open({ title, intro = '', quote = '', quoteLabel = 'Post asli', field = null, ok = 'OK', cancel = 'Batal', danger = false, hint = '' }) {
+    return new Promise((resolve) => {
+      const id = `m${++seq}`; const prev = document.activeElement; const root = document.createElement('div');
+      root.className = 'modal-back'; root.setAttribute('role', 'presentation');
+      const f = field;
+      root.innerHTML = `<form class="modal" role="dialog" aria-modal="true" aria-labelledby="${id}t" novalidate>
+        <div class="modal-head"><h3 id="${id}t">${esc(title)}</h3><button type="button" class="icon-btn modal-x" data-m="cancel" aria-label="Tutup">${ico('close')}</button></div>
+        <div class="modal-body">
+          ${intro ? `<p class="muted" style="margin:0">${esc(intro)}</p>` : ''}
+          ${quote ? `<div class="modal-quote"><span class="small muted">${esc(quoteLabel)}</span><div>${esc(quote)}</div></div>` : ''}
+          ${f ? `<label>${esc(f.label)}<textarea name="v" rows="${f.rows || 5}" placeholder="${esc(f.placeholder || '')}" ${f.max ? `data-max="${f.max}"` : ''}>${esc(f.value || '')}</textarea></label>
+            <div class="row between small"><span class="muted">${esc(hint)}</span>${f.max ? `<span class="counter" data-cnt>0/${f.max}</span>` : ''}</div>` : ''}
+          <p class="err small" data-err></p>
+        </div>
+        <div class="modal-foot"><button type="button" class="btn" data-m="cancel">${esc(cancel)}</button><button type="submit" class="btn ${danger ? 'danger-solid' : 'primary'}">${esc(ok)}</button></div></form>`;
+      document.body.appendChild(root); document.body.classList.add('modal-open');
+      const form = $('form', root); const ta = $('textarea', form); const err = $('[data-err]', form);
+      const close = (val) => { root.remove(); if (!$('.modal-back')) document.body.classList.remove('modal-open'); document.removeEventListener('keydown', onKey, true); try { prev?.focus?.(); } catch { /* abaikan */ } resolve(val); };
+      const count = () => { if (!ta?.dataset.max) return; const n = len(ta.value); const c = $('[data-cnt]', form); c.textContent = `${n}/${ta.dataset.max}`; c.className = 'counter' + (n > Number(ta.dataset.max) ? ' over' : ''); };
+      const submit = () => {
+        if (!f) return close(true);
+        const v = ta.value.trim();
+        if (!v && !f.optional) { err.textContent = 'Kolom ini wajib diisi.'; return ta.focus(); }
+        if (f.max && len(v) > f.max) { err.textContent = `Terlalu panjang: maksimal ${f.max} karakter.`; return ta.focus(); }
+        close(v);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(f ? null : false); }
+        else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && f) { e.preventDefault(); submit(); }
+        else if (e.key === 'Tab') { const els = $$('button, textarea, input, [href]', form).filter((x) => !x.disabled); if (!els.length) return; const first = els[0]; const last = els[els.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
+      };
+      document.addEventListener('keydown', onKey, true);
+      form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+      root.addEventListener('mousedown', (e) => { if (e.target === root) close(f ? null : false); });
+      $$('[data-m=cancel]', form).forEach((b) => b.addEventListener('click', () => close(f ? null : false)));
+      if (ta) { ta.addEventListener('input', () => { err.textContent = ''; count(); }); count(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } else $('button[type=submit]', form).focus();
+    });
+  }
+  return {
+    /** true bila dikonfirmasi, false bila dibatalkan */
+    confirm: (o) => open({ ...o, title: o.title || 'Konfirmasi', intro: o.message || '' }),
+    /** teks yang diisi (string, boleh kosong bila optional) atau null bila dibatalkan */
+    ask: (o) => open({ ...o, field: { label: o.label, placeholder: o.placeholder, max: o.max, value: o.value, rows: o.rows, optional: o.optional }, intro: o.intro || '' }),
+  };
+})();
+
 /* ---------- auth ---------- */
 function showLogin() { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
 $('#loginForm').addEventListener('submit', async (e) => {
@@ -82,7 +131,7 @@ const ICON = {
   team: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>',
-  check: '<path d="M20 6 9 17l-5-5"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>', send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  close: '<path d="M18 6 6 18M6 6l12 12"/>', check: '<path d="M20 6 9 17l-5-5"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>', send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
 };
 const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
 // [id, label, peran minimal, grup]
@@ -197,7 +246,7 @@ VIEWS.compose = async (v) => {
       await save(); await api('POST', `/api/posts/${post.id}/approve`, { scheduled_at: fromInput($('#when').value) }); toast('Dijadwalkan.'); location.hash = '#/queue';
     });
     $('#now').onclick = (e) => busy(e.target, async () => {
-      if (!confirm('Publish sekarang ke Threads?')) return;
+      if (!(await ui.confirm({ title: 'Publish sekarang?', message: 'Post langsung tayang di Threads untuk akun yang dipilih, tanpa menunggu jadwal atau approval.', ok: 'Publish sekarang' }))) return;
       await save(); const p = await api('POST', `/api/posts/${post.id}/publish-now`);
       if (p.status === 'failed') throw new Error(p.error); toast('Terbit!'); location.hash = '#/queue';
     });
@@ -234,10 +283,10 @@ VIEWS.queue = async (v) => {
     const id = btn.closest('tr').dataset.id; const act = btn.dataset.act;
     await busy(btn, async () => {
       if (act === 'edit') return (location.hash = `#/compose?edit=${id}`);
-      if (act === 'delete' && !confirm('Hapus post ini?')) return;
-      if (act === 'now' && !confirm('Publish sekarang ke Threads?')) return;
+      if (act === 'delete' && !(await ui.confirm({ title: 'Hapus post ini?', message: 'Post dihapus dari antrean dan tidak bisa dikembalikan. Post yang sudah terbit di Threads tidak ikut terhapus.', ok: 'Hapus', danger: true }))) return;
+      if (act === 'now' && !(await ui.confirm({ title: 'Publish sekarang?', message: 'Post langsung tayang di Threads tanpa menunggu jadwal.', ok: 'Publish sekarang' }))) return;
       let payload;
-      if (act === 'reject') payload = { note: prompt('Catatan untuk penulis (opsional):') || '' };
+      if (act === 'reject') { const note = await ui.ask({ title: 'Kembalikan post ke penulis', label: 'Catatan untuk penulis (opsional)', placeholder: 'mis. Tolong ganti foto dan tambah info ukuran', optional: true, max: 500, rows: 4, ok: 'Kembalikan' }); if (note === null) return; payload = { note }; }
       if (act === 'approve') { const p = rows.find((r) => r.id === id); if (!p.scheduled_at) { toast('Tentukan jadwal dulu.', true); return (location.hash = `#/compose?edit=${id}`); } }
       if (act === 'delete') await api('DELETE', `/api/posts/${id}`);
       else { const r = await api('POST', `/api/posts/${id}/${act === 'now' ? 'publish-now' : act}`, payload); if (r.status === 'failed') throw new Error(r.error); }
@@ -309,7 +358,7 @@ VIEWS.inbox = async (v) => {
           $('.opts', card).innerHTML = (r.suggestions[0]?.options || []).map((o) => `<button class="btn small" style="text-align:left" data-o="1">${esc(o)}</button>`).join('');
         }
         if (a === 'hide') { await api('POST', `/api/brands/${id}/replies/${x.reply.id}/hide`, { hide: true }); toast('Disembunyikan.'); }
-        if (a === 'send') { const t = $('.rt', card).value.trim(); if (!t) throw new Error('Tulis balasan dulu.'); if (!confirm('Kirim balasan ini ke Threads?')) return; await api('POST', `/api/brands/${id}/replies/${x.reply.id}/reply`, { text: t }); toast('Balasan terkirim.'); $('.rt', card).value = ''; }
+        if (a === 'send') { const t = $('.rt', card).value.trim(); if (!t) throw new Error('Tulis balasan dulu.'); if (!(await ui.confirm({ title: 'Kirim balasan?', message: 'Balasan tampil publik atas nama brand.', quote: t, quoteLabel: 'Balasan Anda', ok: 'Kirim balasan' }))) return; await api('POST', `/api/brands/${id}/replies/${x.reply.id}/reply`, { text: t }); toast('Balasan terkirim.'); $('.rt', card).value = ''; }
       });
     };
   });
@@ -385,7 +434,7 @@ VIEWS.brands = async (v) => {
     busy($('button[type=submit]', f), async () => { await api('PUT', `/api/brands/${f.dataset.id}`, d); toast('Brand tersimpan.'); }); };
   v.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('form').dataset.id;
     if (x === 'perm') return checkPerm(e.target, id, brands.find((y) => y.id === id));
-    busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/brands/${id}/refresh-token`); if (x === 'disc') { if (!confirm('Putuskan koneksi akun ini?')) return; await api('DELETE', `/api/brands/${id}/connection`); } toast('Berhasil.'); route(); }); };
+    busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/brands/${id}/refresh-token`); if (x === 'disc') { if (!(await ui.confirm({ title: 'Putuskan akun ini?', message: 'Token Threads dihapus dari Hub. Posting terjadwal untuk akun ini akan gagal sampai Anda menghubungkannya lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/brands/${id}/connection`); } toast('Berhasil.'); route(); }); };
 };
 
 /* ---------- Hubungkan Claude ---------- */
@@ -455,7 +504,7 @@ VIEWS.control = async (v) => {
     });
   };
   v.onclick = (e) => {
-    if (e.target.id === 'revall') busy(e.target, async () => { if (!confirm('Putuskan semua sesi Claude?')) return; await api('DELETE', '/api/claude/sessions'); toast('Semua sesi diputus.'); route(); });
+    if (e.target.id === 'revall') busy(e.target, async () => { if (!(await ui.confirm({ title: 'Putuskan semua sesi Claude?', message: 'Semua konektor claude.ai yang terhubung langsung terputus dan harus menghubungkan ulang.', ok: 'Putuskan semua', danger: true }))) return; await api('DELETE', '/api/claude/sessions'); toast('Semua sesi diputus.'); route(); });
     if (e.target.dataset.rev) busy(e.target, async () => { await api('DELETE', `/api/claude/sessions/${e.target.closest('tr').dataset.id}`); toast('Sesi diputus.'); route(); });
   };
 };
@@ -525,7 +574,7 @@ VIEWS.meta = async (v) => {
   };
   v.onclick = (e) => {
     if (e.target.id === 'cp') busy(e.target, async () => { await navigator.clipboard.writeText($('#ru').value); toast('Alamat disalin.'); });
-    if (e.target.id === 'gclear') busy(e.target, async () => { if (!confirm('Hapus kredensial global? Akun yang sudah terhubung tetap jalan, tetapi tidak bisa menghubungkan akun baru.')) return; await api('PUT', '/api/settings/meta', { clear: true, mode: 'sim' }); toast('Kredensial global dihapus.'); route(); });
+    if (e.target.id === 'gclear') busy(e.target, async () => { if (!(await ui.confirm({ title: 'Hapus kredensial global?', message: 'Akun yang sudah terhubung tetap jalan, tetapi Anda tidak bisa menghubungkan akun baru sampai kredensial diisi lagi.', ok: 'Hapus kredensial', danger: true }))) return; await api('PUT', '/api/settings/meta', { clear: true, mode: 'sim' }); toast('Kredensial global dihapus.'); route(); });
     if (e.target.dataset.x === 'bclear') busy(e.target, async () => { await api('PUT', `/api/brands/${e.target.closest('form').dataset.id}/credentials`, { clear: true }); toast('Brand kembali memakai kredensial global.'); route(); });
   };
 };
@@ -592,7 +641,7 @@ VIEWS.research = async (v) => {
     if (a === 'copy') return copyText(last.ins.post_ideas[e.target.closest('[data-idea]').dataset.idea].text);
     if (a === 'draft') return busy(e.target, async () => { await api('POST', '/api/posts', { brand_id: last.brand_id, text: last.ins.post_ideas[e.target.closest('[data-idea]').dataset.idea].text }); toast('Draft dibuat di Antrean.'); });
     if (a === 'open') { const r = saves.find((x) => x.id === e.target.closest('[data-sid]').dataset.sid); last = { q: r.query, posts: r.result, brand_id: r.brand_id || brands[0].id, d: { search_mode: r.mode, search_type: r.search_type, media_type: r.media_type } }; show(); return $('#res').scrollIntoView(); }
-    if (a === 'del') return busy(e.target, async () => { if (!confirm('Hapus riset tersimpan ini?')) return; await api('DELETE', `/api/research/saves/${e.target.closest('[data-sid]').dataset.sid}`); route(); });
+    if (a === 'del') return busy(e.target, async () => { if (!(await ui.confirm({ title: 'Hapus riset tersimpan?', message: 'Hasil riset ini dihapus dari Hub.', ok: 'Hapus', danger: true }))) return; await api('DELETE', `/api/research/saves/${e.target.closest('[data-sid]').dataset.sid}`); route(); });
   };
 };
 
@@ -622,7 +671,7 @@ VIEWS.mentions = async (v) => {
   v.onclick = (e) => {
     if (e.target.id === 'col') return busy(e.target, async () => { const r = await api('POST', '/api/mentions/collect', { brand_id: bid }); toast(`${r.added} mention baru dari ${r.total} yang ditemukan.`); route(); });
     const a = e.target.dataset.a; if (!a) return; const id = e.target.closest('[data-id]').dataset.id; const m = data.items.find((x) => x.id === id);
-    if (a === 'reply') return busy(e.target, async () => { const t = prompt(`Balasan untuk @${m.username} (maks 500 karakter):`); if (!t || !t.trim()) return; await api('POST', `/api/mentions/${encodeURIComponent(id)}/reply`, { text: t.trim() }); toast('Balasan terkirim.'); route(); });
+    if (a === 'reply') return busy(e.target, async () => { const t = await ui.ask({ title: `Balas @${m.username}`, quote: m.text, quoteLabel: 'Mention', label: 'Balasan Anda', placeholder: 'Tulis balasan…', max: 500, rows: 5, ok: 'Kirim balasan', hint: 'Balasan tampil publik atas nama brand. Ctrl+Enter untuk kirim.' }); if (!t) return; await api('POST', `/api/mentions/${encodeURIComponent(id)}/reply`, { text: t }); toast('Balasan terkirim.'); route(); });
     if (a === 'cand') return busy(e.target, async () => { const r = await api('POST', '/api/creators', { username: m.username, source: 'mention', sample_url: m.permalink, brand_id: bid, lookup: true, lookup_brand_id: bid }); toast(r.existed ? 'Sudah ada di daftar kandidat.' : r.lookup_error ? `Ditambahkan. Data profil belum terambil: ${r.lookup_error}` : 'Ditambahkan ke Kolaborasi.', !!r.lookup_error); });
   };
   const bs = $('[name=brand]', v); if (bs) bs.onchange = () => { location.hash = `#/mentions?brand=${bs.value}`; };
@@ -678,9 +727,9 @@ VIEWS.creators = async (v) => {
     const a = e.target.dataset.a; if (!a) return; const card = e.target.closest('[data-id]'); const id = card.dataset.id; const c = all_.find((x) => x.id === id);
     const lb = c.brand_id || brands[0].id;
     if (a === 'lookup') return busy(e.target, async () => { await api('POST', `/api/creators/${id}/lookup`, { brand_id: lb }); toast('Profil diperbarui.'); route(); });
-    if (a === 'del') return busy(e.target, async () => { if (!confirm(`Hapus @${c.username} dari daftar?`)) return; await api('DELETE', `/api/creators/${id}`); route(); });
+    if (a === 'del') return busy(e.target, async () => { if (!(await ui.confirm({ title: `Hapus @${c.username}?`, message: 'Kandidat dan catatan negosiasinya dihapus dari daftar Kolaborasi.', ok: 'Hapus', danger: true }))) return; await api('DELETE', `/api/creators/${id}`); route(); });
     if (a === 'ai') return busy(e.target, async () => {
-      const offer = prompt('Tawaran yang boleh disebut dalam pesan (kosongkan untuk "produk gratis untuk dicoba"):') ?? '';
+      const offer = await ui.ask({ title: `Draf pesan untuk @${c.username}`, label: 'Tawaran yang boleh disebut (opsional)', placeholder: 'Kosongkan untuk "produk gratis untuk dicoba"', optional: true, max: 300, rows: 3, ok: 'Buat draf' }); if (offer === null) return;
       const r = await api('POST', '/api/ai/outreach', { brand_id: lb, creator_id: id, offer });
       $('[data-out]', card).innerHTML = r.drafts.map((d, i) => `<div class="card stack" data-d="${i}"><div class="small muted">${esc(d.label)}</div><div style="white-space:pre-wrap">${esc(d.message)}</div><div><button type="button" class="btn small" data-a="copy">Salin</button></div></div>`).join('');
       $('[data-out]', card).onclick = (ev) => { if (ev.target.dataset.a === 'copy') copyText(r.drafts[ev.target.closest('[data-d]').dataset.d].message); ev.stopPropagation(); };
@@ -702,7 +751,7 @@ VIEWS.team = async (v) => {
   v.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const u = users.find((y) => y.id === e.target.closest('tr').dataset.id);
     busy(e.target, async () => {
       if (x === 'toggle') { await api('PUT', `/api/users/${u.id}`, { active: !u.active }); return route(); }
-      if (x === 'token') { if (!confirm(`Buat API token baru untuk ${u.name}? Token lama (jika ada) tidak berlaku lagi.`)) return;
+      if (x === 'token') { if (!(await ui.confirm({ title: `Buat API token untuk ${u.name}?`, message: 'Token lama (jika ada) langsung tidak berlaku. Token baru hanya ditampilkan sekali.', ok: 'Buat token' }))) return;
         const r = await api('POST', `/api/users/${u.id}/api-token`); $('#tok').innerHTML = `<div class="card stack" style="margin-top:14px"><h3>API token ${esc(u.name)}</h3><p class="small err">Salin sekarang, token tidak akan ditampilkan lagi.</p><pre>${esc(r.token)}</pre></div>`; }
     }); };
 };
