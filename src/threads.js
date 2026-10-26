@@ -373,3 +373,45 @@ export async function profileLookup(brand, username) {
     access_token: tokenOf(brand),
   });
 }
+
+/* ---------------- Cek izin (hanya panggilan baca, tanpa efek samping) ---------------- */
+export const ALL_SCOPES = [...SCOPES, ...EXTRA_SCOPES];
+/**
+ * Menguji tiap izin dengan panggilan baca ringan. Hasil per izin: { status: ok | gagal | belum_diminta | tidak_dicek | belum_bisa, detail }.
+ * threads_content_publish dan threads_manage_replies hanya bisa diuji dengan memposting/membalas, jadi tidak diuji di sini.
+ */
+export async function checkPermissions(brand) {
+  const res = {};
+  if (isDryRun(brand)) {
+    for (const sc of ALL_SCOPES) res[sc] = { status: 'ok', detail: 'simulasi' };
+    return res;
+  }
+  const run = async (scope, fn) => {
+    try {
+      const r = await fn();
+      res[scope] = typeof r === 'object' && r ? r : { status: 'ok', detail: r || '' };
+    } catch (e) {
+      res[scope] = { status: 'gagal', detail: e.message };
+    }
+  };
+  await run('threads_basic', async () => {
+    const r = await call('GET', `${V}/me`, { fields: 'id,username', access_token: tokenOf(brand) });
+    return `@${r.username}`;
+  });
+  await run('threads_manage_insights', async () => { await userInsights(brand, 7); });
+  await run('threads_read_replies', async () => {
+    const p = await call('GET', `${V}/me/threads`, { fields: 'id', limit: 1, access_token: tokenOf(brand) });
+    const id = p.data?.[0]?.id;
+    if (!id) return { status: 'belum_bisa', detail: 'Belum ada post untuk dicek.' };
+    await listReplies(brand, id);
+  });
+  for (const sc of ['threads_content_publish', 'threads_manage_replies']) res[sc] = { status: 'tidak_dicek', detail: 'Hanya bisa diuji dengan memposting atau membalas.' };
+  if (!extraScopesOn()) {
+    for (const sc of EXTRA_SCOPES) res[sc] = { status: 'belum_diminta', detail: 'Izin tambahan belum diaktifkan di Pengaturan Meta.' };
+  } else {
+    await run('threads_keyword_search', async () => { await keywordSearch(brand, { q: 'kebaya', limit: 1 }); });
+    await run('threads_manage_mentions', async () => { await listMentions(brand, { days: 1 }); });
+    await run('threads_profile_discovery', async () => { await profileLookup(brand, 'threads'); });
+  }
+  return res;
+}

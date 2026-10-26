@@ -22,8 +22,11 @@ const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 
 const publicBrand = (b) => {
   if (!b) return null;
-  const { token_enc, app_secret_enc, ...rest } = b;
-  return { ...rest, pillars: JSON.parse(b.pillars || '[]'), connected: !!token_enc, simulated: T.isDryRun(b), has_own_creds: !!(b.app_id && app_secret_enc) };
+  const { token_enc, app_secret_enc, granted_scopes, ...rest } = b;
+  // Akun yang terhubung sebelum izin dicatat dianggap hanya menyetujui izin dasar.
+  let granted = [];
+  if (token_enc) { try { granted = JSON.parse(granted_scopes || 'null') || T.SCOPES; } catch { granted = T.SCOPES; } }
+  return { ...rest, granted_scopes: granted, all_scopes: T.ALL_SCOPES, pillars: JSON.parse(b.pillars || '[]'), connected: !!token_enc, simulated: T.isDryRun(b), has_own_creds: !!(b.app_id && app_secret_enc) };
 };
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, active: !!u.active, has_api_token: !!u.api_token_hash });
 const parsePost = (p) => (p ? { ...p, media_urls: JSON.parse(p.media_urls || '[]') } : null);
@@ -167,8 +170,8 @@ export function createApp() {
     try {
       const r = await T.exchangeCode(String(code), brandOr404(st.brand_id));
       run(
-        'UPDATE brands SET token_enc=?, token_expires_at=?, token_refreshed_at=?, threads_user_id=?, username=? WHERE id=?',
-        C.encrypt(r.token), new Date(Date.now() + r.expiresIn * 1000).toISOString(), now(), r.userId, r.username, st.brand_id,
+        'UPDATE brands SET token_enc=?, token_expires_at=?, token_refreshed_at=?, threads_user_id=?, username=?, granted_scopes=? WHERE id=?',
+        C.encrypt(r.token), new Date(Date.now() + r.expiresIn * 1000).toISOString(), now(), r.userId, r.username, JSON.stringify(T.scopes()), st.brand_id,
       );
       A(req, 'brand.connected', { brand: st.brand_id, username: r.username });
       res.redirect('/#/brands?connect=ok');
@@ -394,6 +397,15 @@ export function createApp() {
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
     if (!b.token_enc && !T.isDryRun(b)) return bad(res, 'Akun belum terhubung ke Threads.');
     res.json(await brandInsights(b, Math.min(90, Number(req.query.days) || 7)));
+  }));
+
+  // Cek izin: panggilan baca ringan per izin (juga tercatat sebagai API call di halaman Testing Meta)
+  api.post('/brands/:id/permission-check', humanOnly, need('manager'), ah(async (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    if (!b.token_enc && !T.isDryRun(b)) return bad(res, 'Akun belum terhubung ke Threads.');
+    A(req, 'brand.permission_check', { brand: b.id });
+    res.json({ checked_at: now(), results: await T.checkPermissions(b) });
   }));
 
   // ----- Claude (AI)

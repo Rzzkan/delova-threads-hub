@@ -143,3 +143,17 @@ test('util: engagement rate & normalisasi username', () => {
   assert.equal(R.cleanUsername('@Abc.Def'), 'abc.def');
   assert.equal(R.cleanUsername('https://threads.net/@xy_z/post/1'), 'xy_z');
 });
+
+test('cek izin: status izin per brand, cek mode simulasi, viewer ditolak', async () => {
+  const brands = (await admin('GET', '/api/brands')).json;
+  assert.ok(brands.every((b) => Array.isArray(b.granted_scopes) && b.all_scopes.length === 8));
+  assert.equal((await call(viewerCookie, 'POST', '/api/brands/wardrobe/permission-check')).status, 403);
+  assert.equal((await admin('POST', '/api/brands/nope/permission-check')).status, 404);
+  const ok = await admin('POST', '/api/brands/wardrobe/permission-check');
+  assert.equal(ok.status, 200);
+  assert.equal(Object.keys(ok.json.results).length, 8);
+  assert.ok(Object.values(ok.json.results).every((r) => r.status === 'ok'));
+  await admin('PUT', '/api/settings/meta', { app_id: '111122223333444', app_secret: 'globalsecret0123456789abcdef', mode: 'live' });
+  assert.equal((await admin('POST', '/api/brands/wardrobe/permission-check')).status, 400); // belum terhubung
+  await admin('PUT', '/api/settings/meta', { mode: 'sim', clear: true });
+});

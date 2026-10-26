@@ -119,6 +119,9 @@ pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]
 .chips { @apply flex flex-wrap gap-2; }
 .chip { @apply rounded-full border border-line bg-panel px-3.5 py-1 text-[.82rem] font-medium text-ink no-underline hover:border-accent hover:text-accent; }
 .page-head { @apply mb-5; }
+.permbox { @apply rounded-md border border-line bg-bg p-3; }
+.perm { @apply inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2.5 py-0.5 text-xs font-semibold text-muted; }
+.perm.granted, .perm.ok { @apply border-ok/30 bg-ok/10 text-ok; } .perm.bad { @apply border-bad/30 bg-bad/10 text-bad; } .perm.no { @apply text-muted; }
 
 @media (max-width: 800px) {
   .stats { @apply grid-cols-2; }

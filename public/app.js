@@ -336,6 +336,34 @@ VIEWS.insights = async (v) => {
 };
 
 /* ---------- Brand ---------- */
+const PERM_LABEL = {
+  threads_basic: 'Profil dasar', threads_content_publish: 'Publish post', threads_read_replies: 'Baca balasan', threads_manage_replies: 'Kelola balasan',
+  threads_manage_insights: 'Insight', threads_keyword_search: 'Cari kata kunci', threads_manage_mentions: 'Mention', threads_profile_discovery: 'Profil publik',
+};
+const permChip = (sc, state, tip = '') => {
+  const ic = { ok: '✓', granted: '✓', no: '✕', bad: '⚠', na: '–' }[state];
+  return `<span class="perm ${state}" data-scope="${sc}" title="${esc(tip || sc)}">${ic} ${esc(PERM_LABEL[sc] || sc)}</span>`;
+};
+const permBlock = (b) => {
+  if (!b.connected) return '';
+  const missing = b.all_scopes.filter((x) => !b.granted_scopes.includes(x));
+  return `<div class="permbox stack" data-perm><div class="row between"><b>Izin Threads</b>${can('manager') ? '<button type="button" class="btn small" data-x="perm">Cek izin sekarang</button>' : ''}</div>
+    <div class="chips">${b.all_scopes.map((sc) => permChip(sc, b.granted_scopes.includes(sc) ? 'granted' : 'no', b.granted_scopes.includes(sc) ? `${sc}: diminta dan disetujui saat akun dihubungkan` : `${sc}: belum diminta saat akun dihubungkan`)).join('')}</div>
+    <div class="small muted" data-pnote>${missing.length ? `Belum diotorisasi: ${missing.map((x) => PERM_LABEL[x]).join(', ')}. ${can('admin') ? 'Aktifkan "Izin riset, mention & kolaborasi" di Pengaturan Meta, lalu putuskan dan hubungkan ulang akun ini.' : 'Minta admin mengaktifkan izin tambahan, lalu hubungkan ulang akun ini.'}` : 'Semua izin sudah diotorisasi saat akun dihubungkan.'}</div>
+    <div class="small muted">✓ diberikan · ✕ belum diminta · ⚠ ditolak Meta (biasanya belum disetujui App Review). Publish dan Kelola balasan hanya bisa dibuktikan dengan memposting/membalas. Tekan "Cek izin sekarang" untuk menguji ke Threads.</div></div>`;
+};
+const checkPerm = (btn, id, brand) => busy(btn, async () => {
+  const r = await api('POST', `/api/brands/${id}/permission-check`);
+  const box = btn.closest('[data-perm]'); const bad_ = [];
+  for (const [sc, v] of Object.entries(r.results)) {
+    const granted = brand.granted_scopes.includes(sc);
+    const state = v.status === 'ok' ? 'ok' : v.status === 'gagal' ? 'bad' : v.status === 'belum_diminta' ? 'no' : granted ? 'granted' : 'no';
+    const chip = $(`[data-scope="${sc}"]`, box); if (chip) chip.outerHTML = permChip(sc, state, `${sc}: ${v.detail || v.status}`);
+    if (v.status === 'gagal') bad_.push(`${PERM_LABEL[sc]}: ${v.detail}`);
+  }
+  $('[data-pnote]', box).innerHTML = bad_.length ? `Ditolak/gagal:<br>${bad_.map(esc).join('<br>')}` : 'Semua izin yang bisa diuji berhasil dipakai (✓ hijau).';
+  toast(bad_.length ? `${bad_.length} izin bermasalah, lihat detail.` : 'Cek izin selesai.', bad_.length > 0);
+});
 VIEWS.brands = async (v) => {
   brands = await api('GET', '/api/brands');
   const cq = params().get('connect');
@@ -345,6 +373,7 @@ VIEWS.brands = async (v) => {
     <div class="row between"><h2>${esc(b.name)}</h2>${b.connected ? `<span class="badge s-published">@${esc(b.username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
     ${b.connected ? `<div class="small muted">Token berlaku s/d ${wib(b.token_expires_at)} (diperpanjang otomatis).</div>` : ''}
     <div class="row">${can('manager') && !b.connected ? `<a class="btn small primary" href="/auth/threads/start?brand=${b.id}">Hubungkan ke Threads</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}</div>
+    ${permBlock(b)}
     <label>Deskripsi<input name="description" value="${esc(b.description)}" ${can('manager') ? '' : 'disabled'}></label>
     <label>Brand voice<textarea name="voice" ${can('manager') ? '' : 'disabled'}>${esc(b.voice)}</textarea></label>
     <label>Content pillars (satu per baris)<textarea name="pillars" ${can('manager') ? '' : 'disabled'}>${esc(b.pillars.join('\n'))}</textarea></label>
@@ -355,6 +384,7 @@ VIEWS.brands = async (v) => {
   v.onsubmit = (e) => { e.preventDefault(); const f = e.target; const d = Object.fromEntries(new FormData(f)); d.pillars = d.pillars.split('\n').map((s) => s.trim()).filter(Boolean);
     busy($('button[type=submit]', f), async () => { await api('PUT', `/api/brands/${f.dataset.id}`, d); toast('Brand tersimpan.'); }); };
   v.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('form').dataset.id;
+    if (x === 'perm') return checkPerm(e.target, id, brands.find((y) => y.id === id));
     busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/brands/${id}/refresh-token`); if (x === 'disc') { if (!confirm('Putuskan koneksi akun ini?')) return; await api('DELETE', `/api/brands/${id}/connection`); } toast('Berhasil.'); route(); }); };
 };
 

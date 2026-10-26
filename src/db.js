@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS creators (
 `);
 
 // Migrasi ringan: kredensial Meta opsional per brand (override kredensial global)
-for (const col of ['app_id TEXT', 'app_secret_enc TEXT']) {
+for (const col of ['app_id TEXT', 'app_secret_enc TEXT', 'granted_scopes TEXT']) {
   try { db.exec(`ALTER TABLE brands ADD COLUMN ${col}`); } catch { /* kolom sudah ada */ }
 }
 for (const [k, v] of Object.entries(SETTING_DEFAULTS)) {
