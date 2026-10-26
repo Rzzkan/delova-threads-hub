@@ -11,6 +11,7 @@ import * as AI from './claude.js';
 import { startScheduler, publishPost, threadsLength } from './scheduler.js';
 import { registerTools } from './mcp-tools.js';
 import { mountOAuth, baseUrl } from './oauth.js';
+import * as M from './media.js';
 import { mountLegal } from './legal.js';
 import * as R from './research.js';
 
@@ -278,6 +279,7 @@ export function createApp() {
       b.scheduled_at ? new Date(b.scheduled_at).toISOString() : null,
       req.via !== 'cookie' ? 'claude' : ['claude', 'ai'].includes(b.source) ? b.source : 'dashboard', req.user.id, now(), now(),
     );
+    M.linkMedia(id, b.media_urls);
     A(req, 'post.created', { id, brand: b.brand_id, source: b.source });
     res.status(201).json(parsePost(get('SELECT * FROM posts WHERE id=?', id)));
   });
@@ -308,6 +310,7 @@ export function createApp() {
       b.scheduled_at !== undefined ? (b.scheduled_at ? new Date(b.scheduled_at).toISOString() : null) : p.scheduled_at,
       status, now(), p.id,
     );
+    if (b.media_urls !== undefined) M.linkMedia(p.id, b.media_urls);
     res.json(parsePost(get('SELECT * FROM posts WHERE id=?', p.id)));
   });
 
@@ -755,6 +758,34 @@ export function createApp() {
     res.json(all(`SELECT a.*, u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
                   WHERE a.detail LIKE '%"via":"oauth"%' OR a.detail LIKE '%"via":"token"%' ORDER BY a.id DESC LIMIT 50`)),
   );
+
+  /* ---------------- Media sementara ---------------- */
+  // Unggah mentah (body = isi file). Nama asli di header x-filename, akun di ?brand=
+  api.post('/media', humanOnly, need('editor'), async (req, res) => {
+    const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    const row = await M.saveUpload(req, { mime, originalName: decodeURIComponent(String(req.headers['x-filename'] || '')), brandId: String(req.query.brand || '') || null, userId: req.user.id });
+    A(req, 'media.uploaded', { name: row.name, bytes: row.bytes });
+    res.status(201).json({ name: row.name, url: M.urlFor(baseUrl(), row.name), mime: row.mime, bytes: row.bytes, expires: 'Dihapus otomatis 24 jam setelah post terbit.' });
+  });
+  api.get('/media/usage', need('viewer'), (req, res) => {
+    const r = get('SELECT COUNT(*) AS files, COALESCE(SUM(bytes),0) AS bytes FROM media');
+    res.json({ ...r, max_bytes: M.MAX_TOTAL, keep_hours_after_post: 24 });
+  });
+  api.delete('/media/:name', humanOnly, need('editor'), (req, res) => {
+    const m = get('SELECT * FROM media WHERE name=?', req.params.name);
+    if (!m) return bad(res, 'File tidak ditemukan.', 404);
+    if (m.post_id) return bad(res, 'File masih dipakai post. Hapus dari post-nya dulu.');
+    M.removeMedia(m.name);
+    A(req, 'media.deleted', { name: m.name });
+    res.json({ ok: true });
+  });
+  // Publik tanpa login: Threads mengunduh media lewat URL ini. Nama acak 128-bit.
+  app.get('/media/:name', (req, res) => {
+    const m = M.isMediaName(req.params.name) && get('SELECT mime FROM media WHERE name=?', req.params.name);
+    if (!m) return res.status(404).type('text/plain').send('Tidak ditemukan');
+    res.set({ 'Content-Type': m.mime, 'Cache-Control': 'public, max-age=3600', 'Content-Disposition': 'inline' });
+    res.sendFile(req.params.name, { root: M.MEDIA_DIR, dotfiles: 'deny', headers: { 'Content-Type': m.mime } });
+  });
 
   app.use('/api', api);
 

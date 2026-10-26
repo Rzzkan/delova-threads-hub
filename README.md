@@ -188,3 +188,13 @@ npm install          # sekali, memasang Tailwind (devDependency)
 npm run css          # bangun ulang public/app.css setelah mengubah tailwind/input.css, public/app.js, atau public/index.html
 npm run css:watch    # otomatis saat mengedit
 ```
+
+## Foto & video sementara
+
+Di **Tulis Post** foto/video bisa diunggah langsung (klik atau seret). File disimpan di volume data (`/data/media`),
+dicatat di tabel `media`, dan disajikan publik di `https://<domain>/media/<nama-acak>` karena Threads harus bisa mengunduhnya.
+
+- Dihapus otomatis **24 jam setelah post terbit** (pembersih berjalan tiap 30 menit).
+- Unggahan yang tak pernah dipakai dihapus setelah 48 jam; post yang dihapus ikut membersihkan filenya.
+- Batas: gambar 8 MB, video 50 MB, total penyimpanan `MEDIA_MAX_TOTAL_MB` (default 500).
+- Isi file diperiksa (bukan hanya ekstensi); hanya JPG, PNG, WEBP, GIF, MP4, MOV.

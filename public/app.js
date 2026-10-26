@@ -208,7 +208,11 @@ VIEWS.compose = async (v) => {
       ${post?.review_note ? `<div class="banner">Catatan reviewer: ${esc(post.review_note)}</div>` : ''}
       <label>Isi post <textarea id="text" placeholder="Tulis atau minta ide dari Claude →">${esc(post?.text || '')}</textarea></label>
       <div class="counter" id="cnt">0/500</div>
-      <label>URL gambar/video (opsional, satu per baris, HTTPS publik; 2+ = carousel)<textarea id="media" style="min-height:64px">${esc((post?.media_urls || []).join('\n'))}</textarea></label>
+      <div class="stack" style="gap:8px"><span class="lbl">Foto / video (opsional; 2+ = carousel)</span>
+        <div id="drop" class="dropzone" tabindex="0"><input id="file" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime" hidden />
+          <b>Klik atau seret file ke sini</b><span class="small muted">JPG, PNG, WEBP, GIF (maks 8 MB) · MP4/MOV (maks 50 MB). File disimpan sementara dan <b>dihapus otomatis 24 jam setelah post terbit</b>.</span></div>
+        <div id="thumbs" class="thumbs"></div>
+        <details><summary class="small muted">Atau tempel URL gambar/video sendiri (HTTPS publik, satu per baris)</summary><textarea id="media" style="min-height:64px">${esc((post?.media_urls || []).join('\n'))}</textarea></details></div>
       <div class="grid g2">
         <label>Topic tag (opsional)<input id="tag" value="${esc(post?.topic_tag || '')}" placeholder="mis. KebayaModern" /></label>
         <label>Siapa boleh reply<select id="rc"><option value="">Semua orang</option><option value="accounts_you_follow">Akun yang kami ikuti</option><option value="mentioned_only">Hanya yang di-mention</option><option value="followers_only">Followers</option></select></label>
@@ -230,6 +234,37 @@ VIEWS.compose = async (v) => {
   $('#rc').value = post?.reply_control || ''; pickers(v);
   const text = $('#text'); const upd = () => { const n = len(text.value); const c = $('#cnt'); c.textContent = `${n}/500`; c.className = 'counter' + (n > 500 ? ' over' : ''); };
   text.addEventListener('input', upd); upd();
+  // ---- unggah foto/video (disimpan sementara di server) ----
+  const mediaLines = () => $('#media').value.split('\n').map((x) => x.trim()).filter(Boolean);
+  const isVid = (u) => /\.(mp4|mov)(\?|$)/i.test(u);
+  const paintThumbs = () => {
+    $('#thumbs').innerHTML = mediaLines().map((u, i) => `<div class="thumb">${isVid(u) ? `<video src="${esc(u)}" muted preload="metadata"></video>` : `<img src="${esc(u)}" alt="Media ${i + 1}" loading="lazy" />`}<button type="button" class="thumb-x" data-i="${i}" aria-label="Hapus media ${i + 1}">×</button><span class="thumb-n">${i + 1}</span></div>`).join('');
+  };
+  $('#thumbs').onclick = (e) => {
+    const b = e.target.closest('[data-i]'); if (!b) return;
+    const l = mediaLines(); const [u] = l.splice(Number(b.dataset.i), 1); $('#media').value = l.join('\n'); paintThumbs();
+    const m = /\/media\/([a-f0-9]{32}\.[a-z0-9]+)/.exec(u || ''); if (m && !post) fetch(`/api/media/${m[1]}`, { method: 'DELETE', headers: { 'x-requested-with': 'hub' } }).catch(() => {});
+  };
+  $('#media').addEventListener('input', paintThumbs);
+  const sendFiles = async (files) => {
+    const box = $('#drop'); box.classList.add('busy');
+    try {
+      for (const f of files) {
+        if (mediaLines().length >= 20) { toast('Maksimal 20 media per post.'); break; }
+        const r = await fetch(`/api/media?brand=${encodeURIComponent($('[name=brand]').value)}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { toast(`${f.name}: ${j.error || 'gagal diunggah'}`); continue; }
+        $('#media').value = [...mediaLines(), j.url].join('\n'); paintThumbs();
+      }
+    } finally { box.classList.remove('busy'); $('#file').value = ''; }
+  };
+  $('#drop').onclick = (e) => { if (e.target.id !== 'file') $('#file').click(); };
+  $('#drop').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); } };
+  $('#file').onchange = (e) => sendFiles([...e.target.files]);
+  ['dragenter', 'dragover'].forEach((ev) => $('#drop').addEventListener(ev, (e) => { e.preventDefault(); $('#drop').classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => $('#drop').addEventListener(ev, (e) => { e.preventDefault(); $('#drop').classList.remove('over'); }));
+  $('#drop').addEventListener('drop', (e) => sendFiles([...e.dataTransfer.files]));
+  paintThumbs();
   const body = () => ({
     brand_id: $('[name=brand]').value, text: text.value, topic_tag: $('#tag').value.trim() || null, reply_control: $('#rc').value || null,
     media_urls: $('#media').value.split('\n').map((s) => s.trim()).filter(Boolean), scheduled_at: fromInput($('#when').value),

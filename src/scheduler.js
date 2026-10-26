@@ -2,6 +2,7 @@ import { all, get, run, now, audit } from './db.js';
 import * as T from './threads.js';
 import { encrypt } from './crypto.js';
 import { collectDueMentions } from './research.js';
+import { expireMediaOfPost, cleanupMedia } from './media.js';
 
 const DAILY_LIMIT = 240; // batas resmi Threads: 250 post / 24 jam per akun
 
@@ -32,6 +33,7 @@ export async function publishPost(id, { allowFrom = ['scheduled'], userId = null
       `UPDATE posts SET status='published', published_at=?, threads_media_id=?, permalink=?, updated_at=? WHERE id=?`,
       now(), r.mediaId, r.permalink, now(), id,
     );
+    expireMediaOfPost(id); // foto/video post ini dihapus 24 jam lagi
     audit(userId, 'post.published', { id, brand: brand.id, dryRun: !!r.dryRun });
   } catch (e) {
     run(`UPDATE posts SET status='failed', error=?, updated_at=? WHERE id=?`, String(e.message).slice(0, 500), now(), id);
@@ -70,8 +72,10 @@ export function startScheduler() {
   const a = setInterval(safe(tick), 30_000);
   const b = setInterval(safe(refreshTokens), 6 * 3600 * 1000);
   const c = setInterval(safe(collectDueMentions), 10 * 60_000);
+  const d = setInterval(safe(async () => { const n = cleanupMedia(); if (n) audit(null, 'media.cleanup', { removed: n }); }), 30 * 60_000);
+  setTimeout(safe(async () => { cleanupMedia(); }), 15_000);
   setTimeout(safe(tick), 3000);
   setTimeout(safe(refreshTokens), 10_000);
   setTimeout(safe(collectDueMentions), 20_000);
-  return () => { clearInterval(a); clearInterval(b); clearInterval(c); };
+  return () => { clearInterval(a); clearInterval(b); clearInterval(c); clearInterval(d); };
 }

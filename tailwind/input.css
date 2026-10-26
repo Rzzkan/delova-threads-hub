@@ -119,6 +119,16 @@ pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]
 .chips { @apply flex flex-wrap gap-2; }
 .chip { @apply rounded-full border border-line bg-panel px-3.5 py-1 text-[.82rem] font-medium text-ink no-underline hover:border-accent hover:text-accent; }
 .btn svg { @apply size-4; }
+.dropzone { @apply grid cursor-pointer gap-1 rounded-lg border-2 border-dashed border-line bg-bg p-4 text-center text-sm transition; }
+.dropzone:hover, .dropzone.over, .dropzone:focus-visible { @apply border-accent bg-accent-soft outline-none; }
+.dropzone.busy { @apply cursor-wait opacity-60; }
+.thumbs { @apply grid gap-2; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.thumbs:empty { @apply hidden; }
+.thumb { @apply relative aspect-square overflow-hidden rounded-md border border-line bg-bg; }
+.thumb img, .thumb video { @apply size-full object-cover; }
+.thumb-x { @apply absolute right-1 top-1 grid size-6 cursor-pointer place-items-center rounded-full border-0 bg-black/65 text-base leading-none text-white hover:bg-bad; }
+.thumb-n { @apply absolute bottom-1 left-1 rounded bg-black/60 px-1.5 text-[.7rem] text-white; }
+.lbl { @apply text-sm font-medium; }
 .cal-sums { @apply mb-3 grid gap-2; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
 .cal-sum { @apply grid gap-0.5 rounded-lg border border-line border-l-4 bg-panel px-3 py-2 text-sm shadow-card; border-left-color: var(--c); }
 .cal-sum span { @apply flex items-center gap-2 text-xs text-muted; }
