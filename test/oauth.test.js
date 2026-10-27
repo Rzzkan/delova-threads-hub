@@ -156,6 +156,7 @@ test('kebijakan default: Claude boleh buat draft, tidak boleh setujui/publish/ba
   assert.equal(ap.status, 403);
   assert.match(ap.body.error, /Kontrol Claude/);
   assert.equal((await bearer(tokens.access_token, 'POST', `/api/posts/${postId}/publish-now`)).status, 403);
+  assert.equal((await bearer(tokens.access_token, 'POST', '/api/posts/bulk', { action: 'approve', ids: [postId] })).status, 403); // persetujuan massal khusus manusia
   assert.equal((await bearer(tokens.access_token, 'POST', '/api/brands/scarf/replies/x/reply', { text: 'hi' })).status, 403);
 
   // lewat tool MCP: user_confirmed wajib

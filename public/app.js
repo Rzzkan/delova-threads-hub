@@ -48,7 +48,7 @@ const params = () => new URLSearchParams((location.hash.split('?')[1] || ''));
 /* ---------- Modal (pengganti alert/confirm/prompt bawaan browser) ---------- */
 const ui = (() => {
   let seq = 0;
-  function open({ title, intro = '', quote = '', quoteLabel = 'Post asli', field = null, ok = 'OK', cancel = 'Batal', danger = false, hint = '' }) {
+  function open({ title, intro = '', quote = '', quoteLabel = 'Post asli', field = null, ok = 'OK', cancel = 'Batal', danger = false, hint = '', extra = null }) {
     return new Promise((resolve) => {
       const id = `m${++seq}`; const prev = document.activeElement; const root = document.createElement('div');
       root.className = 'modal-back'; root.setAttribute('role', 'presentation');
@@ -58,6 +58,7 @@ const ui = (() => {
         <div class="modal-body">
           ${intro ? `<p class="muted" style="margin:0">${esc(intro)}</p>` : ''}
           ${quote ? `<div class="modal-quote"><span class="small muted">${esc(quoteLabel)}</span><div>${esc(quote)}</div></div>` : ''}
+          ${extra ? extra.html : ''}
           ${f ? `<label>${esc(f.label)}<textarea name="v" rows="${f.rows || 5}" placeholder="${esc(f.placeholder || '')}" ${f.max ? `data-max="${f.max}"` : ''}>${esc(f.value || '')}</textarea></label>
             <div class="row between small"><span class="muted">${esc(hint)}</span>${f.max ? `<span class="counter" data-cnt>0/${f.max}</span>` : ''}</div>` : ''}
           <p class="err small" data-err></p>
@@ -68,7 +69,7 @@ const ui = (() => {
       const close = (val) => { root.remove(); if (!$('.modal-back')) document.body.classList.remove('modal-open'); document.removeEventListener('keydown', onKey, true); try { prev?.focus?.(); } catch { /* abaikan */ } resolve(val); };
       const count = () => { if (!ta?.dataset.max) return; const n = len(ta.value); const c = $('[data-cnt]', form); c.textContent = `${n}/${ta.dataset.max}`; c.className = 'counter' + (n > Number(ta.dataset.max) ? ' over' : ''); };
       const submit = () => {
-        if (!f) return close(true);
+        if (!f) { if (!extra?.collect) return close(true); const r = extra.collect(form); return r === undefined ? undefined : close(r); }
         const v = ta.value.trim();
         if (!v && !f.optional) { err.textContent = 'Kolom ini wajib diisi.'; return ta.focus(); }
         if (f.max && len(v) > f.max) { err.textContent = `Terlalu panjang: maksimal ${f.max} karakter.`; return ta.focus(); }
@@ -80,6 +81,7 @@ const ui = (() => {
         else if (e.key === 'Tab') { const els = $$('button, textarea, input, [href]', form).filter((x) => !x.disabled); if (!els.length) return; const first = els[0]; const last = els[els.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
       };
       document.addEventListener('keydown', onKey, true);
+      if (extra?.init) extra.init(form, (m) => { err.textContent = m; });
       form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
       root.addEventListener('mousedown', (e) => { if (e.target === root) close(f ? null : false); });
       $$('[data-m=cancel]', form).forEach((b) => b.addEventListener('click', () => close(f ? null : false)));
@@ -90,6 +92,8 @@ const ui = (() => {
     /** true bila dikonfirmasi, false bila dibatalkan */
     confirm: (o) => open({ ...o, title: o.title || 'Konfirmasi', intro: o.message || '' }),
     /** teks yang diisi (string, boleh kosong bila optional) atau null bila dibatalkan */
+    /** modal berisi HTML sendiri: extra = { html, init(form, setError), collect(form) -> nilai | undefined (tahan modal) } */
+    form: (o) => open({ ...o, title: o.title, intro: o.message || '' }),
     ask: (o) => open({ ...o, field: { label: o.label, placeholder: o.placeholder, max: o.max, value: o.value, rows: o.rows, optional: o.optional }, intro: o.intro || '' }),
   };
 })();
@@ -307,14 +311,55 @@ VIEWS.queue = async (v) => {
   v.innerHTML = `<h1>Antrean &amp; Approval</h1>
   <div class="row"><select id="fb" style="width:auto"><option value="">Semua akun</option>${brands.map((b) => `<option value="${b.id}" ${b.id === fb ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
   <select id="fs" style="width:auto"><option value="">Semua status</option>${Object.entries(STATUS).map(([k, l]) => `<option value="${k}" ${k === fs ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-  <div class="card" style="margin-top:12px"><table><thead><tr><th>Akun</th><th>Isi</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
-  ${rows.map((p) => `<tr data-id="${p.id}"><td><b style="color:${brandOf(p.brand_id).color}">${esc(brandOf(p.brand_id).name)}</b><div class="small muted">${esc(p.author || '')}${p.source === 'claude' ? ' · via Claude' : p.source === 'ai' ? ' · AI' : ''}</div></td>
+  <div id="bulk" class="bulkbar hidden"><b id="bn">0 dipilih</b><span class="row">${can('manager') ? '<button type="button" class="btn small primary" data-bulk="approve">Setujui terpilih</button><button type="button" class="btn small" data-bulk="reject">Kembalikan</button>' : ''}${can('editor') ? '<button type="button" class="btn small" data-bulk="submit">Ajukan approval</button>' : ''}<button type="button" class="btn small ghost" data-bulk="clear">Batal pilih</button></span></div>
+  <div class="card" style="margin-top:12px"><table><thead><tr><th style="width:34px">${can('editor') ? `<input type="checkbox" id="all" aria-label="Pilih semua" title="Pilih semua yang bisa diproses" />` : ''}</th><th>Akun</th><th>Isi</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
+  ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && ['pending_approval', 'draft', 'failed', 'scheduled'].includes(p.status) ? `<input type="checkbox" class="pick" aria-label="Pilih post" />` : ''}</td><td><b style="color:${brandOf(p.brand_id).color}">${esc(brandOf(p.brand_id).name)}</b><div class="small muted">${esc(p.author || '')}${p.source === 'claude' ? ' · via Claude' : p.source === 'ai' ? ' · AI' : ''}</div></td>
     <td>${esc(p.text.slice(0, 140))}${p.text.length > 140 ? '…' : ''}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}</td>
     <td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
-    <td><div class="row">${actions(p)}</div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Belum ada post.</td></tr>'}
+    <td><div class="row">${actions(p)}</div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada post.</td></tr>'}
   </tbody></table></div>`;
   const go = () => { location.hash = `#/queue?brand=${$('#fb').value}&status=${$('#fs').value}`; };
   $('#fb').onchange = go; $('#fs').onchange = go;
+  // ---- persetujuan massal ----
+  const picked = () => $$('.pick:checked', v).map((c) => rows.find((r) => r.id === c.closest('tr').dataset.id));
+  const refreshBulk = () => {
+    const n = picked().length; $('#bulk').classList.toggle('hidden', !n); $('#bn').textContent = `${n} post dipilih`;
+    const all = $('#all'); if (all) { const t = $$('.pick', v).length; all.checked = n > 0 && n === t; all.indeterminate = n > 0 && n < t; }
+  };
+  v.addEventListener('change', (e) => {
+    if (e.target.id === 'all') $$('.pick', v).forEach((c) => { c.checked = e.target.checked; });
+    if (e.target.id === 'all' || e.target.classList.contains('pick')) refreshBulk();
+  });
+  const bulkCall = async (action, ids, extra = {}) => {
+    const r = await api('POST', '/api/posts/bulk', { action, ids, ...extra });
+    const label = { approve: 'disetujui & dijadwalkan', reject: 'dikembalikan ke draft', submit: 'diajukan' }[action];
+    toast(`${r.done.length} post ${label}${r.skipped.length ? `, ${r.skipped.length} dilewati` : ''}.`, !r.done.length);
+    if (r.skipped.length) await ui.confirm({ title: `${r.skipped.length} post dilewati`, message: 'Post berikut tidak diproses:', extra: { html: `<ul class="skiplist">${r.skipped.map((s) => { const p = rows.find((x) => x.id === s.id); return `<li><b>${esc(p ? brandOf(p.brand_id).name : s.id)}</b> — ${esc((p?.text || '').slice(0, 60))}<div class="small err">${esc(s.reason)}</div></li>`; }).join('')}</ul>` }, ok: 'Mengerti', cancel: 'Tutup' });
+    route();
+  };
+  $('#bulk').onclick = (e) => {
+    const act = e.target.dataset.bulk; if (!act) return;
+    if (act === 'clear') { $$('.pick:checked', v).forEach((c) => { c.checked = false; }); return refreshBulk(); }
+    busy(e.target, async () => {
+      const sel = picked(); const ids = sel.map((p) => p.id);
+      if (act === 'reject') { const note = await ui.ask({ title: `Kembalikan ${ids.length} post ke penulis`, label: 'Catatan untuk penulis (opsional)', optional: true, max: 300, rows: 3, ok: 'Kembalikan' }); if (note === null) return; return bulkCall('reject', ids, { note }); }
+      if (act === 'submit') { if (!(await ui.confirm({ title: `Ajukan ${ids.length} post?`, message: 'Post draft/gagal yang dipilih dikirim ke antrean approval manajer.', ok: 'Ajukan' }))) return; return bulkCall('submit', ids); }
+      // approve: ringkasan, jadwal otomatis untuk yang kosong, izin untuk jadwal lampau
+      const now = Date.now(); const ok = sel.filter((p) => ['pending_approval', 'draft', 'failed'].includes(p.status));
+      const missing = ok.filter((p) => !p.scheduled_at); const past = ok.filter((p) => p.scheduled_at && Date.parse(p.scheduled_at) < now - 60_000);
+      const byBrand = Object.entries(ok.reduce((a, p) => ((a[brandOf(p.brand_id).name] = (a[brandOf(p.brand_id).name] || 0) + 1), a), {})).map(([k, n]) => `${esc(k)} ${n}`).join(' · ');
+      if (!ok.length) return toast('Tidak ada post yang bisa disetujui di pilihan ini (hanya Draft / Menunggu approval / Gagal).', true);
+      const first = new Date(now + 3600e3); first.setMinutes(Math.ceil(first.getMinutes() / 5) * 5, 0, 0);
+      const html = `<div class="bulksum"><b>${ok.length} post akan disetujui</b><div class="small muted">${byBrand}</div></div>
+        <div class="skiplist plist">${ok.map((p) => `<div class="prow"><span style="color:${brandOf(p.brand_id).color}">●</span><span class="trunc">${esc(p.text.slice(0, 70))}</span><span class="small ${!p.scheduled_at ? 'err' : Date.parse(p.scheduled_at) < now - 60000 ? 'err' : 'muted'}">${p.scheduled_at ? esc(wib(p.scheduled_at).replace(' WIB', '')) : 'belum ada jadwal'}</span></div>`).join('')}</div>
+        ${missing.length ? `<div class="stack" style="gap:8px"><b>${missing.length} post belum punya jadwal — atur otomatis</b><label>Mulai (WIB)<input name="start" class="dtp" value="${toInput(first.toISOString())}" /></label>
+          <label>Jarak antar post<select name="gap"><option value="30">30 menit</option><option value="60" selected>1 jam</option><option value="120">2 jam</option><option value="180">3 jam</option><option value="720">12 jam</option><option value="1440">1 hari</option></select></label></div>` : ''}
+        ${past.length ? `<label class="row" style="gap:8px"><input type="checkbox" name="past" style="width:auto" /> Izinkan ${past.length} post berjadwal lampau tayang segera</label>` : ''}`;
+      const out = await ui.form({ title: 'Setujui & jadwalkan massal', message: 'Periksa daftar sebelum menyetujui. Yang sudah punya jadwal tidak diubah.', ok: `Setujui ${ok.length} post`, extra: { html, init: (f) => pickers(f), collect: (f) => { const o = { fill_missing: null, allow_past: !!f.elements.past?.checked }; if (missing.length) { const st = fromInput(f.elements.start.value); if (!st) { return void (f.querySelector('[data-err]').textContent = 'Pilih waktu mulai.'); } o.fill_missing = { start: st, interval_minutes: Number(f.elements.gap.value) }; } return o; } } });
+      if (!out) return;
+      await bulkCall('approve', ok.map((p) => p.id), { fill_missing: out.fill_missing || undefined, allow_past: out.allow_past });
+    });
+  };
   v.onclick = async (e) => {
     const btn = e.target.closest('[data-act]'); if (!btn) return;
     const id = btn.closest('tr').dataset.id; const act = btn.dataset.act;

@@ -133,6 +133,12 @@ pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]
 .mcard { @apply grid gap-3 p-3; } .mcard input { @apply text-xs; }
 .mthumb { @apply aspect-[4/3] overflow-hidden rounded-md border border-line bg-bg; } .mthumb img, .mthumb video { @apply size-full object-cover; }
 .trunc { @apply block truncate; }
+.bulkbar { @apply sticky top-[68px] z-30 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-accent bg-accent-soft px-4 py-2.5 shadow-card; }
+.bulksum { @apply grid gap-0.5; }
+.skiplist { @apply m-0 grid max-h-56 list-none gap-2 overflow-y-auto rounded-md border border-line bg-bg p-2 text-sm; }
+.skiplist li { @apply border-b border-line pb-2 last:border-0 last:pb-0; }
+.prow { @apply grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-line py-1 last:border-0; }
+table input[type=checkbox], .bulkbar input[type=checkbox] { @apply size-4 cursor-pointer accent-[var(--accent)]; }
 .lbl { @apply text-sm font-medium; }
 .upl { @apply mx-auto grid min-h-screen max-w-xl content-start gap-4 p-4 sm:pt-12; }
 .cal-sums { @apply mb-3 grid gap-2; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }

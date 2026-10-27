@@ -130,3 +130,51 @@ test('media: tautan unggah (untuk foto dari chat Claude) + list_media', async ()
   assert.equal((await fetch(base + '/upload/abc.def')).status, 410);
   assert.equal((await fetch(base + '/upload/' + u.pathname.split('/')[2] + '/../..')).status !== 500, true);
 });
+
+test('persetujuan massal: setujui, jadwal otomatis, lewati yang tak layak, kembalikan, ajukan', async () => {
+  const brands = (await api('GET', '/api/brands')).json;
+  const mk = async (text, scheduled_at, b = brands[0].id) => (await api('POST', '/api/posts', { brand_id: b, text, scheduled_at })).json;
+  const future = new Date(Date.now() + 5 * 3600e3).toISOString();
+  const a = await mk('Massal A (berjadwal)', future);
+  const b = await mk('Massal B (tanpa jadwal)');
+  const c = await mk('Massal C (tanpa jadwal)', undefined, brands[1].id);
+  const d = await mk('Massal D (lampau)', new Date(Date.now() - 3 * 3600e3).toISOString());
+  for (const p of [a, b, c, d]) await api('POST', `/api/posts/${p.id}/submit`);
+  const ids = [a.id, b.id, c.id, d.id];
+
+  // tanpa jadwal otomatis: B & C dilewati, D (lampau) dilewati
+  let r = (await api('POST', '/api/posts/bulk', { action: 'approve', ids })).json;
+  assert.deepEqual(r.done, [a.id]);
+  assert.equal(r.skipped.length, 3);
+  assert.match(r.skipped.find((x) => x.id === d.id).reason, /lewat/);
+
+  // dengan jadwal otomatis, urut pilihan, jarak 2 jam; lampau tetap dilewati
+  const start = new Date(Date.now() + 24 * 3600e3).toISOString();
+  r = (await api('POST', '/api/posts/bulk', { action: 'approve', ids: [b.id, c.id, d.id], fill_missing: { start, interval_minutes: 120 } })).json;
+  assert.deepEqual(r.done, [b.id, c.id]);
+  const get1 = async (id) => (await api('GET', `/api/posts?limit=200`)).json.find((x) => x.id === id);
+  assert.equal((await get1(b.id)).status, 'scheduled');
+  assert.equal(new Date((await get1(b.id)).scheduled_at).toISOString(), start);
+  assert.equal(Date.parse((await get1(c.id)).scheduled_at) - Date.parse(start), 2 * 3600e3);
+  assert.equal((await get1(a.id)).scheduled_at, future); // jadwal sendiri tidak diubah
+
+  // lampau diizinkan eksplisit
+  r = (await api('POST', '/api/posts/bulk', { action: 'approve', ids: [d.id], allow_past: true })).json;
+  assert.deepEqual(r.done, [d.id]);
+
+  // kembalikan massal + catatan, lalu ajukan lagi
+  r = (await api('POST', '/api/posts/bulk', { action: 'reject', ids: [a.id, b.id], note: 'Ganti foto' })).json;
+  assert.equal(r.done.length, 2);
+  assert.equal((await get1(a.id)).status, 'draft');
+  assert.equal((await get1(a.id)).review_note, 'Ganti foto');
+  r = (await api('POST', '/api/posts/bulk', { action: 'submit', ids: [a.id, b.id, c.id] })).json;
+  assert.deepEqual(r.done, [a.id, b.id]); // c masih terjadwal -> dilewati
+  assert.equal(r.skipped[0].id, c.id);
+
+  // validasi
+  assert.equal((await api('POST', '/api/posts/bulk', { action: 'approve', ids: [] })).status, 400);
+  assert.equal((await api('POST', '/api/posts/bulk', { action: 'hapus', ids: [a.id] })).status, 400);
+  assert.equal((await api('POST', '/api/posts/bulk', { action: 'approve', ids: Array.from({ length: 51 }, (_, i) => `x${i}`) })).status, 400);
+  assert.equal((await api('POST', '/api/posts/bulk', { action: 'approve', ids: [a.id], fill_missing: { start: 'x', interval_minutes: 60 } })).status, 400);
+  assert.equal((await api('POST', '/api/posts/bulk', { action: 'approve', ids: ['tidak-ada'] })).json.skipped[0].reason, 'Post tidak ditemukan.');
+});

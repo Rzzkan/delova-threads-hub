@@ -323,6 +323,50 @@ export function createApp() {
     res.json(parsePost(get('SELECT * FROM posts WHERE id=?', p.id)));
   });
 
+  // Persetujuan massal (khusus dashboard/manusia). Satu transaksi; yang tidak memenuhi syarat dilewati dengan alasan.
+  api.post('/posts/bulk', humanOnly, need('editor'), (req, res) => {
+    const b = req.body || {};
+    const action = String(b.action || '');
+    if (!['approve', 'reject', 'submit'].includes(action)) return bad(res, 'Aksi tidak dikenal.');
+    if (['approve', 'reject'].includes(action) && RANK[req.user.role] < RANK.manager) return bad(res, 'Butuh peran manager atau lebih tinggi.', 403);
+    const ids = [...new Set(Array.isArray(b.ids) ? b.ids.map(String) : [])];
+    if (!ids.length) return bad(res, 'Pilih minimal satu post.');
+    if (ids.length > 50) return bad(res, 'Maksimal 50 post sekali proses.');
+    const fill = b.fill_missing; // { start: ISO, interval_minutes }
+    let slot = null; let step = 0;
+    if (fill) {
+      slot = Date.parse(fill.start); step = Number(fill.interval_minutes) * 60_000;
+      if (Number.isNaN(slot) || !(step >= 5 * 60_000 && step <= 7 * 86400_000)) return bad(res, 'Jadwal otomatis tidak valid (jarak 5 menit - 7 hari).');
+    }
+    const note = String(b.note || '').slice(0, 300) || null;
+    const done = []; const skipped = [];
+    const rows = ids.map((id) => get('SELECT * FROM posts WHERE id=?', id));
+    // urutan jadwal otomatis mengikuti urutan pilihan; post yang sudah punya jadwal tidak diubah
+    for (let i = 0; i < ids.length; i++) {
+      const p = rows[i]; const id = ids[i];
+      if (!p) { skipped.push({ id, reason: 'Post tidak ditemukan.' }); continue; }
+      if (action === 'submit') {
+        if (!['draft', 'failed'].includes(p.status)) { skipped.push({ id, reason: `Post berstatus ${p.status}.` }); continue; }
+        run("UPDATE posts SET status='pending_approval', review_note=NULL, error=NULL, updated_at=? WHERE id=?", now(), id);
+        A(req, 'post.submitted', { id, bulk: true }); done.push(id); continue;
+      }
+      if (action === 'reject') {
+        if (!['pending_approval', 'scheduled'].includes(p.status)) { skipped.push({ id, reason: `Post berstatus ${p.status}.` }); continue; }
+        run("UPDATE posts SET status='draft', review_note=?, updated_at=? WHERE id=?", note, now(), id);
+        A(req, 'post.rejected', { id, bulk: true }); done.push(id); continue;
+      }
+      if (!['pending_approval', 'draft', 'failed'].includes(p.status)) { skipped.push({ id, reason: `Post berstatus ${p.status}.` }); continue; }
+      let when = p.scheduled_at;
+      if (!when) {
+        if (slot === null) { skipped.push({ id, reason: 'Belum punya jadwal.' }); continue; }
+        when = new Date(slot).toISOString(); slot += step;
+      } else if (Date.parse(when) < Date.now() - 60_000 && !b.allow_past) { skipped.push({ id, reason: 'Jadwalnya sudah lewat (akan langsung tayang).' }); continue; }
+      run("UPDATE posts SET status='scheduled', scheduled_at=?, approved_by=?, error=NULL, updated_at=? WHERE id=?", when, req.user.id, now(), id);
+      A(req, 'post.approved', { id, scheduled_at: when, bulk: true }); done.push(id);
+    }
+    res.json({ action, done, skipped });
+  });
+
   api.post('/posts/:id/approve', need('manager'), gate('claude_approve'), (req, res) => {
     const p = loadPost(req, res);
     if (!p) return;
