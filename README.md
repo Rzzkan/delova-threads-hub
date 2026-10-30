@@ -236,3 +236,6 @@ Menu **Auto Reply** menerima event real-time dari Meta di `POST /webhooks/thread
 - **Mode Auto** (khusus admin): terkirim sendiri hanya bila kategori aman, keyakinan ≥ 75%, tanpa kata sensitif (refund/komplain/kerja sama), tanpa tautan/nomor di luar pengetahuan brand, panjang sesuai batas, belum melewati batas per jam, dan bukan dari akun brand sendiri. Selain itu otomatis jadi "Perlu manusia".
 - Saklar utama + batas draf LLM per 24 jam (kontrol biaya) ada di tab Webhook & setup. Pesan audiens diperlakukan sebagai data (anti prompt-injection).
 - Setup Meta: Threads → Webhooks objek *Threads*, field `replies` & `mentions`. Instagram → *Configure webhooks*, field `comments`, `messages`, `mentions`, lalu klik *Daftarkan webhook akun ini* per brand. DM hanya bisa dibalas dalam 24 jam.
+
+### Model AI untuk Auto Reply
+Auto Reply bisa memakai Claude (Anthropic) atau API apa pun yang kompatibel dengan OpenAI, misalnya **Kenari** (`https://kenari.id/v1`), OpenRouter, Gemini, Groq, atau Ollama. Atur di menu Auto Reply → Webhook & setup (admin): base URL, nama model, API key (disimpan terenkripsi), dan opsi cadangan ke Claude bila model utama gagal. Tombol *Uji koneksi* mengirim satu permintaan kecil. Fitur Claude lain di dashboard (ide post, analisis) tetap memakai Claude.

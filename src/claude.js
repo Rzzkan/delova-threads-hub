@@ -4,6 +4,8 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { threadsLength } from './scheduler.js';
+import { getSetting } from './db.js';
+import { decrypt } from './crypto.js';
 
 export const aiEnabled = () => !!process.env.ANTHROPIC_API_KEY;
 export const aiModel = () => process.env.CLAUDE_MODEL || 'claude-sonnet-5-5';
@@ -184,22 +186,76 @@ Tentukan "action":
 - "skip": tidak perlu dibalas (spam, promosi akun lain, hanya emoji/tag teman, tidak jelas, toksik).
 Balas HANYA JSON valid tanpa teks lain: {"action":"reply|escalate|skip","category":"sapaan|pujian|pertanyaan_produk|pertanyaan_umum|komplain|kerjasama|spam|lainnya","confidence":0.0-1.0,"reply":"teks balasan (kosong jika skip)","reason":"alasan singkat"}`;
 
+/* --- Penyedia model untuk Auto Reply: Claude (Anthropic) atau API kompatibel OpenAI (mis. Kenari) --- */
+const isLocal = (h) => ['localhost', '127.0.0.1', '[::1]', 'host.docker.internal'].includes(h);
+export function llmConfig() {
+  const provider = getSetting('llm_provider') === 'openai' ? 'openai' : 'claude';
+  let key = '';
+  try { const enc = getSetting('llm_key_enc'); key = enc ? decrypt(enc) : ''; } catch { /* kunci tak terbaca */ }
+  key ||= process.env.LLM_API_KEY || '';
+  return { provider, baseUrl: (getSetting('llm_base_url') || 'https://kenari.id/v1').replace(/\/+$/, ''), model: getSetting('llm_model') || '', key, fallback: getSetting('llm_fallback') === '1' };
+}
+export function validateBaseUrl(u) {
+  let x; try { x = new URL(u); } catch { return 'Base URL tidak valid.'; }
+  if (x.username || x.password) return 'Base URL tidak boleh memuat kredensial.';
+  if (x.protocol !== 'https:' && !(x.protocol === 'http:' && isLocal(x.hostname))) return 'Base URL harus HTTPS (HTTP hanya untuk localhost/Ollama).';
+  return null;
+}
+/** Apakah ada model yang siap membuat balasan otomatis? */
+export function replyAiEnabled() {
+  const c = llmConfig();
+  if (c.provider === 'openai') return !!(c.key && c.model) || (c.fallback && aiEnabled());
+  return aiEnabled();
+}
+export function replyAiLabel() {
+  const c = llmConfig();
+  return c.provider === 'openai' ? `${c.model || '(model belum diisi)'} via ${new URL(c.baseUrl).host}` : aiModel();
+}
+
+async function chatOpenAI({ system, user, maxTokens = 700, cfg = llmConfig() }) {
+  if (!cfg.key || !cfg.model) throw new Error('Model OpenAI-compatible belum lengkap (API key / nama model).');
+  const bad = validateBaseUrl(cfg.baseUrl); if (bad) throw new Error(bad);
+  const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.key}` },
+    body: JSON.stringify({ model: cfg.model, max_tokens: maxTokens, temperature: 0.3, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
+    signal: AbortSignal.timeout(45_000),
+    redirect: 'error',
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Model ${cfg.model}: ${j.error?.message || j.message || `HTTP ${r.status}`}`.slice(0, 250));
+  const text = j.choices?.[0]?.message?.content;
+  if (typeof text !== 'string' || !text.trim()) throw new Error(`Model ${cfg.model} tidak mengembalikan teks.`);
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+}
+export const testLlm = async (cfg) => {
+  const t = Date.now();
+  const out = await chatOpenAI({ system: 'Balas HANYA dengan JSON {"ok":true}', user: 'tes', maxTokens: 50, cfg });
+  return { ms: Date.now() - t, sample: out.trim().slice(0, 120) };
+};
+
 export async function aiReply(brand, { platform, kind, username, text, postText, knowledge, maxChars }) {
   const where = { threads: 'Threads', instagram: 'Instagram' }[platform] || platform;
   const kindLabel = { reply: 'reply pada post kami', mention: 'post yang me-mention kami', comment: 'komentar pada post kami', dm: 'pesan langsung (DM)' }[kind] || kind;
-  const msg = await getClient().messages.create({
-    model: aiModel(),
-    max_tokens: 700,
-    system: [
-      { type: 'text', text: REPLY_RULES },
-      { type: 'text', text: `${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}`, cache_control: { type: 'ephemeral' } },
-    ],
-    messages: [{ role: 'user', content: `Platform: ${where}. Jenis: ${kindLabel}. Maksimal ${maxChars} karakter.
+  const system = `${REPLY_RULES}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}`;
+  const user = `Platform: ${where}. Jenis: ${kindLabel}. Maksimal ${maxChars} karakter.
 ${postText ? `Konteks post kami: """${String(postText).slice(0, 600)}"""\n` : ''}Dari @${String(username || 'anonim').slice(0, 60)}:
 <pesan_audiens>
 ${String(text).slice(0, 1200)}
-</pesan_audiens>` }],
-  });
-  const out = msg.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
-  return { ...parseJson(out), model: aiModel() };
+</pesan_audiens>`;
+  const viaClaude = async () => {
+    const msg = await getClient().messages.create({
+      model: aiModel(), max_tokens: 700,
+      system: [{ type: 'text', text: REPLY_RULES }, { type: 'text', text: system.slice(REPLY_RULES.length + 2), cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: user }],
+    });
+    return { out: msg.content.filter((c) => c.type === 'text').map((c) => c.text).join(''), model: aiModel() };
+  };
+  const cfg = llmConfig();
+  let r;
+  if (cfg.provider === 'openai') {
+    try { r = { out: await chatOpenAI({ system, user, cfg }), model: cfg.model }; }
+    catch (e) { if (cfg.fallback && aiEnabled()) { r = await viaClaude(); r.fallback = true; } else throw e; }
+  } else r = await viaClaude();
+  return { ...parseJson(r.out), model: r.model, fallback: !!r.fallback };
 }

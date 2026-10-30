@@ -183,6 +183,11 @@ const SETTING_DEFAULTS = {
   threads_extra_scopes: '0', // 1 = minta izin riset/mention/profile discovery saat menghubungkan akun
   auto_enabled: '0',          // saklar utama webhook + auto reply (admin)
   webhook_verify_token: '',   // token verifikasi webhook Meta (dibuat otomatis)
+  llm_provider: 'claude',     // model untuk Auto Reply: claude | openai (kompatibel OpenAI: Kenari, OpenRouter, Gemini, Groq, Ollama)
+  llm_base_url: 'https://kenari.id/v1',
+  llm_model: '',
+  llm_key_enc: '',
+  llm_fallback: '1',          // bila model utama gagal, coba Claude (jika ANTHROPIC_API_KEY ada)
   auto_llm_daily_cap: '300',  // maks draft LLM per 24 jam (kontrol biaya)
   mentions_auto: '1',        // kumpulkan mention otomatis tiap ±1 jam bila aktif & mode Live
 };

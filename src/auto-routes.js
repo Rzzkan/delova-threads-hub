@@ -3,6 +3,7 @@ import * as A_ from './autoreply.js';
 import * as T from './threads.js';
 import * as I from './instagram.js';
 import * as AI from './claude.js';
+import * as C from './crypto.js';
 import { all, get, run, now, uid, setSetting, getSetting, audit } from './db.js';
 
 const PLATFORMS = ['threads', 'instagram'];
@@ -30,7 +31,8 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
     const admin = req.user.role === 'admin';
     const brands = all('SELECT id,name,color,username FROM brands ORDER BY sort');
     res.json({
-      enabled: A_.enabled(), ai: AI.aiEnabled(), model: AI.aiModel(),
+      enabled: A_.enabled(), ai: AI.replyAiEnabled(), model: AI.replyAiLabel(),
+      llm: (() => { const c = AI.llmConfig(); return { provider: c.provider, base_url: c.baseUrl, model: c.model, has_key: !!c.key, fallback: c.fallback, claude_ready: AI.aiEnabled() }; })(),
       webhooks: PLATFORMS.map((p) => ({ platform: p, url: A_.webhookUrl(p), has_secret: p === 'instagram' ? !!(I.creds().appSecret || T.creds().appSecret) : !!T.creds().appSecret })),
       verify_token: admin ? A_.verifyToken() : undefined,
       llm_cap: Number(getSetting('auto_llm_daily_cap')) || 300,
@@ -50,6 +52,23 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
     A(req, 'auto.global', { enabled: f.enabled, regenerate: !!f.regenerate_token });
     res.json({ ok: true });
   });
+  api.put('/auto/llm', need('admin'), humanOnly, (req, res) => {
+    const f = req.body || {};
+    if (f.provider !== undefined && !['claude', 'openai'].includes(f.provider)) return bad(res, 'Penyedia tidak dikenal.');
+    if (f.base_url !== undefined) { const e = AI.validateBaseUrl(String(f.base_url).trim()); if (e) return bad(res, e); }
+    if (f.provider !== undefined) setSetting('llm_provider', f.provider);
+    if (f.base_url !== undefined) setSetting('llm_base_url', String(f.base_url).trim().replace(/\/+$/, ''));
+    if (f.model !== undefined) setSetting('llm_model', String(f.model).trim().slice(0, 120));
+    if (f.fallback !== undefined) setSetting('llm_fallback', f.fallback ? '1' : '0');
+    if (f.clear_key) setSetting('llm_key_enc', '');
+    else if (typeof f.api_key === 'string' && f.api_key.trim()) setSetting('llm_key_enc', C.encrypt(f.api_key.trim()));
+    A(req, 'auto.llm', { provider: f.provider, model: f.model }); // kunci tidak pernah dicatat
+    res.json({ ok: true });
+  });
+  api.post('/auto/llm/test', need('admin'), humanOnly, ah(async (req, res) => {
+    try { res.json({ ok: true, ...(await AI.testLlm(AI.llmConfig())) }); }
+    catch (e) { bad(res, e.message, 502); }
+  }));
   api.put('/auto/rules/:brand/:platform', need('manager'), humanOnly, (req, res) => {
     const b = brandOr404(req.params.brand);
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
