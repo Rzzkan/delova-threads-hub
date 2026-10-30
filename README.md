@@ -227,3 +227,12 @@ Menu **Instagram** memakai *Instagram API with Instagram Login* (host `graph.ins
 **Konten & Jadwal** (draft → ajukan → setujui → terbit otomatis, Feed/Reels/Story, foto wajib JPG), **Komentar** (balas/sembunyikan), **Pesan (DM)** (balas dalam jendela 24 jam), **Insight** (akun 7/14/30 hari + insight per konten dengan pencarian caption/hashtag, filter jenis, urutan), dan **Akun** (hubungkan akun, token diperpanjang otomatis tiap 6 jam).
 
 Setup live: di Meta for Developers tambahkan produk Instagram → *API setup with Instagram login*, salin **Instagram App ID/Secret** ke tab Akun (admin), dan daftarkan redirect URL `<APP_BASE_URL>/auth/instagram/callback`. Akun harus Instagram Professional. Izin: `instagram_business_basic`, `_content_publish`, `_manage_comments`, `_manage_messages`, `_manage_insights` (Advanced Access lewat App Review untuk akun di luar tester). Tanpa kredensial / dalam mode simulasi, semua data adalah contoh dan tidak ada yang dikirim.
+
+## Webhook & Auto Reply (Threads + Instagram)
+
+Menu **Auto Reply** menerima event real-time dari Meta di `POST /webhooks/threads` dan `POST /webhooks/instagram` (verifikasi `GET` memakai *verify token* di tab Webhook & setup; tiap `POST` wajib lolos tanda tangan HMAC `X-Hub-Signature-256` dengan App Secret). Event yang ditangani: reply & mention Threads; komentar, mention, dan DM Instagram. Event disimpan (dedupe per ID, dibersihkan setelah 30 hari), lalu Claude menyusun balasan memakai brand voice + *Pengetahuan brand* per akun.
+
+- **Mode Draft** (default): semua balasan menunggu persetujuan di Kotak masuk (bisa diedit, draf ulang, tolak).
+- **Mode Auto** (khusus admin): terkirim sendiri hanya bila kategori aman, keyakinan ≥ 75%, tanpa kata sensitif (refund/komplain/kerja sama), tanpa tautan/nomor di luar pengetahuan brand, panjang sesuai batas, belum melewati batas per jam, dan bukan dari akun brand sendiri. Selain itu otomatis jadi "Perlu manusia".
+- Saklar utama + batas draf LLM per 24 jam (kontrol biaya) ada di tab Webhook & setup. Pesan audiens diperlakukan sebagai data (anti prompt-injection).
+- Setup Meta: Threads → Webhooks objek *Threads*, field `replies` & `mentions`. Instagram → *Configure webhooks*, field `comments`, `messages`, `mentions`, lalu klik *Daftarkan webhook akun ini* per brand. DM hanya bisa dibalas dalam 24 jam.

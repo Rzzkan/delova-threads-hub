@@ -181,8 +181,55 @@ const SETTING_DEFAULTS = {
   meta_app_id: '',       // kredensial Meta global (App Secret disimpan terenkripsi)
   meta_app_secret_enc: '',
   threads_extra_scopes: '0', // 1 = minta izin riset/mention/profile discovery saat menghubungkan akun
+  auto_enabled: '0',          // saklar utama webhook + auto reply (admin)
+  webhook_verify_token: '',   // token verifikasi webhook Meta (dibuat otomatis)
+  auto_llm_daily_cap: '300',  // maks draft LLM per 24 jam (kontrol biaya)
   mentions_auto: '1',        // kumpulkan mention otomatis tiap ±1 jam bila aktif & mode Live
 };
+
+// Webhook Meta + auto reply LLM
+db.exec(`
+CREATE TABLE IF NOT EXISTS auto_rules (
+  brand_id TEXT NOT NULL REFERENCES brands(id),
+  platform TEXT NOT NULL CHECK (platform IN ('threads','instagram')),
+  enabled INTEGER NOT NULL DEFAULT 0,
+  mode TEXT NOT NULL DEFAULT 'draft' CHECK (mode IN ('draft','auto')),
+  kinds TEXT NOT NULL DEFAULT '["reply","mention","comment"]',
+  hourly_cap INTEGER NOT NULL DEFAULT 20,
+  knowledge TEXT NOT NULL DEFAULT '',
+  updated_at TEXT,
+  PRIMARY KEY (brand_id, platform)
+);
+CREATE TABLE IF NOT EXISTS auto_events (
+  id TEXT PRIMARY KEY,
+  platform TEXT NOT NULL,
+  brand_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('reply','mention','comment','dm')),
+  ext_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  media_id TEXT,
+  author_id TEXT,
+  author_username TEXT,
+  text TEXT NOT NULL DEFAULT '',
+  permalink TEXT,
+  simulated INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'new',
+  category TEXT,
+  needs_human INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  draft TEXT,
+  reply_text TEXT,
+  sent_id TEXT,
+  error TEXT,
+  decided_by TEXT,
+  drafted_at TEXT,
+  received_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (platform, ext_id)
+);
+CREATE INDEX IF NOT EXISTS auto_events_status ON auto_events(status, received_at);
+CREATE INDEX IF NOT EXISTS auto_events_brand ON auto_events(brand_id, platform, received_at);
+`);
 // Riset, mention, dan kandidat kolaborasi (endorse)
 db.exec(`
 CREATE TABLE IF NOT EXISTS research_saves (

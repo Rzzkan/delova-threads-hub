@@ -123,6 +123,7 @@ const ICON = {
   compose: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   queue: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
   plan: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  autoreply: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h6M9 14h3"/>',
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".6"/>',
   media: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>', chevl: '<path d="m15 18-6-6 6-6"/>', chevr: '<path d="m9 18 6-6-6-6"/>',
@@ -144,7 +145,7 @@ const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none
 // [id, label, peran minimal, grup]
 const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
-  ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
+  ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
   ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
@@ -600,6 +601,110 @@ IGV.akun = async ({ st, body }) => {
   }
   body.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('[data-b]').dataset.b;
     busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/ig/accounts/${id}/refresh`); if (x === 'disc') { if (!(await ui.confirm({ title: 'Putuskan akun Instagram ini?', message: 'Token dihapus dari Hub. Konten terjadwal untuk akun ini akan gagal sampai dihubungkan lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/ig/accounts/${id}`); } toast('Berhasil.'); route(); }); };
+};
+
+/* ---------- Auto Reply & Webhook ---------- */
+const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
+const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
+const AR_KIND = { reply: 'Reply', mention: 'Mention', comment: 'Komentar', dm: 'DM' };
+const PLAT = { threads: 'Threads', instagram: 'Instagram' };
+
+VIEWS.autoreply = async (v) => {
+  const q = params(); const cfg = await api('GET', '/api/auto/config');
+  const tab = AR_TABS.some((t) => t[0] === q.get('tab')) ? q.get('tab') : 'inbox';
+  const nav = (t) => `#/autoreply?tab=${t}`;
+  const open = (cfg.stats.pending || 0) + (cfg.stats.failed || 0);
+  v.innerHTML = `<div class="page-head"><h1>Auto Reply</h1><p class="muted">Webhook Meta menangkap reply, mention, komentar, dan DM secara real-time; Claude menyusun balasan sesuai brand voice. Anda memilih: tinjau dulu, atau kirim otomatis dengan pagar pengaman.</p></div>
+  ${!cfg.enabled ? '<div class="banner"><b>Auto reply sedang mati.</b> Event yang masuk tetap dicatat tetapi tidak dibalas. ' + (can('admin') ? 'Nyalakan di tab Webhook &amp; setup.' : 'Minta admin menyalakannya.') + '</div>' : ''}
+  ${!cfg.ai ? '<div class="banner">Claude belum aktif (<code>ANTHROPIC_API_KEY</code> di <code>.env</code>). Event akan menunggu balasan manual.</div>' : ''}
+  <div class="tabs">${AR_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}${t[0] === 'inbox' && open ? ` <span class="badge s-pending_approval">${open}</span>` : ''}</a>`).join('')}</div>
+  <div id="arbody" class="stack" style="margin-top:14px"></div>`;
+  const body = $('#arbody'); const ctx = { cfg, body, q };
+  try { await ARV[tab](ctx); } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+};
+const ARV = {};
+
+ARV.inbox = async ({ cfg, body, q }) => {
+  const f = q.get('f') || 'open'; const bf = q.get('brand') || ''; const pf = q.get('p') || '';
+  const qs = new URLSearchParams({ status: f === 'all' ? '' : f, brand: bf, platform: pf, limit: 80 });
+  const rows = await api('GET', `/api/auto/events?${qs}`);
+  const link = (k, val) => { const n = new URLSearchParams({ tab: 'inbox', f, brand: bf, p: pf, [k]: val }); return `#/autoreply?${n}`; };
+  body.innerHTML = `<div class="chips">${[['open', 'Perlu tindakan'], ['sent', 'Terkirim'], ['skipped', 'Dilewati'], ['ignored', 'Diabaikan'], ['rejected', 'Ditolak'], ['all', 'Semua']].map(([k, l]) => `<a class="chip" href="${link('f', k)}" ${k === f ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${l}</a>`).join('')}</div>
+  <div class="row"><select id="fb" style="width:auto"><option value="">Semua brand</option>${cfg.brands.map((b) => `<option value="${b.id}" ${b.id === bf ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
+  <select id="fp" style="width:auto"><option value="">Semua platform</option>${Object.entries(PLAT).map(([k, l]) => `<option value="${k}" ${k === pf ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+  ${rows.length ? rows.map((e) => { const b = cfg.brands.find((x) => x.id === e.brand_id); const act = ['pending', 'failed'].includes(e.status);
+    return `<div class="card stack ev" data-id="${e.id}"><div class="row between"><span class="row"><span class="badge">${PLAT[e.platform]}</span><span class="badge">${AR_KIND[e.kind]}</span><b>${esc(b?.name.replace('Delova ', '') || '')}</b><span class="muted small">dari @${esc(e.author_username || e.author_id || '-')} · ${esc(igTime(e.received_at))}</span>${e.simulated ? '<span class="badge">Simulasi</span>' : ''}</span>
+      <span class="row">${e.needs_human ? '<span class="badge s-failed">Perlu manusia</span>' : ''}<span class="badge s-${e.status === 'sent' ? 'published' : e.status === 'failed' ? 'failed' : 'pending_approval'}">${AR_STATUS[e.status] || e.status}</span></span></div>
+      <div class="quote">${esc(e.text)}</div>
+      ${act ? `<label class="lbl">Balasan <span class="muted small">(edit bila perlu)</span><textarea class="dtxt" style="min-height:70px" placeholder="${e.draft ? '' : 'Tulis balasan manual…'}">${esc(e.draft || '')}</textarea></label>` : e.reply_text ? `<div class="quote me"><span class="small muted">Balasan terkirim:</span><br>${esc(e.reply_text)}</div>` : e.draft ? `<div class="small muted">Draf: ${esc(e.draft)}</div>` : ''}
+      ${e.note || e.error ? `<div class="small ${e.status === 'failed' ? 'err' : 'muted'}">${esc(e.error || e.note)}</div>` : ''}
+      <div class="row">${act && can('editor') ? '<button class="btn primary small" data-a="approve" type="button">Kirim balasan</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped', 'rejected'].includes(e.status) && cfg.ai ? '<button class="btn small" data-a="redraft" type="button">Draf ulang dengan Claude</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped'].includes(e.status) ? '<button class="btn small" data-a="reject" type="button">Tolak</button>' : ''}${e.permalink ? `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(e.permalink)}">Buka</a>` : ''}</div></div>`; }).join('')
+    : '<div class="card muted">Belum ada event di sini. Setelah webhook terpasang, reply/komentar/DM baru muncul otomatis. Mode simulasi: pakai kotak uji di tab Aturan.</div>'}`;
+  $('#fb').onchange = (e) => { location.hash = link('brand', e.target.value); }; $('#fp').onchange = (e) => { location.hash = link('p', e.target.value); };
+  body.onclick = (e) => {
+    const btn = e.target.closest('[data-a]'); if (!btn) return; const card = btn.closest('.ev'); const id = card.dataset.id; const a = btn.dataset.a;
+    busy(btn, async () => {
+      if (a === 'approve') {
+        const text = $('.dtxt', card).value.trim(); const ev = rows.find((r) => r.id === id);
+        if (!text) throw new Error('Tulis balasan dulu.');
+        if (!(await ui.confirm({ title: `Kirim balasan ke @${ev.author_username || 'pengguna'}?`, message: `Dikirim ke ${PLAT[ev.platform]} atas nama brand dan terlihat ${ev.kind === 'dm' ? 'oleh penerima' : 'publik'}.`, quote: text, quoteLabel: 'Balasan', ok: 'Kirim' }))) return;
+        await api('POST', `/api/auto/events/${id}/approve`, { text }); toast('Balasan terkirim.');
+      } else if (a === 'reject') { await api('POST', `/api/auto/events/${id}/reject`); toast('Ditolak.'); }
+      else { const r = await api('POST', `/api/auto/events/${id}/redraft`); toast(r.draft ? 'Draf baru siap.' : 'Tidak ada draf baru.'); }
+      route();
+    });
+  };
+};
+
+ARV.aturan = async ({ cfg, body }) => {
+  body.innerHTML = `<div class="banner"><b>Cara kerja pagar pengaman.</b> Mode <b>Draft</b>: semua balasan menunggu persetujuan Anda. Mode <b>Auto</b> (khusus admin): Claude hanya mengirim sendiri bila pesan tergolong aman (sapaan, pujian, pertanyaan yang jawabannya ada di <i>Pengetahuan brand</i>), keyakinan ≥ 75%, tidak memuat kata sensitif (komplain, refund, kerja sama), tidak ada tautan/nomor di luar pengetahuan, dan belum melewati batas per jam. Sisanya tetap masuk Kotak masuk sebagai "Perlu manusia".</div>
+  <div class="grid g2">${cfg.brands.map((b) => ['threads', 'instagram'].map((p) => { const r = b.rules[p]; const ok = b.connected[p];
+    return `<form class="card stack rule" data-b="${b.id}" data-p="${p}" style="border-top:3px solid ${b.color}"><div class="row between"><h3>${esc(b.name)} · ${PLAT[p]}</h3>${ok ? '<span class="badge s-published">Terhubung</span>' : '<span class="badge">Belum terhubung</span>'}</div>
+      <label class="row"><input type="checkbox" name="enabled" ${r.enabled ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> <b>Aktifkan auto reply</b></label>
+      <label>Mode<select name="mode" ${can('manager') ? '' : 'disabled'}><option value="draft" ${r.mode === 'draft' ? 'selected' : ''}>Draft: tinjau dulu (disarankan)</option><option value="auto" ${r.mode === 'auto' ? 'selected' : ''} ${can('admin') || r.mode === 'auto' ? '' : 'disabled'}>Auto: kirim sendiri bila aman ${can('admin') ? '' : '(admin)'}</option></select></label>
+      <div class="chips">${(p === 'threads' ? ['reply', 'mention'] : ['comment', 'mention', 'dm']).map((k) => `<label class="chip"><input type="checkbox" name="k_${k}" ${r.kinds.includes(k) ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> ${AR_KIND[k]}</label>`).join('')}</div>
+      <label>Maks balasan otomatis per jam<input type="number" name="hourly_cap" min="1" max="200" value="${r.hourly_cap}" ${can('manager') ? '' : 'disabled'}></label>
+      <label>Pengetahuan brand <span class="muted small">(satu-satunya sumber fakta untuk Claude)</span><textarea name="knowledge" style="min-height:140px" maxlength="6000" placeholder="Contoh:&#10;- Order resmi lewat Shopee: https://shopee.co.id/delovawardrobe&#10;- Ukuran kebaya S-XXL, size chart ada di deskripsi produk&#10;- Pengiriman dari Yogyakarta, resi dikirim maks 2 hari kerja&#10;- Kerja sama/reseller: arahkan ke DM" ${can('manager') ? '' : 'disabled'}>${esc(r.knowledge)}</textarea></label>
+      ${can('manager') ? `<div class="row"><button class="btn primary small">Simpan</button>${p === 'instagram' && ok ? '<button type="button" class="btn small" data-sub="1">Daftarkan webhook akun ini</button>' : ''}</div>` : ''}</form>`; }).join('')).join('')}</div>
+  ${can('manager') ? `<form id="tf" class="card stack"><h3>Uji coba (mode simulasi)</h3><p class="small muted">Menyuntik event palsu lewat jalur yang sama dengan webhook asli, tanpa mengirim apa pun ke Threads/Instagram. Hanya tersedia saat mode simulasi.</p>
+    <div class="grid g4"><label>Brand<select name="brand_id">${cfg.brands.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></label>
+    <label>Platform &amp; jenis<select name="pk"><option value="threads:reply">Threads · Reply</option><option value="threads:mention">Threads · Mention</option><option value="instagram:comment">Instagram · Komentar</option><option value="instagram:dm">Instagram · DM</option></select></label>
+    <label>Pesan<input name="text" value="Kak, kebaya sage ini ready ukuran M?"></label><div style="align-self:end"><button class="btn primary">Kirim event uji</button></div></div></form>` : ''}`;
+  $$('.rule', body).forEach((f) => {
+    f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
+      const fd = f.elements; const kinds = ['reply', 'mention', 'comment', 'dm'].filter((k) => fd[`k_${k}`]?.checked);
+      await api('PUT', `/api/auto/rules/${f.dataset.b}/${f.dataset.p}`, { enabled: fd.enabled.checked, mode: fd.mode.value, kinds, hourly_cap: Number(fd.hourly_cap.value), knowledge: fd.knowledge.value });
+      toast('Aturan tersimpan.'); route(); }); };
+    const sb = $('[data-sub]', f); if (sb) sb.onclick = () => busy(sb, async () => { const r = await api('POST', `/api/auto/instagram/${f.dataset.b}/subscribe`); toast(r.dryRun ? 'Simulasi: webhook dianggap terdaftar.' : `Webhook terdaftar untuk: ${r.fields.join(', ')}.`); });
+  });
+  const tf = $('#tf', body);
+  if (tf) tf.onsubmit = (e) => { e.preventDefault(); busy($('button', tf), async () => {
+    const [platform, kind] = tf.elements.pk.value.split(':');
+    const r = await api('POST', '/api/auto/test-event', { brand_id: tf.elements.brand_id.value, platform, kind, text: tf.elements.text.value });
+    toast(`Hasil: ${AR_STATUS[r.status] || r.status}${r.note ? ` (${r.note})` : ''}`); location.hash = '#/autoreply?tab=inbox&f=all'; route(); }); };
+};
+
+ARV.webhook = async ({ cfg, body }) => {
+  const copy = (id) => `<span class="row"><input id="${id}" readonly value="" style="flex:1"><button type="button" class="btn small" data-cp="${id}">Salin</button></span>`;
+  body.innerHTML = `${can('admin') ? `<div class="card stack"><h3>Saklar utama</h3><label class="row"><input type="checkbox" id="gon" ${cfg.enabled ? 'checked' : ''}> <b>Aktifkan webhook &amp; auto reply</b></label>
+    <label>Batas draf Claude per 24 jam (kontrol biaya)<input id="gcap" type="number" min="0" max="5000" value="${cfg.llm_cap}" style="max-width:160px"></label><div><button class="btn primary small" id="gsave" type="button">Simpan</button></div></div>` : ''}
+  <div class="card stack"><h3>Data untuk Meta for Developers</h3>
+    ${cfg.webhooks.map((w) => `<div class="stack" style="gap:4px"><b>${PLAT[w.platform]}</b> ${w.has_secret ? '<span class="badge s-published">App Secret terisi</span>' : '<span class="badge s-failed">App Secret belum diisi</span>'}<label>Callback URL${copy('u_' + w.platform)}</label></div>`).join('')}
+    ${cfg.verify_token ? `<label>Verify token (sama untuk keduanya)${copy('vt')}</label>${can('admin') ? '<div><button type="button" class="btn small danger" id="regen">Buat ulang token</button></div>' : ''}` : '<p class="small muted">Verify token hanya terlihat oleh admin.</p>'}</div>
+  <div class="card stack"><h3>Langkah pemasangan</h3><ol class="small" style="padding-left:18px;display:grid;gap:6px">
+    <li><b>Threads:</b> Meta for Developers → aplikasi Threads → <i>Webhooks</i> → objek <b>Threads</b> → isi Callback URL &amp; Verify token di atas → <i>Verify and save</i> → subscribe ke field <code>replies</code> dan <code>mentions</code>. Izin <code>threads_read_replies</code>, <code>threads_manage_replies</code>, dan <code>threads_manage_mentions</code> harus aktif (Advanced Access untuk akun non-tester).</li>
+    <li><b>Instagram:</b> aplikasi Instagram → <i>API setup with Instagram login</i> → <i>Configure webhooks</i> → isi Callback URL &amp; Verify token → subscribe ke <code>comments</code>, <code>messages</code>, <code>mentions</code>. Lalu di tab <i>Aturan per akun</i> klik <i>Daftarkan webhook akun ini</i> untuk tiap brand.</li>
+    <li>Pastikan <b>App Secret</b> aplikasi sudah diisi (menu Brand &amp; Akun untuk Threads, menu Instagram → Akun untuk Instagram). Permintaan tanpa tanda tangan HMAC yang cocok ditolak.</li>
+    <li>Isi <b>Pengetahuan brand</b> tiap akun, nyalakan saklar utama, aktifkan aturan dengan mode <b>Draft</b>, lalu pantau Kotak masuk beberapa hari sebelum mempertimbangkan mode Auto.</li></ol>
+    <p class="small muted">Webhook Threads dan Instagram memakai tanda tangan <code>X-Hub-Signature-256</code>. Event dicatat 30 hari lalu dibersihkan otomatis (kecuali yang masih menunggu).</p></div>`;
+  for (const w of cfg.webhooks) { const el = $('#u_' + w.platform, body); if (el) el.value = w.url; }
+  if ($('#vt', body)) $('#vt', body).value = cfg.verify_token;
+  body.onclick = (e) => { const c = e.target.closest('[data-cp]'); if (c) copyText($('#' + c.dataset.cp, body).value); };
+  const gs = $('#gsave', body);
+  if (gs) {
+    gs.onclick = () => busy(gs, async () => { await api('PUT', '/api/auto/global', { enabled: $('#gon').checked, llm_cap: Number($('#gcap').value) }); toast('Tersimpan.'); route(); });
+    $('#regen').onclick = (e) => busy(e.target, async () => { if (!(await ui.confirm({ title: 'Buat ulang verify token?', message: 'Token lama tidak berlaku. Anda perlu memasukkan token baru di Meta for Developers saat verifikasi ulang webhook.', ok: 'Buat ulang', danger: true }))) return; await api('PUT', '/api/auto/global', { regenerate_token: true }); toast('Token baru dibuat.'); route(); });
+  }
 };
 
 /* ---------- Foto sementara ---------- */

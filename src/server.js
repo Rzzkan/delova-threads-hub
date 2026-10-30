@@ -15,6 +15,7 @@ import * as M from './media.js';
 import { mountLegal } from './legal.js';
 import * as R from './research.js';
 import { mountInstagram } from './ig-routes.js';
+import { mountAuto } from './auto-routes.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
 const need = (min) => (req, res, next) =>
@@ -66,7 +67,7 @@ export function createApp() {
     });
     next();
   });
-  app.use(express.json({ limit: '9mb' })); // 9 MB: muat base64 gambar 6 MB dari Claude (MCP)
+  app.use(express.json({ limit: '9mb', verify: (req, _res, buf) => { if (req.originalUrl.startsWith('/webhooks/')) req.rawBody = buf; } })); // 9 MB: muat base64 gambar 6 MB dari Claude (MCP)
   app.use(express.urlencoded({ extended: false }));
 
   /* ---------------- Auth ---------------- */
@@ -915,6 +916,7 @@ export function createApp() {
   });
 
   mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, brandOr404, baseUrl });
+  mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 });
   app.use('/api', api);
 
   /* ---------------- MCP lewat HTTP (stateless, Bearer token) ---------------- */

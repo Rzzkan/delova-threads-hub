@@ -161,6 +161,18 @@ export async function hideComment(acc, brand, commentId, hide = true) {
   return call('POST', `${V}/${commentId}`, { hide, access_token: tokenOf(acc, brand.name) });
 }
 
+export async function mediaCaption(acc, brand, mediaId) {
+  if (isDryRun()) return 'Kebaya brokat sage, cocok untuk kondangan siang #kebayamodern';
+  const r = await call('GET', `${V}/${mediaId}`, { fields: 'caption', access_token: tokenOf(acc, brand.name) });
+  return r.caption || '';
+}
+export const WEBHOOK_FIELDS = ['comments', 'messages', 'mentions'];
+/** Daftarkan akun ke webhook aplikasi (event komentar, DM, mention). */
+export async function subscribeWebhooks(acc, brand) {
+  if (isDryRun()) return { success: true, dryRun: true };
+  return call('POST', `${V}/${acc.ig_user_id}/subscribed_apps`, { subscribed_fields: WEBHOOK_FIELDS.join(','), access_token: tokenOf(acc, brand.name) });
+}
+
 /* ---------------- Pesan langsung (DM) ---------------- */
 export async function listConversations(acc, brand) {
   if (isDryRun()) {

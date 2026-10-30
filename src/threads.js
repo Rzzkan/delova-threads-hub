@@ -215,6 +215,12 @@ export async function listReplies(brand, mediaId) {
   return r.data || [];
 }
 
+export async function postText(brand, id) {
+  if (isDryRun(brand)) return 'Kebaya brokat sage, cocok untuk kondangan siang #kebayamodern';
+  const r = await call('GET', `${V}/${id}`, { fields: 'text', access_token: tokenOf(brand) });
+  return r.text || '';
+}
+
 export async function replyTo(brand, targetId, text) {
   if (isDryRun(brand)) return { mediaId: `dry_reply_${Date.now()}`, dryRun: true };
   const token = tokenOf(brand);

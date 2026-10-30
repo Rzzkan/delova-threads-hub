@@ -4,6 +4,7 @@ import { encrypt } from './crypto.js';
 import { collectDueMentions } from './research.js';
 import { expireMediaOfPost, cleanupMedia } from './media.js';
 import { igTick, igRefreshTokens } from './instagram.js';
+import { processBacklog, purgeOld } from './autoreply.js';
 
 const DAILY_LIMIT = 240; // batas resmi Threads: 250 post / 24 jam per akun
 
@@ -71,10 +72,10 @@ export function startScheduler() {
   // post yang tertinggal di "publishing" setelah restart dikembalikan ke failed agar terlihat tim
   run("UPDATE posts SET status='failed', error='Server restart saat publish. Periksa Threads lalu coba lagi.' WHERE status='publishing'");
   run("UPDATE ig_posts SET status='failed', error='Server restart saat publish. Periksa Instagram lalu coba lagi.' WHERE status='publishing'");
-  const a = setInterval(safe(async () => { await tick(); await igTick(); }), 30_000);
+  const a = setInterval(safe(async () => { await tick(); await igTick(); await processBacklog(); }), 30_000);
   const b = setInterval(safe(async () => { await refreshTokens(); await igRefreshTokens(); }), 6 * 3600 * 1000);
   const c = setInterval(safe(collectDueMentions), 10 * 60_000);
-  const d = setInterval(safe(async () => { const n = cleanupMedia(); if (n) audit(null, 'media.cleanup', { removed: n }); }), 30 * 60_000);
+  const d = setInterval(safe(async () => { purgeOld(); const n = cleanupMedia(); if (n) audit(null, 'media.cleanup', { removed: n }); }), 30 * 60_000);
   setTimeout(safe(async () => { cleanupMedia(); }), 15_000);
   setTimeout(safe(tick), 3000);
   setTimeout(safe(refreshTokens), 10_000);
