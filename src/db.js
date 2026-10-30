@@ -188,6 +188,10 @@ const SETTING_DEFAULTS = {
   llm_model: '',
   llm_key_enc: '',
   llm_fallback: '1',          // bila model utama gagal, coba Claude (jika ANTHROPIC_API_KEY ada)
+  store_api_url: 'https://delova.id/api/v1', // API produk & stok Delova Store (read-only)
+  store_api_key_enc: '',
+  store_use_reply: '1',       // Auto Reply mengambil harga/stok/varian dari API produk
+  store_use_posts: '1',       // AI pembuat post mengambil data produk
   auto_llm_daily_cap: '300',  // maks draft LLM per 24 jam (kontrol biaya)
   mentions_auto: '1',        // kumpulkan mention otomatis tiap ±1 jam bila aktif & mode Live
 };
@@ -235,6 +239,7 @@ CREATE TABLE IF NOT EXISTS auto_events (
 CREATE INDEX IF NOT EXISTS auto_events_status ON auto_events(status, received_at);
 CREATE INDEX IF NOT EXISTS auto_events_brand ON auto_events(brand_id, platform, received_at);
 `);
+try { db.exec('ALTER TABLE auto_events ADD COLUMN used_data TEXT'); } catch { /* kolom sudah ada */ }
 // Riset, mention, dan kandidat kolaborasi (endorse)
 db.exec(`
 CREATE TABLE IF NOT EXISTS research_saves (

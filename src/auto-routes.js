@@ -4,6 +4,7 @@ import * as T from './threads.js';
 import * as I from './instagram.js';
 import * as AI from './claude.js';
 import * as C from './crypto.js';
+import * as Store from './store-api.js';
 import { all, get, run, now, uid, setSetting, getSetting, audit } from './db.js';
 
 const PLATFORMS = ['threads', 'instagram'];
@@ -35,6 +36,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
       llm: (() => { const c = AI.llmConfig(); return { provider: c.provider, base_url: c.baseUrl, model: c.model, has_key: !!c.key, fallback: c.fallback, claude_ready: AI.aiEnabled() }; })(),
       webhooks: PLATFORMS.map((p) => ({ platform: p, url: A_.webhookUrl(p), has_secret: p === 'instagram' ? !!(I.creds().appSecret || T.creds().appSecret) : !!T.creds().appSecret })),
       verify_token: admin ? A_.verifyToken() : undefined,
+      store: (() => { const c = Store.storeConfig(); return { base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_posts: c.usePosts }; })(),
       llm_cap: Number(getSetting('auto_llm_daily_cap')) || 300,
       stats: A_.stats(),
       brands: brands.map((b) => ({
@@ -69,6 +71,43 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
     try { res.json({ ok: true, ...(await AI.testLlm(AI.llmConfig())) }); }
     catch (e) { bad(res, e.message, 502); }
   }));
+  api.get('/auto/llm/models', need('admin'), humanOnly, ah(async (req, res) => {
+    try { res.json({ models: await AI.listModels(AI.llmConfig(), { fresh: req.query.fresh === '1' }), current: AI.llmConfig().model }); }
+    catch (e) { bad(res, e.message, 502); }
+  }));
+
+  /* ---------- Data produk (API delova.id) ---------- */
+  api.get('/store/config', need('admin'), humanOnly, (req, res) => {
+    const c = Store.storeConfig();
+    res.json({ base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_posts: c.usePosts });
+  });
+  api.put('/store/config', need('admin'), humanOnly, (req, res) => {
+    const f = req.body || {};
+    if (f.base_url !== undefined) { const e = Store.validateBaseUrl(String(f.base_url).trim()); if (e) return bad(res, e); setSetting('store_api_url', String(f.base_url).trim().replace(/\/+$/, '')); }
+    if (f.use_reply !== undefined) setSetting('store_use_reply', f.use_reply ? '1' : '0');
+    if (f.use_posts !== undefined) setSetting('store_use_posts', f.use_posts ? '1' : '0');
+    if (f.clear_key) setSetting('store_api_key_enc', '');
+    else if (typeof f.api_key === 'string' && f.api_key.trim()) {
+      if (f.api_key.trim().length < 16) return bad(res, 'API key terlalu pendek.');
+      setSetting('store_api_key_enc', C.encrypt(f.api_key.trim()));
+    }
+    Store.clearStoreCache();
+    A(req, 'store.config', { base_url: f.base_url, use_reply: f.use_reply, use_posts: f.use_posts }); // kunci tidak dicatat
+    res.json({ ok: true });
+  });
+  api.post('/store/test', need('admin'), humanOnly, ah(async (req, res) => {
+    try { res.json({ ok: true, ...(await Store.testStore()) }); } catch (e) { bad(res, e.message, e.status === 429 ? 429 : 502); }
+  }));
+  const storeFail = (res, e) => bad(res, e.message, [400, 401, 404, 429, 503].includes(e.status) ? e.status : 502);
+  api.get('/store/search', need('viewer'), ah(async (req, res) => {
+    if (!Store.storeReady()) return bad(res, 'API produk belum dikonfigurasi (admin: menu Auto Reply → Webhook & setup).', 503);
+    try { res.json(await Store.searchCatalog({ q: req.query.q, brand: req.query.brand, in_stock: req.query.in_stock, sort: req.query.sort, limit: req.query.limit })); } catch (e) { storeFail(res, e); }
+  }));
+  api.get('/store/product/:ref', need('viewer'), ah(async (req, res) => {
+    if (!Store.storeReady()) return bad(res, 'API produk belum dikonfigurasi.', 503);
+    try { res.json(await Store.productDetail(req.params.ref)); } catch (e) { storeFail(res, e); }
+  }));
+
   api.put('/auto/rules/:brand/:platform', need('manager'), humanOnly, (req, res) => {
     const b = brandOr404(req.params.brand);
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);

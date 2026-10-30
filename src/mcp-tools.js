@@ -237,6 +237,33 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
   );
 
   server.registerTool(
+    'search_products',
+    {
+      title: 'Cari produk & stok Delova',
+      description:
+        'Cari produk di katalog Delova Store (delova.id): nama, harga, stok total, tautan. Pakai SEBELUM menulis post atau balasan yang menyebut produk, harga, atau ketersediaan, jangan mengarang. Stok adalah perkiraan (sinkron dari Shopee berkala); cek synced_at. Gunakan get_product untuk varian (ukuran/warna) dan stok per SKU.',
+      inputSchema: {
+        q: z.string().optional().describe('Kata kunci nama produk, mis. "kebaya brokat"'),
+        brand: z.string().optional().describe(brandIds),
+        in_stock: z.boolean().optional().describe('true = hanya yang tersedia'),
+        sort: z.enum(['terbaru', 'terlaris', 'termurah', 'termahal', 'nama']).optional(),
+        limit: z.number().int().min(1).max(30).optional(),
+      },
+    },
+    wrap(({ q, brand, in_stock, sort, limit }) => call('GET', `/api/store/search?${new URLSearchParams(Object.entries({ q, brand, in_stock, sort, limit }).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`)),
+  );
+
+  server.registerTool(
+    'get_product',
+    {
+      title: 'Detail produk, varian & stok',
+      description: 'Detail satu produk Delova: deskripsi, foto, dan semua varian (SKU, harga, stok per ukuran/warna). ref = id atau slug dari search_products.',
+      inputSchema: { ref: z.string().describe('id atau slug produk') },
+    },
+    wrap(({ ref }) => call('GET', `/api/store/product/${encodeURIComponent(ref)}`)),
+  );
+
+  server.registerTool(
     'create_post',
     {
       title: 'Buat draft / ajukan post',

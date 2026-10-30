@@ -239,3 +239,95 @@ test('llm: error penyedia → event menunggu manusia; tombol uji koneksi', async
   assert.equal(t2.status, 200); assert.equal(t2.json.ok, true);
   globalThis.fetch = realFetch;
 });
+
+/* ---------- API produk delova.id + daftar model Kenari ---------- */
+const PROD = { id: '198876985-1', slug: 'kebaya-sage', name: 'Delova Wardrobe - KEBAYA BROKAT SAGE', brand: 'wardrobe', shop: { id: 198876985, name: 'delovawardrobe' }, price: 72000, original_price: 89000, stock: 4, in_stock: true, sold: 120, url: 'https://delova.id/produk/kebaya-sage', shopee_url: 'https://shopee.co.id/x', synced_at: new Date().toISOString() };
+const DETAIL = { ...PROD, description: 'Brokat halus', images: [], variants: [{ id: 'v1', sku: 'KBS-M', name: 'Sage / M', price: 72000, stock: 3, in_stock: true }, { id: 'v2', sku: 'KBS-L', name: 'Sage / L', price: 72000, stock: 0, in_stock: false }] };
+let netCalls = [];
+const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } });
+const mockNet = (storeImpl) => {
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.startsWith('https://delova.id/api/v1')) { netCalls.push(u); return storeImpl(new URL(u), opts); }
+    if (u === 'https://kenari.id/v1/models') return json({ data: [{ id: 'qwen3-7-plus' }, { id: 'hy3:free' }, { id: 'whisper-large-v3-turbo' }, { id: 'glm-4-7-flash:free', owned_by: 'zhipu' }, { id: 'gpt-image-2' }] });
+    return realFetch(url, opts);
+  };
+};
+const catalog = (uu) => {
+  if (uu.pathname.endsWith('/shops')) return json({ data: [{ id: 1, name: 'delovawardrobe', product_count: 153, last_sync_at: new Date().toISOString() }] });
+  if (uu.pathname.includes('/products/')) return json(DETAIL);
+  return json({ data: (uu.searchParams.get('q') || '').includes('kebaya') ? [PROD] : [], meta: { last_sync_at: new Date().toISOString() } });
+};
+const STORE_KEY = 'k'.repeat(40);
+
+test('store: konfigurasi hanya admin, kunci tak pernah bocor, uji koneksi', async () => {
+  assert.equal((await req(mgr, 'PUT', '/api/store/config', { api_key: STORE_KEY })).status, 403);
+  assert.equal((await A('PUT', '/api/store/config', { base_url: 'http://evil.example/api' })).status, 400);
+  assert.equal((await A('PUT', '/api/store/config', { api_key: 'pendek' })).status, 400);
+  assert.equal((await A('PUT', '/api/store/config', { base_url: 'https://delova.id/api/v1', api_key: STORE_KEY })).status, 200);
+  const raw = JSON.stringify([(await A('GET', '/api/store/config')).json, (await A('GET', '/api/auto/config')).json, all('SELECT detail FROM audit_log')]);
+  assert.ok(!raw.includes(STORE_KEY));
+  mockNet(catalog); netCalls = [];
+  const t = await A('POST', '/api/store/test');
+  assert.equal(t.status, 200); assert.equal(t.json.shops, 1); assert.equal(t.json.products, 153);
+  assert.equal(globalThis.fetch !== realFetch, true);
+  globalThis.fetch = realFetch;
+});
+
+test('model: daftar dari /models penyedia (gratis & non-chat ditandai), khusus admin', async () => {
+  mockNet(catalog);
+  assert.equal((await req(mgr, 'GET', '/api/auto/llm/models')).status, 403);
+  const r = await A('GET', '/api/auto/llm/models?fresh=1');
+  assert.equal(r.status, 200);
+  const ids = r.json.models.map((m) => m.id);
+  assert.deepEqual(r.json.models.filter((m) => !m.chat).map((m) => m.id).sort(), ['gpt-image-2', 'whisper-large-v3-turbo']);
+  assert.equal(r.json.models.find((m) => m.id === 'hy3:free').free, true);
+  assert.ok(ids.indexOf('hy3:free') < ids.indexOf('qwen3-7-plus')); // gratis dulu di antara model chat
+  globalThis.fetch = realFetch;
+});
+
+test('auto reply memakai data produk: harga/varian/tautan masuk prompt; harga karangan ditahan', async () => {
+  netCalls = []; mockNet(catalog);
+  await A('PUT', '/api/store/config', { use_reply: true });
+  await A('PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true, mode: 'auto', knowledge: '' });
+  let seen;
+  const go = async (text, drafter) => { AR.setDrafter(async (b, a) => { seen = a; return drafter(); }); const p = thReply(text); const id = p.entry[0].changes[0].value.id; await hook('threads', p); return waitFor(() => { const e = evOf(id); return e && !['new', 'processing', 'approved', 'sending'].includes(e.status) && e; }); };
+  let e = await go('Kak kebaya sage ready ukuran M?', () => ({ action: 'reply', category: 'pertanyaan_produk', confidence: 0.9, reply: 'Ready Kak, Rp72.000 ya, order di https://delova.id/produk/kebaya-sage 😊', reason: 'ok' }));
+  assert.match(seen.storeFacts, /KEBAYA BROKAT SAGE/); assert.match(seen.storeFacts, /Rp72\.000/); assert.match(seen.storeFacts, /KBS-M/); assert.match(seen.storeFacts, /https:\/\/delova\.id\/produk\/kebaya-sage/);
+  assert.match(seen.storeFacts, /PERKIRAAN/);
+  assert.ok(netCalls.some((u) => u.includes('brand=wardrobe') && u.includes('q=kebaya')));
+  assert.ok(!netCalls.some((u) => u.includes('q=ready') || u.includes('q=kak')), 'kata umum tidak dicari');
+  assert.equal(e.status, 'sent'); assert.match(e.used_data, /KEBAYA BROKAT SAGE/);
+  e = await go('Kak kebaya sage berapa harganya?', () => ({ action: 'reply', category: 'pertanyaan_produk', confidence: 0.95, reply: 'Harganya Rp99.000 Kak', reason: 'ok' }));
+  assert.equal(e.status, 'pending'); assert.match(e.note, /harga Rp99\.000/);
+  e = await go('Kak kebaya sage diskon nggak?', () => ({ action: 'reply', category: 'pertanyaan_produk', confidence: 0.95, reply: 'Cuma 60rb Kak', reason: 'ok' }));
+  assert.equal(e.status, 'pending'); assert.match(e.note, /60rb/);
+  // cache: pertanyaan serupa tidak menembak API produk lagi
+  const before = netCalls.length;
+  await go('Kak kebaya sage masih ada kah?', () => ({ action: 'reply', category: 'sapaan', confidence: 0.9, reply: 'Halo Kak 😊', reason: 'ok' }));
+  assert.equal(netCalls.length, before);
+  globalThis.fetch = realFetch;
+});
+
+test('API produk down → tetap diproses, model diberi tahu data tidak tersedia, tanpa harga', async () => {
+  await A('PUT', '/api/store/config', { use_reply: true }); // membersihkan cache
+  mockNet(() => json({ error: { message: 'boom' } }, 500));
+  let seen;
+  AR.setDrafter(async (b, a) => { seen = a; return { action: 'escalate', category: 'pertanyaan_produk', confidence: 0.9, reply: 'Kami cek dulu ya Kak 🙏', reason: 'data tak ada' }; });
+  const r = await A('POST', '/api/auto/test-event', { brand_id: brand.id, platform: 'threads', kind: 'reply', text: 'Kak gamis hitam masih ada?' });
+  assert.match(seen.storeFacts, /TIDAK TERSEDIA/);
+  assert.equal(r.json.status, 'pending'); assert.equal(r.json.needs_human, 1); assert.match(r.json.used_data, /tidak tersedia/);
+  globalThis.fetch = realFetch;
+});
+
+test('pencarian katalog untuk dashboard/MCP', async () => {
+  await A('PUT', '/api/store/config', { use_reply: true });
+  mockNet(catalog);
+  const r = await req(viewer, 'GET', '/api/store/search?q=kebaya&brand=wardrobe');
+  assert.equal(r.status, 200); assert.equal(r.json.products[0].price, 72000);
+  const d = await req(viewer, 'GET', '/api/store/product/198876985-1');
+  assert.equal(d.json.variants.length, 2);
+  globalThis.fetch = realFetch;
+  assert.equal((await A('PUT', '/api/store/config', { clear_key: true })).status, 200);
+  assert.equal((await req(viewer, 'GET', '/api/store/search?q=x')).status, 503);
+});

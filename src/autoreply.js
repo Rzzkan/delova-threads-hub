@@ -9,6 +9,7 @@ import * as T from './threads.js';
 import * as I from './instagram.js';
 import * as AI from './claude.js';
 import * as C from './crypto.js';
+import * as Store from './store-api.js';
 
 export const KINDS = ['reply', 'mention', 'comment', 'dm'];
 const MAX = { threads: { reply: 280, mention: 280 }, instagram: { comment: 300, mention: 300, dm: 800 } };
@@ -154,6 +155,14 @@ const URL_RE = /(https?:\/\/|www\.)\S+|\b\S+\.(com|id|co|me|link|shop)\b\S*/gi;
 /** Kembalikan alasan penolakan bila draf tidak aman untuk dikirim, atau null bila aman. */
 export function unsafeReason(text, knowledge, limit) {
   if (!text || !text.trim()) return 'Draf kosong.';
+  const flat = String(knowledge || '').replace(/(?<=\d)[.,](?=\d)/g, '');
+  for (const m of text.matchAll(/Rp\s?([\d.,]+)/gi)) {
+    const n = m[1].replace(/\D/g, '');
+    if (n && !flat.includes(n)) return `Draf menyebut harga Rp${m[1].replace(/[.,]$/, '')} yang tidak ada di data produk/pengetahuan brand.`;
+  }
+  for (const m of text.matchAll(/(?<![\d.,])(\d{1,3})\s?(?:rb|ribu|k)\b/gi)) {
+    if (!flat.includes(`${m[1]}000`)) return `Draf menyebut harga ${m[0]} yang tidak ada di data produk/pengetahuan brand.`;
+  }
   if ([...text].length > limit) return `Draf melebihi ${limit} karakter.`;
   const known = String(knowledge || '').toLowerCase();
   for (const u of text.match(URL_RE) || []) if (!known.includes(u.toLowerCase().replace(/[.,!?)]+$/, ''))) return `Draf memuat tautan yang tidak ada di pengetahuan brand (${u}).`;
@@ -186,8 +195,14 @@ export async function processEvent(id) {
     } catch { /* konteks opsional */ }
 
     const limit = maxChars(ev.platform, ev.kind);
+    let storeFacts = ''; let used = [];
+    if (Store.storeConfig().useReply && Store.storeReady()) {
+      const sf = await Store.productFacts(ev.brand_id, [ev.text, postText]);
+      storeFacts = sf.facts; used = sf.used;
+      if (sf.facts) set(id, { used_data: sf.ok ? (used.length ? `Produk: ${used.slice(0, 4).join(' · ')}`.slice(0, 400) : 'Tidak ada produk cocok') : 'API produk tidak tersedia' });
+    }
     let d;
-    try { d = await draftWith(brand, { platform: ev.platform, kind: ev.kind, username: ev.author_username, text: ev.text, postText, knowledge: rule.knowledge, maxChars: limit }); }
+    try { d = await draftWith(brand, { platform: ev.platform, kind: ev.kind, username: ev.author_username, text: ev.text, postText, knowledge: rule.knowledge, storeFacts, maxChars: limit }); }
     catch (e) { return end(id, 'pending', `Gagal membuat draf: ${e.message}`.slice(0, 300), { needs_human: 1 }); }
     set(id, { drafted_at: now() });
 
@@ -199,7 +214,7 @@ export async function processEvent(id) {
 
     let human = action === 'escalate' || SENSITIVE.test(ev.text) || !SAFE_CATEGORIES.includes(f.category) || !(Number(d.confidence) >= MIN_CONFIDENCE);
     let why = human ? (SENSITIVE.test(ev.text) ? 'Memuat kata sensitif (komplain/refund/kerja sama).' : reason || 'Perlu ditinjau manusia.') : '';
-    const bad = unsafeReason(draft, rule.knowledge, limit);
+    const bad = unsafeReason(draft, `${rule.knowledge}\n${storeFacts}`, limit);
     if (bad) { human = true; why = bad; }
     if (rule.mode !== 'auto') return end(id, 'pending', human ? why : 'Menunggu persetujuan.', { ...f, needs_human: human ? 1 : 0 });
     if (human) return end(id, 'pending', why, { ...f, needs_human: 1 });

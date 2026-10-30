@@ -637,7 +637,7 @@ ARV.inbox = async ({ cfg, body, q }) => {
       <span class="row">${e.needs_human ? '<span class="badge s-failed">Perlu manusia</span>' : ''}<span class="badge s-${e.status === 'sent' ? 'published' : e.status === 'failed' ? 'failed' : 'pending_approval'}">${AR_STATUS[e.status] || e.status}</span></span></div>
       <div class="quote">${esc(e.text)}</div>
       ${act ? `<label class="lbl">Balasan <span class="muted small">(edit bila perlu)</span><textarea class="dtxt" style="min-height:70px" placeholder="${e.draft ? '' : 'Tulis balasan manual…'}">${esc(e.draft || '')}</textarea></label>` : e.reply_text ? `<div class="quote me"><span class="small muted">Balasan terkirim:</span><br>${esc(e.reply_text)}</div>` : e.draft ? `<div class="small muted">Draf: ${esc(e.draft)}</div>` : ''}
-      ${e.note || e.error ? `<div class="small ${e.status === 'failed' ? 'err' : 'muted'}">${esc(e.error || e.note)}</div>` : ''}
+      ${e.used_data ? `<div class="small muted">Data produk dipakai: ${esc(e.used_data)}</div>` : ''}${e.note || e.error ? `<div class="small ${e.status === 'failed' ? 'err' : 'muted'}">${esc(e.error || e.note)}</div>` : ''}
       <div class="row">${act && can('editor') ? '<button class="btn primary small" data-a="approve" type="button">Kirim balasan</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped', 'rejected'].includes(e.status) && cfg.ai ? '<button class="btn small" data-a="redraft" type="button">Draf ulang dengan Claude</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped'].includes(e.status) ? '<button class="btn small" data-a="reject" type="button">Tolak</button>' : ''}${e.permalink ? `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(e.permalink)}">Buka</a>` : ''}</div></div>`; }).join('')
     : '<div class="card muted">Belum ada event di sini. Setelah webhook terpasang, reply/komentar/DM baru muncul otomatis. Mode simulasi: pakai kotak uji di tab Aturan.</div>'}`;
   $('#fb').onchange = (e) => { location.hash = link('brand', e.target.value); }; $('#fp').onchange = (e) => { location.hash = link('p', e.target.value); };
@@ -688,15 +688,22 @@ ARV.webhook = async ({ cfg, body }) => {
   const copy = (id) => `<span class="row"><input id="${id}" readonly value="" style="flex:1"><button type="button" class="btn small" data-cp="${id}">Salin</button></span>`;
   body.innerHTML = `${can('admin') ? `<div class="card stack"><h3>Saklar utama</h3><label class="row"><input type="checkbox" id="gon" ${cfg.enabled ? 'checked' : ''}> <b>Aktifkan webhook &amp; auto reply</b></label>
     <label>Batas draf Claude per 24 jam (kontrol biaya)<input id="gcap" type="number" min="0" max="5000" value="${cfg.llm_cap}" style="max-width:160px"></label><div><button class="btn primary small" id="gsave" type="button">Simpan</button></div></div>` : ''}
-${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI untuk balasan</h3>
+${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp; pembuat post)</h3>
     <p class="small muted">Pilih Claude, atau API apa pun yang kompatibel dengan OpenAI (Kenari, OpenRouter, Gemini, Groq, Ollama). Aktif: <b>${esc(cfg.model)}</b>. Isi pesan audiens akan dikirim ke penyedia yang dipilih.</p>
     <div class="grid g2"><label>Penyedia<select name="provider"><option value="claude" ${cfg.llm.provider === 'claude' ? 'selected' : ''}>Claude (Anthropic)${cfg.llm.claude_ready ? '' : ' - API key belum diisi'}</option><option value="openai" ${cfg.llm.provider === 'openai' ? 'selected' : ''}>API kompatibel OpenAI (Kenari dll)</option></select></label>
     <label>Preset<select id="llmpreset"><option value="">Pilih preset…</option><option value="https://kenari.id/v1">Kenari (kenari.id)</option><option value="https://openrouter.ai/api/v1">OpenRouter</option><option value="https://generativelanguage.googleapis.com/v1beta/openai">Google Gemini</option><option value="https://api.groq.com/openai/v1">Groq</option><option value="http://host.docker.internal:11434/v1">Ollama (VPS sendiri)</option></select></label>
     <label>Base URL<input name="base_url" value="${esc(cfg.llm.base_url)}" autocomplete="off"></label>
-    <label>Nama model<input name="model" value="${esc(cfg.llm.model)}" placeholder="mis. qwen3-7-plus" autocomplete="off"></label>
+    <label>Nama model <span class="muted small">(ketik, atau muat daftar dari penyedia)</span><span class="row" style="flex-wrap:nowrap"><input name="model" list="llmmodels" value="${esc(cfg.llm.model)}" placeholder="mis. qwen3-7-plus" autocomplete="off" style="flex:1"><button type="button" class="btn small" id="llmload">Muat daftar model</button></span><datalist id="llmmodels"></datalist></label>
+    <div id="llmlist" class="small muted" style="grid-column:1/-1"></div>
     <label>API key<input name="api_key" type="password" autocomplete="new-password" placeholder="${cfg.llm.has_key ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel API key'}"></label>
     <label class="row" style="align-self:end"><input type="checkbox" name="fallback" ${cfg.llm.fallback ? 'checked' : ''}> Jika gagal, coba Claude (bila API key Claude ada)</label></div>
     <div class="row"><button class="btn primary small">Simpan</button><button type="button" class="btn small" id="llmtest">Uji koneksi</button>${cfg.llm.has_key ? '<button type="button" class="btn small danger" id="llmclear">Hapus API key</button>' : ''}</div></form>` : ''}
+  ${can('admin') ? `<form id="stf" class="card stack"><h3>Data produk &amp; stok (API delova.id)</h3>
+    <p class="small muted">Auto Reply dan pembuat post mengambil nama, harga, varian, stok, dan tautan produk langsung dari API Delova Store, jadi tidak mengarang. Stok bukan realtime (disalin dari Shopee berkala); usia data selalu disertakan ke model. Kunci API dibuat di VPS delova.id (<code>API_KEYS</code>) dan hanya dipakai server-ke-server.</p>
+    <div class="grid g2"><label>Base URL<input name="base_url" value="${esc(cfg.store.base_url)}" autocomplete="off"></label>
+    <label>API key<input name="api_key" type="password" autocomplete="new-password" placeholder="${cfg.store.has_key ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel kunci (min. 32 karakter)'}"></label></div>
+    <div class="row"><label class="row"><input type="checkbox" name="use_reply" ${cfg.store.use_reply ? 'checked' : ''}> Pakai untuk Auto Reply</label><label class="row"><input type="checkbox" name="use_posts" ${cfg.store.use_posts ? 'checked' : ''}> Pakai untuk ide/rencana post AI</label></div>
+    <div class="row"><button class="btn primary small">Simpan</button><button type="button" class="btn small" id="sttest">Uji koneksi</button>${cfg.store.has_key ? '<button type="button" class="btn small danger" id="stclear">Hapus API key</button>' : ''}</div></form>` : ''}
   <div class="card stack"><h3>Data untuk Meta for Developers</h3>
     ${cfg.webhooks.map((w) => `<div class="stack" style="gap:4px"><b>${PLAT[w.platform]}</b> ${w.has_secret ? '<span class="badge s-published">App Secret terisi</span>' : '<span class="badge s-failed">App Secret belum diisi</span>'}<label>Callback URL${copy('u_' + w.platform)}</label></div>`).join('')}
     ${cfg.verify_token ? `<label>Verify token (sama untuk keduanya)${copy('vt')}</label>${can('admin') ? '<div><button type="button" class="btn small danger" id="regen">Buat ulang token</button></div>' : ''}` : '<p class="small muted">Verify token hanya terlihat oleh admin.</p>'}</div>
@@ -709,6 +716,15 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI untuk balasan<
   for (const w of cfg.webhooks) { const el = $('#u_' + w.platform, body); if (el) el.value = w.url; }
   if ($('#vt', body)) $('#vt', body).value = cfg.verify_token;
   body.onclick = (e) => { const c = e.target.closest('[data-cp]'); if (c) copyText($('#' + c.dataset.cp, body).value); };
+  const sf = $('#stf', body);
+  if (sf) {
+    const payload = () => ({ base_url: sf.elements.base_url.value, api_key: sf.elements.api_key.value, use_reply: sf.elements.use_reply.checked, use_posts: sf.elements.use_posts.checked });
+    sf.onsubmit = (e) => { e.preventDefault(); busy($('button', sf), async () => { await api('PUT', '/api/store/config', payload()); toast('Pengaturan data produk tersimpan.'); route(); }); };
+    $('#sttest', sf).onclick = (e) => busy(e.target, async () => {
+      await api('PUT', '/api/store/config', payload());
+      try { const r = await api('POST', '/api/store/test'); toast(`Terhubung: ${r.shops} toko, ${r.products} produk (${r.ms} ms). Sinkron terakhir: ${r.last_sync_at ? wib(r.last_sync_at) : '-'}.`); } catch (err) { toast(err.message, true); } });
+    const sc = $('#stclear', sf); if (sc) sc.onclick = (e) => busy(e.target, async () => { if (!(await ui.confirm({ title: 'Hapus API key produk?', message: 'Auto Reply dan pembuat post berhenti mengambil data produk sampai key diisi lagi.', ok: 'Hapus', danger: true }))) return; await api('PUT', '/api/store/config', { clear_key: true }); toast('API key dihapus.'); route(); });
+  }
   const lf = $('#llmf', body);
   if (lf) {
     $('#llmpreset', lf).onchange = (e) => { if (e.target.value) { lf.elements.base_url.value = e.target.value; lf.elements.provider.value = 'openai'; } };
@@ -718,6 +734,17 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI untuk balasan<
     $('#llmtest', lf).onclick = (e) => busy(e.target, async () => {
       await api('PUT', '/api/auto/llm', { provider: lf.elements.provider.value, base_url: lf.elements.base_url.value, model: lf.elements.model.value, api_key: lf.elements.api_key.value, fallback: lf.elements.fallback.checked });
       try { const r = await api('POST', '/api/auto/llm/test'); toast(`Terhubung (${r.ms} ms).`); } catch (err) { toast(err.message, true); } });
+    const ml = $('#llmload', lf);
+    ml.onclick = () => busy(ml, async () => {
+      await api('PUT', '/api/auto/llm', { provider: 'openai', base_url: lf.elements.base_url.value, api_key: lf.elements.api_key.value });
+      const r = await api('GET', '/api/auto/llm/models?fresh=1');
+      const chat = r.models.filter((m) => m.chat);
+      $('#llmmodels', lf).innerHTML = chat.map((m) => `<option value="${esc(m.id)}">${m.free ? 'GRATIS · ' : ''}${esc(m.owned_by || '')}</option>`).join('');
+      const free = chat.filter((m) => m.free);
+      $('#llmlist', lf).innerHTML = `${chat.length} model chat tersedia. Klik kolom Nama model untuk memilih, atau pilih cepat: ${chat.slice(0, 40).map((m) => `<button type="button" class="chip pickm" data-m="${esc(m.id)}">${m.free ? '🆓 ' : ''}${esc(m.id)}</button>`).join(' ')}${free.length ? `<br>Model gratis: ${free.map((m) => esc(m.id)).join(', ')}.` : ''}`;
+      toast(`${chat.length} model dimuat.`);
+    });
+    lf.addEventListener('click', (e) => { const b = e.target.closest('.pickm'); if (b) { lf.elements.model.value = b.dataset.m; } });
     const lc = $('#llmclear', lf); if (lc) lc.onclick = (e) => busy(e.target, async () => { if (!(await ui.confirm({ title: 'Hapus API key model?', message: 'Auto Reply berhenti membuat draf lewat penyedia ini sampai key diisi lagi.', ok: 'Hapus', danger: true }))) return; await api('PUT', '/api/auto/llm', { clear_key: true }); toast('API key dihapus.'); route(); });
   }
   const gs = $('#gsave', body);

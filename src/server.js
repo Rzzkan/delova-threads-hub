@@ -16,6 +16,7 @@ import { mountLegal } from './legal.js';
 import * as R from './research.js';
 import { mountInstagram } from './ig-routes.js';
 import { mountAuto } from './auto-routes.js';
+import * as Store from './store-api.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
 const need = (min) => (req, res, next) =>
@@ -138,7 +139,7 @@ export function createApp() {
   mountLegal(app);
 
   app.get('/api/health', (req, res) =>
-    res.json({ ok: true, simulated: T.isDryRun(), ai: AI.aiEnabled(), model: AI.aiEnabled() ? AI.aiModel() : null }),
+    res.json({ ok: true, simulated: T.isDryRun(), ai: AI.replyAiEnabled(), model: AI.replyAiEnabled() ? AI.replyAiLabel() : null }),
   );
 
   app.post('/api/login', (req, res) => {
@@ -271,7 +272,7 @@ export function createApp() {
       const next = get("SELECT id,text,scheduled_at FROM posts WHERE brand_id=? AND status='scheduled' ORDER BY scheduled_at LIMIT 1", b.id);
       return { ...publicBrand(b), counts, next_post: next || null };
     });
-    res.json({ brands, simulated: T.isDryRun(), ai: AI.aiEnabled() });
+    res.json({ brands, simulated: T.isDryRun(), ai: AI.replyAiEnabled() });
   });
 
   // ----- Posts
@@ -524,19 +525,30 @@ export function createApp() {
     res.json(out);
   })];
 
+  // Data produk/stok dari API delova.id untuk pembuat post (opsional; gagal → tanpa data, tidak menghentikan fitur)
+  const postFacts = async (brand, texts, o = {}) => {
+    const c = Store.storeConfig();
+    if (!c.usePosts || !c.key) return { facts: '', used: [] };
+    const r = await Store.productFacts(brand.id, texts.filter(Boolean), o);
+    return { facts: r.facts, used: r.used };
+  };
+
   api.post('/ai/generate', ...aiRoute('editor', async (brand, b) => {
     if (!b.brief?.trim()) { const e = new Error('Brief wajib diisi.'); e.status = 400; throw e; }
-    return { variants: await AI.generatePosts(brand, b) };
+    const sf = await postFacts(brand, [b.brief, b.angle], { featured: true });
+    return { variants: await AI.generatePosts(brand, { ...b, facts: sf.facts }), data_used: sf.used };
   }));
   api.post('/ai/improve', ...aiRoute('editor', async (brand, b) => {
     if (!b.text?.trim()) { const e = new Error('Teks wajib diisi.'); e.status = 400; throw e; }
-    return { variants: await AI.improvePost(brand, b) };
+    const sf = await postFacts(brand, [b.text, b.instruction]);
+    return { variants: await AI.improvePost(brand, { ...b, facts: sf.facts }), data_used: sf.used };
   }));
   api.post('/ai/reply-suggestions', ...aiRoute('manager', async (brand, b) => ({
     suggestions: await AI.suggestReplies(brand, { postText: b.post_text, replies: b.replies || [], count: b.count }),
   })));
   api.post('/ai/weekly-plan', ...aiRoute('editor', async (brand, b) => {
-    const items = await AI.weeklyPlan(brand, b);
+    const sf = await postFacts(brand, [b.goal, b.promo], { featured: true });
+    const items = await AI.weeklyPlan(brand, { ...b, facts: sf.facts });
     // beri usulan tanggal mulai besok (WIB), jam sesuai saran Claude
     const wibDate = new Date(Date.now() + 7 * 3600_000 + 86_400_000);
     return {
@@ -973,7 +985,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number(process.env.PORT) || 3000;
   const srv = createApp().listen(port, () => {
     console.log(`Delova Social Hub berjalan di http://localhost:${port}`);
-    console.log(`Mode Threads: ${T.isDryRun() ? 'SIMULASI (tidak memposting ke Threads asli)' : 'LIVE'} | Claude: ${AI.aiEnabled() ? AI.aiModel() : 'nonaktif (isi ANTHROPIC_API_KEY)'}`);
+    console.log(`Mode Threads: ${T.isDryRun() ? 'SIMULASI (tidak memposting ke Threads asli)' : 'LIVE'} | AI: ${AI.replyAiEnabled() ? AI.replyAiLabel() : 'nonaktif (isi ANTHROPIC_API_KEY atau atur model di menu Auto Reply)'}`);
   });
   const stopScheduler = startScheduler();
   // docker stop / restart mengirim SIGTERM: tutup rapi agar tidak memutus request yang sedang jalan

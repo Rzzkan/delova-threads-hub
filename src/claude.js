@@ -41,16 +41,22 @@ Hindari: ${b.donts || '-'}`;
 }
 
 async function ask(brand, prompt, maxTokens = 3000) {
-  const msg = await getClient().messages.create({
-    model: aiModel(),
-    max_tokens: maxTokens,
-    system: [
-      { type: 'text', text: RULES },
-      { type: 'text', text: brandBlock(brand), cache_control: { type: 'ephemeral' } },
-    ],
-    messages: [{ role: 'user', content: prompt }],
-  });
-  return msg.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
+  const viaClaude = async () => {
+    const msg = await getClient().messages.create({
+      model: aiModel(),
+      max_tokens: maxTokens,
+      system: [
+        { type: 'text', text: RULES },
+        { type: 'text', text: brandBlock(brand), cache_control: { type: 'ephemeral' } },
+      ],
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return msg.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
+  };
+  const cfg = llmConfig();
+  if (cfg.provider !== 'openai') return viaClaude();
+  try { return await chatOpenAI({ system: `${RULES}\n\n${brandBlock(brand)}`, user: prompt, maxTokens, cfg }); }
+  catch (e) { if (cfg.fallback && aiEnabled()) return viaClaude(); throw e; }
 }
 
 function parseJson(text) {
@@ -61,24 +67,27 @@ function parseJson(text) {
   return JSON.parse(t.slice(start, end + 1));
 }
 
+/** Blok data produk dari API Delova Store untuk prompt pembuat post. */
+const factsBlock = (facts) => (facts ? `${facts}\nAturan data produk: pakai nama, harga, dan tautan di atas bila relevan; jangan mengarang harga/diskon/stok; jangan menyebut angka stok pasti di post publik (cukup "stok terbatas" bila total stok ≤ 5); sebut harga hanya bila tertulis di data.\n` : '');
+
 const fit = (items) =>
   items.map((it) => ({ ...it, length: threadsLength(it.text || ''), too_long: threadsLength(it.text || '') > 500 }));
 
 export const clampCount = (n, min = 5, max = 10) => Math.min(max, Math.max(min, Number(n) || min));
 
-export async function generatePosts(brand, { brief, count, angle }) {
+export async function generatePosts(brand, { brief, count, angle, facts }) {
   const n = clampCount(count);
   const out = await ask(
     brand,
     `Buat ${n} opsi post Threads yang berbeda sudut pandangnya.
 Brief: ${brief}
 ${angle ? `Arahan sudut/pillar: ${angle}` : ''}
-Format: [{"text": "...", "angle": "label sudut singkat", "topic_tag": "satu kata/frasa atau kosong"}]`,
+${factsBlock(facts)}Format: [{"text": "...", "angle": "label sudut singkat", "topic_tag": "satu kata/frasa atau kosong"}]`,
   );
   return fit(parseJson(out));
 }
 
-export async function improvePost(brand, { text, instruction, count }) {
+export async function improvePost(brand, { text, instruction, count, facts }) {
   const n = clampCount(count, 3, 5);
   const out = await ask(
     brand,
@@ -86,7 +95,7 @@ export async function improvePost(brand, { text, instruction, count }) {
 Post asli:
 """${text}"""
 Instruksi: ${instruction || 'Buat lebih kuat hook-nya, lebih ringkas, dan ajak interaksi.'}
-Format: [{"text": "...", "angle": "apa yang diubah"}]`,
+${factsBlock(facts)}Format: [{"text": "...", "angle": "apa yang diubah"}]`,
   );
   return fit(parseJson(out));
 }
@@ -105,7 +114,7 @@ Format: [{"index": 1, "options": ["...", "..."]}]`,
   return parseJson(out);
 }
 
-export async function weeklyPlan(brand, { goal, days, promo }) {
+export async function weeklyPlan(brand, { goal, days, promo, facts }) {
   const n = clampCount(days, 5, 14);
   const out = await ask(
     brand,
@@ -113,6 +122,7 @@ export async function weeklyPlan(brand, { goal, days, promo }) {
 Tujuan minggu ini: ${goal || 'menaikkan engagement dan traffic ke Shopee'}
 ${promo ? `Info promo yang boleh disebut: ${promo}` : 'Tidak ada promo spesifik; jangan menyebut diskon.'}
 Seimbangkan content pillars (rasio kira-kira 1 promo : 3 non-promo). Tulis naskah post lengkap.
+${factsBlock(facts)}
 Format: [{"day": 1, "time": "HH:MM (WIB, jam aktif audiens)", "pillar": "...", "text": "...", "topic_tag": ""}]`,
     4500,
   );
@@ -178,7 +188,8 @@ Keamanan (paling penting):
 Aturan balasan:
 - Bahasa Indonesia, hangat, singkat, natural seperti admin manusia. Sapa dengan "Kak". Maksimal 1-2 emoji.
 - Jawab HANYA dari PENGETAHUAN BRAND dan konteks yang diberikan. Jangan mengarang harga, diskon, stok, ukuran, bahan, ongkir, waktu kirim, atau janji apa pun yang tidak tertulis. Bila tidak tahu: katakan akan dicek/arahkan ke DM atau Shopee sesuai pengetahuan brand.
-- Jangan menulis link atau nomor telepon kecuali persis ada di PENGETAHUAN BRAND.
+- Harga, stok, varian (ukuran/warna), dan link produk HANYA boleh berasal dari blok DATA PRODUK TERKINI bila ada. Stok adalah perkiraan (sinkron berkala): sebut sebagai "tercatat" dan arahkan checkout lewat link produk; jangan menjanjikan stok. Bila DATA PRODUK TIDAK TERSEDIA atau produk tidak ditemukan, jangan sebut harga/stok dan pilih action "escalate".
+- Jangan menulis link atau nomor telepon kecuali persis ada di PENGETAHUAN BRAND atau DATA PRODUK TERKINI.
 - Jangan berdebat, jangan membalas provokasi atau hinaan.
 Tentukan "action":
 - "reply": aman dibalas otomatis (sapaan, pujian, terima kasih, pertanyaan umum yang jawabannya ada di pengetahuan).
@@ -201,7 +212,7 @@ export function validateBaseUrl(u) {
   if (x.protocol !== 'https:' && !(x.protocol === 'http:' && isLocal(x.hostname))) return 'Base URL harus HTTPS (HTTP hanya untuk localhost/Ollama).';
   return null;
 }
-/** Apakah ada model yang siap membuat balasan otomatis? */
+/** Apakah ada model yang siap dipakai (Auto Reply dan semua fitur AI di dashboard)? */
 export function replyAiEnabled() {
   const c = llmConfig();
   if (c.provider === 'openai') return !!(c.key && c.model) || (c.fallback && aiEnabled());
@@ -228,16 +239,36 @@ async function chatOpenAI({ system, user, maxTokens = 700, cfg = llmConfig() }) 
   if (typeof text !== 'string' || !text.trim()) throw new Error(`Model ${cfg.model} tidak mengembalikan teks.`);
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '');
 }
+/** Daftar model dari endpoint /models (format OpenAI) milik penyedia, mis. https://kenari.id/v1/models. */
+const modelCache = new Map();
+export async function listModels(cfg = llmConfig(), { fresh = false } = {}) {
+  if (!cfg.key) throw new Error('Isi API key dulu, lalu simpan.');
+  const bad = validateBaseUrl(cfg.baseUrl); if (bad) throw new Error(bad);
+  const ck = `${cfg.baseUrl}|${cfg.key.slice(-6)}`;
+  const hit = modelCache.get(ck);
+  if (!fresh && hit && Date.now() - hit.at < 5 * 60_000) return hit.list;
+  const r = await fetch(`${cfg.baseUrl}/models`, { headers: { authorization: `Bearer ${cfg.key}` }, signal: AbortSignal.timeout(15_000), redirect: 'error' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Gagal memuat daftar model: ${j.error?.message || j.message || `HTTP ${r.status}`}`.slice(0, 250));
+  const rows = Array.isArray(j.data) ? j.data : Array.isArray(j) ? j : [];
+  const NON_CHAT = /(image|imagine|tts|whisper|embed|banana|dall|flux|sdxl|video|audio|speech|rerank|moderation)/i;
+  const list = rows.map((m) => {
+    const id = String(m.id || m.name || '').trim();
+    return { id, owned_by: m.owned_by || '', free: /:free$/i.test(id), chat: !NON_CHAT.test(id), context: m.context_length || m.context_window || null };
+  }).filter((m) => m.id).sort((a, b) => Number(b.chat) - Number(a.chat) || Number(b.free) - Number(a.free) || a.id.localeCompare(b.id));
+  modelCache.set(ck, { at: Date.now(), list });
+  return list;
+}
 export const testLlm = async (cfg) => {
   const t = Date.now();
   const out = await chatOpenAI({ system: 'Balas HANYA dengan JSON {"ok":true}', user: 'tes', maxTokens: 50, cfg });
   return { ms: Date.now() - t, sample: out.trim().slice(0, 120) };
 };
 
-export async function aiReply(brand, { platform, kind, username, text, postText, knowledge, maxChars }) {
+export async function aiReply(brand, { platform, kind, username, text, postText, knowledge, storeFacts, maxChars }) {
   const where = { threads: 'Threads', instagram: 'Instagram' }[platform] || platform;
   const kindLabel = { reply: 'reply pada post kami', mention: 'post yang me-mention kami', comment: 'komentar pada post kami', dm: 'pesan langsung (DM)' }[kind] || kind;
-  const system = `${REPLY_RULES}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}`;
+  const system = `${REPLY_RULES}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}${storeFacts ? `\n\n${storeFacts}` : ''}`;
   const user = `Platform: ${where}. Jenis: ${kindLabel}. Maksimal ${maxChars} karakter.
 ${postText ? `Konteks post kami: """${String(postText).slice(0, 600)}"""\n` : ''}Dari @${String(username || 'anonim').slice(0, 60)}:
 <pesan_audiens>
