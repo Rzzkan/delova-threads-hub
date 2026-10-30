@@ -111,6 +111,15 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 CREATE INDEX IF NOT EXISTS idx_oauth_access ON oauth_tokens(access_hash);
 CREATE INDEX IF NOT EXISTS idx_oauth_refresh ON oauth_tokens(refresh_hash);
 
+CREATE TABLE IF NOT EXISTS brand_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  brand_id TEXT NOT NULL,
+  snapshot TEXT NOT NULL,
+  changed_by TEXT,
+  via TEXT,
+  ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS brand_history_brand ON brand_history(brand_id, id DESC);
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT,
@@ -134,6 +143,7 @@ const SETTING_DEFAULTS = {
   claude_approve: '0',   // boleh menyetujui/menjadwalkan/mengembalikan post
   claude_publish: '0',   // boleh publish langsung
   claude_reply: '0',     // boleh membalas / menyembunyikan reply
+  claude_brand: '0',     // boleh mengubah profil brand (voice, pillar, hashtag, dos/donts, deskripsi)
   claude_daily_cap: '30', // maks draft baru dari Claude per 24 jam
   threads_mode: 'auto',  // auto = ikut THREADS_DRY_RUN di .env | live | sim
   meta_app_id: '',       // kredensial Meta global (App Secret disimpan terenkripsi)
@@ -208,6 +218,7 @@ export const policy = () => ({
   can_approve: getSetting('claude_approve') === '1',
   can_publish: getSetting('claude_publish') === '1',
   can_reply: getSetting('claude_reply') === '1',
+  can_edit_brand: getSetting('claude_brand') === '1',
   daily_create_cap: Number(getSetting('claude_daily_cap')),
 });
 

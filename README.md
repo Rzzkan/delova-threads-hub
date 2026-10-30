@@ -213,3 +213,10 @@ Gambar yang dilampirkan di chat tidak bisa disalin Claude menjadi base64 (ia han
 Claude memanggil `request_photo_upload` → user membuka tautan (15 menit, tanpa login, maks 20 file) dan menjatuhkan foto →
 Claude memanggil `list_media` untuk mengambil URL-nya → dipakai di `create_post`. Foto juga bisa diunggah dulu dari
 Tulis Post, lalu Claude tinggal memakai `list_media`.
+
+### Claude mengubah profil brand
+
+Saklar baru **"Ubah profil brand"** di Kontrol Claude (default **mati**). Bila aktif, Claude (konektor/MCP) dapat memakai
+`update_brand_profile` untuk mengubah deskripsi, brand voice, content pillars, hashtag, dos/donts — wajib `user_confirmed=true`
+setelah user setuju di percakapan. Nama brand, token, dan kredensial tidak bisa diubah Claude. Setiap perubahan (dari dashboard
+maupun Claude) menyimpan versi sebelumnya; lihat/pulihkan di **Brand & Akun → Riwayat perubahan** (pemulihan hanya manusia).

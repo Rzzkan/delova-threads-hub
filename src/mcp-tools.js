@@ -46,6 +46,39 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
   );
 
   server.registerTool(
+    'update_brand_profile',
+    {
+      title: 'Ubah profil brand',
+      description:
+        'Ubah brand voice, deskripsi, content pillars, hashtag, dos/donts satu brand. Memengaruhi SEMUA tulisan berikutnya, jadi: (1) baca dulu get_brand_voice, (2) tampilkan ke user perubahan yang diusulkan (sebelum & sesudah), (3) panggil dengan user_confirmed=true hanya setelah user setuju. Kirim hanya field yang berubah; pillars dikirim sebagai daftar lengkap (menggantikan yang lama). Nama brand & kredensial tidak bisa diubah. Hanya jalan jika admin mengaktifkan "Ubah profil brand" di Kontrol Claude. Setiap perubahan tersimpan di riwayat sehingga bisa dipulihkan dari dashboard.',
+      inputSchema: {
+        brand: z.string().describe(brandIds),
+        description: z.string().max(500).optional(),
+        voice: z.string().max(4000).optional().describe('Brand voice lengkap (menggantikan yang lama)'),
+        pillars: z.array(z.string().max(120)).max(12).optional().describe('Daftar lengkap content pillar'),
+        hashtags: z.string().max(500).optional(),
+        dos: z.string().max(2000).optional(),
+        donts: z.string().max(2000).optional(),
+        user_confirmed: CONFIRM,
+      },
+    },
+    wrap(({ brand, user_confirmed, ...fields }) => {
+      needConfirm(user_confirmed);
+      return call('PUT', `/api/brands/${brand}/profile`, fields);
+    }),
+  );
+
+  server.registerTool(
+    'list_brand_history',
+    {
+      title: 'Riwayat perubahan profil brand',
+      description: 'Versi sebelumnya dari profil brand (30 terakhir): siapa, kapan, lewat apa, dan isi sebelum diubah. Berguna untuk membandingkan atau menjelaskan perubahan. Pemulihan dilakukan user di dashboard (Brand & Akun → Riwayat).',
+      inputSchema: { brand: z.string().describe(brandIds) },
+    },
+    wrap(({ brand }) => call('GET', `/api/brands/${brand}/history`)),
+  );
+
+  server.registerTool(
     'get_brand_voice',
     {
       title: 'Brand voice',

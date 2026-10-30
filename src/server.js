@@ -122,7 +122,7 @@ export function createApp() {
 
   const A = (req, action, detail) => audit(req.user.id, action, { ...(detail || {}), via: req.via });
   const humanOnly = (req, res, next) => (req.via === 'cookie' ? next() : bad(res, 'Aksi ini hanya bisa dilakukan manusia lewat dashboard.', 403));
-  const GATE_LABEL = { claude_create: 'Buat & edit draft', claude_approve: 'Setujui & jadwalkan', claude_publish: 'Publish langsung', claude_reply: 'Balas komentar' };
+  const GATE_LABEL = { claude_create: 'Buat & edit draft', claude_approve: 'Setujui & jadwalkan', claude_publish: 'Publish langsung', claude_reply: 'Balas komentar', claude_brand: 'Ubah profil brand (voice, pillar, dll)' };
   const gate = (key) => (req, res, next) =>
     req.via === 'cookie' || getSetting(key) === '1' ? next() : bad(res, `Dimatikan oleh admin: "${GATE_LABEL[key]}" (dashboard → Kontrol Claude). Minta manajer melakukannya di dashboard.`, 403);
   const claudeCap = (req, res, next) => {
@@ -193,17 +193,60 @@ export function createApp() {
     const b = brandOr404(req.params.id);
     return b ? res.json(publicBrand(b)) : bad(res, 'Brand tidak ditemukan.', 404);
   });
+  // ---- Profil brand (voice, pillar, hashtag, dos/donts). Setiap perubahan disimpan ke riwayat agar bisa dipulihkan.
+  const PROFILE = { description: 500, voice: 4000, hashtags: 500, dos: 2000, donts: 2000 };
+  const profileOf = (b) => ({ name: b.name, description: b.description, voice: b.voice, pillars: JSON.parse(b.pillars || '[]'), hashtags: b.hashtags, dos: b.dos, donts: b.donts });
+  function validateProfile(f, { allowName }) {
+    for (const [k, max] of Object.entries(PROFILE)) if (f[k] !== undefined && (typeof f[k] !== 'string' || f[k].length > max)) return `${k} harus teks (maks ${max} karakter).`;
+    if (f.pillars !== undefined && (!Array.isArray(f.pillars) || f.pillars.length > 12 || f.pillars.some((x) => typeof x !== 'string' || x.length > 120))) return 'pillars harus daftar maks 12 butir (tiap butir maks 120 karakter).';
+    if (f.name !== undefined && (!allowName || typeof f.name !== 'string' || !f.name.trim() || f.name.length > 80)) return 'Nama brand tidak dapat diubah lewat jalur ini.';
+    return null;
+  }
+  /** Terapkan perubahan sebagian; hanya field yang dikirim yang berubah. Mengembalikan daftar field yang benar-benar berubah. */
+  function applyProfile(b, f, req, allowName) {
+    const before = profileOf(b);
+    const next = { ...before };
+    for (const k of ['description', 'voice', 'hashtags', 'dos', 'donts']) if (f[k] !== undefined) next[k] = f[k].trim();
+    if (f.pillars !== undefined) next.pillars = f.pillars.map((x) => x.trim()).filter(Boolean);
+    if (allowName && f.name !== undefined) next.name = f.name.trim();
+    const changed = Object.keys(next).filter((k) => JSON.stringify(next[k]) !== JSON.stringify(before[k]));
+    if (!changed.length) return changed;
+    run('INSERT INTO brand_history(brand_id,snapshot,changed_by,via,ts) VALUES (?,?,?,?,?)', b.id, JSON.stringify(before), req.user.id, req.via, now());
+    run('UPDATE brands SET name=?, description=?, voice=?, pillars=?, hashtags=?, dos=?, donts=? WHERE id=?', next.name, next.description, next.voice, JSON.stringify(next.pillars), next.hashtags, next.dos, next.donts, b.id);
+    A(req, 'brand.updated', { brand: b.id, fields: changed });
+    return changed;
+  }
   api.put('/brands/:id', humanOnly, need('manager'), (req, res) => {
     const b = brandOr404(req.params.id);
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    const err = validateProfile(req.body || {}, { allowName: true });
+    if (err) return bad(res, err);
+    applyProfile(b, req.body || {}, req, true);
+    res.json(publicBrand(brandOr404(b.id)));
+  });
+  // Jalur Claude/MCP: tanpa nama & kredensial, dikunci saklar "Ubah profil brand" di Kontrol Claude (default mati).
+  api.put('/brands/:id/profile', need('manager'), gate('claude_brand'), (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
     const f = req.body || {};
-    run(
-      `UPDATE brands SET name=?, description=?, voice=?, pillars=?, hashtags=?, dos=?, donts=? WHERE id=?`,
-      f.name ?? b.name, f.description ?? b.description, f.voice ?? b.voice,
-      Array.isArray(f.pillars) ? JSON.stringify(f.pillars.map(String).filter(Boolean)) : b.pillars,
-      f.hashtags ?? b.hashtags, f.dos ?? b.dos, f.donts ?? b.donts, b.id,
-    );
-    A(req, 'brand.updated', { brand: b.id });
+    const err = validateProfile(f, { allowName: false });
+    if (err) return bad(res, err);
+    if (!Object.keys(PROFILE).concat('pillars').some((k) => f[k] !== undefined)) return bad(res, 'Kirim minimal satu field: description, voice, pillars, hashtags, dos, donts.');
+    const changed = applyProfile(b, f, req, false);
+    res.json({ changed, brand: publicBrand(brandOr404(b.id)) });
+  });
+  api.get('/brands/:id/history', need('manager'), (req, res) => {
+    if (!brandOr404(req.params.id)) return bad(res, 'Brand tidak ditemukan.', 404);
+    res.json(all(`SELECT h.id, h.ts, h.via, h.snapshot, u.name AS user_name FROM brand_history h LEFT JOIN users u ON u.id=h.changed_by WHERE h.brand_id=? ORDER BY h.id DESC LIMIT 30`, req.params.id)
+      .map((h) => ({ id: h.id, ts: h.ts, via: h.via, user_name: h.user_name, snapshot: JSON.parse(h.snapshot) })));
+  });
+  api.post('/brands/:id/history/:hid/restore', humanOnly, need('manager'), (req, res) => {
+    const b = brandOr404(req.params.id);
+    const h = b && get('SELECT * FROM brand_history WHERE id=? AND brand_id=?', req.params.hid, b.id);
+    if (!h) return bad(res, 'Versi tidak ditemukan.', 404);
+    const snap = JSON.parse(h.snapshot);
+    applyProfile(b, { description: snap.description || '', voice: snap.voice || '', hashtags: snap.hashtags || '', dos: snap.dos || '', donts: snap.donts || '', pillars: snap.pillars || [] }, req, false);
+    A(req, 'brand.restored', { brand: b.id, from: h.id });
     res.json(publicBrand(brandOr404(b.id)));
   });
   api.post('/brands/:id/refresh-token', humanOnly, need('admin'), ah(async (req, res) => {
@@ -778,7 +821,7 @@ export function createApp() {
   api.get('/settings/claude', humanOnly, need('admin'), (req, res) => res.json(policy()));
   api.put('/settings/claude', humanOnly, need('admin'), (req, res) => {
     const b = req.body || {};
-    const map = { claude_enabled: 'claude_enabled', can_create: 'claude_create', can_approve: 'claude_approve', can_publish: 'claude_publish', can_reply: 'claude_reply' };
+    const map = { claude_enabled: 'claude_enabled', can_create: 'claude_create', can_approve: 'claude_approve', can_publish: 'claude_publish', can_reply: 'claude_reply', can_edit_brand: 'claude_brand' };
     for (const [k, key] of Object.entries(map)) if (b[k] !== undefined) setSetting(key, b[k] ? '1' : '0');
     if (b.daily_create_cap !== undefined) setSetting('claude_daily_cap', String(Math.max(0, Math.min(500, parseInt(b.daily_create_cap, 10) || 0))));
     A(req, 'settings.claude_updated', policy());

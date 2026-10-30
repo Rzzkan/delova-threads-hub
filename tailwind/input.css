@@ -139,6 +139,8 @@ pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]
 .skiplist li { @apply border-b border-line pb-2 last:border-0 last:pb-0; }
 .prow { @apply grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-line py-1 last:border-0; }
 table input[type=checkbox], .bulkbar input[type=checkbox] { @apply size-4 cursor-pointer accent-[var(--accent)]; }
+.hrow { @apply grid gap-1.5 border-b border-line pb-3 last:border-0 last:pb-0; }
+.skiplist.hist { @apply max-h-[55vh]; }
 .lbl { @apply text-sm font-medium; }
 .upl { @apply mx-auto grid min-h-screen max-w-xl content-start gap-4 p-4 sm:pt-12; }
 .cal-sums { @apply mb-3 grid gap-2; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }

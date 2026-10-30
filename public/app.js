@@ -625,13 +625,31 @@ VIEWS.brands = async (v) => {
     <label>Hashtag / topic lazim<input name="hashtags" value="${esc(b.hashtags)}" ${can('manager') ? '' : 'disabled'}></label>
     <label>Lakukan<textarea name="dos" style="min-height:64px" ${can('manager') ? '' : 'disabled'}>${esc(b.dos)}</textarea></label>
     <label>Hindari<textarea name="donts" style="min-height:64px" ${can('manager') ? '' : 'disabled'}>${esc(b.donts)}</textarea></label>
-    ${can('manager') ? '<div><button class="btn primary" type="submit">Simpan brand</button></div>' : ''}</form>`).join('')}</div>`;
+    ${can('manager') ? '<div class="row"><button class="btn primary" type="submit">Simpan brand</button><button type="button" class="btn" data-x="hist">Riwayat perubahan</button></div>' : ''}</form>`).join('')}</div>`;
   v.onsubmit = (e) => { e.preventDefault(); const f = e.target; const d = Object.fromEntries(new FormData(f)); d.pillars = d.pillars.split('\n').map((s) => s.trim()).filter(Boolean);
     busy($('button[type=submit]', f), async () => { await api('PUT', `/api/brands/${f.dataset.id}`, d); toast('Brand tersimpan.'); }); };
   v.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('form').dataset.id;
     if (x === 'perm') return checkPerm(e.target, id, brands.find((y) => y.id === id));
+    if (x === 'hist') return busy(e.target, () => showHistory(id));
     busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/brands/${id}/refresh-token`); if (x === 'disc') { if (!(await ui.confirm({ title: 'Putuskan akun ini?', message: 'Token Threads dihapus dari Hub. Posting terjadwal untuk akun ini akan gagal sampai Anda menghubungkannya lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/brands/${id}/connection`); } toast('Berhasil.'); route(); }); };
 };
+
+const VIA = { cookie: 'Dashboard', oauth: 'Claude (konektor)', token: 'Claude (token API)' };
+const FIELD_LABEL = { description: 'Deskripsi', voice: 'Brand voice', pillars: 'Content pillars', hashtags: 'Hashtag', dos: 'Lakukan', donts: 'Hindari', name: 'Nama' };
+async function showHistory(brandId) {
+  const [list, fresh] = await Promise.all([api('GET', `/api/brands/${brandId}/history`), api('GET', '/api/brands')]);
+  const cur = fresh.find((b) => b.id === brandId);
+  const diff = (snap) => Object.keys(FIELD_LABEL).filter((k) => k !== 'name' && JSON.stringify(snap[k] ?? '') !== JSON.stringify(cur[k] ?? '')).map((k) => FIELD_LABEL[k]);
+  const html = list.length ? `<div class="skiplist hist">${list.map((h) => { const d = diff(h.snapshot); return `<div class="hrow" data-h="${h.id}"><div class="row between"><b>${esc(wib(h.ts))}</b><span class="badge">${esc(VIA[h.via] || h.via || '-')}</span></div>
+    <div class="small muted">oleh ${esc(h.user_name || '-')} · berbeda dari sekarang: ${d.length ? esc(d.join(', ')) : 'tidak ada'}</div>
+    <details><summary class="small">Lihat isi versi ini</summary><div class="small" style="white-space:pre-wrap"><b>Voice:</b> ${esc(h.snapshot.voice || '-')}\n<b>Pillars:</b> ${esc((h.snapshot.pillars || []).join(' · ') || '-')}\n<b>Hashtag:</b> ${esc(h.snapshot.hashtags || '-')}\n<b>Lakukan:</b> ${esc(h.snapshot.dos || '-')}\n<b>Hindari:</b> ${esc(h.snapshot.donts || '-')}</div></details>
+    ${d.length ? '<button type="button" class="btn small" data-restore>Pulihkan versi ini</button>' : ''}</div>`; }).join('')}</div>` : '<p class="muted">Belum ada perubahan tercatat.</p>';
+  await ui.form({ title: `Riwayat ${cur.name}`, message: 'Versi sebelum setiap perubahan. Memulihkan akan menjadikan versi itu profil aktif (versi saat ini ikut tersimpan di riwayat).', ok: 'Tutup', cancel: 'Batal', extra: { html, init: (form) => form.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-restore]'); if (!b) return;
+    b.disabled = true;
+    try { await api('POST', `/api/brands/${brandId}/history/${b.closest('[data-h]').dataset.h}/restore`); toast('Versi dipulihkan.'); form.querySelector('[data-m=cancel]').click(); route(); } catch (err) { toast(err.message, true); b.disabled = false; }
+  }) } });
+}
 
 /* ---------- Hubungkan Claude ---------- */
 VIEWS.claude = async (v) => {
@@ -650,6 +668,7 @@ VIEWS.claude = async (v) => {
       <div class="row between"><span>Menyetujui &amp; menjadwalkan</span>${yn(pol.can_approve)}</div>
       <div class="row between"><span>Publish langsung</span>${yn(pol.can_publish)}</div>
       <div class="row between"><span>Membalas / menyembunyikan komentar</span>${yn(pol.can_reply)}</div>
+      <div class="row between"><span>Mengubah profil brand (voice, pillar, dll)</span>${yn(pol.can_edit_brand)}</div>
       <p class="small muted">Setiap aksi tulis tetap mengikuti peran akun yang Anda pakai (${esc(me.role)}). Admin mengubah izin di menu Kontrol Claude.</p></div>
     <div class="card stack"><h2>Contoh perintah</h2><ul>
       <li>“Ada apa hari ini?” (ringkasan antrean &amp; jadwal)</li>
@@ -684,6 +703,7 @@ VIEWS.control = async (v) => {
     ${sw('can_approve', 'Setujui &amp; jadwalkan post', 'Claude boleh menyetujui hanya setelah user yang login memberi konfirmasi di percakapan. Hanya efektif jika akun yang dipakai berperan manager/admin.', p.can_approve)}
     ${sw('can_publish', 'Publish langsung ke Threads', 'Risiko tertinggi: post langsung tayang. Disarankan tetap mati.', p.can_publish)}
     ${sw('can_reply', 'Balas &amp; sembunyikan komentar', 'Balasan tampil publik atas nama brand.', p.can_reply)}
+    ${sw('can_edit_brand', 'Ubah profil brand (voice, pillar, hashtag, dos/donts)', 'Claude boleh mengubah isi profil brand setelah konfirmasi user di percakapan. Memengaruhi semua tulisan berikutnya; setiap perubahan tersimpan di riwayat dan bisa dipulihkan. Nama brand &amp; kredensial tidak bisa diubah Claude.', p.can_edit_brand)}
     <label>Batas draft baru dari Claude per 24 jam<input type="number" name="daily_create_cap" min="0" max="500" value="${p.daily_create_cap}" style="max-width:140px"></label>
     <div><button class="btn primary">Simpan kontrol</button></div>
   </form>
@@ -695,7 +715,7 @@ VIEWS.control = async (v) => {
   $('#pf').onsubmit = (e) => {
     e.preventDefault(); const f = e.target; const g = (n) => f.elements[n].checked;
     busy($('button', f), async () => {
-      await api('PUT', '/api/settings/claude', { claude_enabled: g('claude_enabled'), can_create: g('can_create'), can_approve: g('can_approve'), can_publish: g('can_publish'), can_reply: g('can_reply'), daily_create_cap: f.elements.daily_create_cap.value });
+      await api('PUT', '/api/settings/claude', { claude_enabled: g('claude_enabled'), can_create: g('can_create'), can_approve: g('can_approve'), can_publish: g('can_publish'), can_reply: g('can_reply'), can_edit_brand: g('can_edit_brand'), daily_create_cap: f.elements.daily_create_cap.value });
       toast('Kontrol Claude disimpan.'); route();
     });
   };

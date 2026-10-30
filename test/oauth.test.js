@@ -245,6 +245,62 @@ test('MCP: Claude unggah foto (URL & base64) lalu menempelkannya ke draft → ca
   } finally { src.close(); }
 });
 
+test('profil brand: Claude hanya boleh jika admin mengizinkan; riwayat & pemulihan; nama tak bisa diubah', async () => {
+  const prof = (body) => bearer(tokens.access_token, 'PUT', '/api/brands/daily/profile', body);
+  const before = (await admin('GET', '/api/brands/daily')).body;
+
+  // default: dimatikan admin
+  const off = await prof({ voice: 'Santai & jenaka' });
+  assert.equal(off.status, 403);
+  assert.match(off.body.error, /Ubah profil brand/);
+
+  await admin('PUT', '/api/settings/claude', { can_edit_brand: true });
+  const call_ = async (name, args, id) => { const r = await mcp(tokens.access_token, 'tools/call', { name, arguments: args }, id); return r.msg.result; };
+  assert.equal((await mcp(tokens.access_token, 'tools/call', { name: 'get_overview', arguments: {} }, 40)).msg.result.content[0].text.includes('"can_edit_brand": true'), true);
+
+  // MCP: wajib konfirmasi eksplisit
+  const noConf = await call_('update_brand_profile', { brand: 'daily', voice: 'X', user_confirmed: false }, 41);
+  assert.equal(noConf.isError, true);
+
+  const ok = await call_('update_brand_profile', { brand: 'daily', voice: 'Hangat, jenaka, selalu pakai sapaan "Kak"', pillars: ['Tips styling', 'Behind the scene', 'Promo kilat'], hashtags: 'KebayaDaily', user_confirmed: true }, 42);
+  assert.ok(!ok.isError, ok.content?.[0]?.text);
+  const out = JSON.parse(ok.content[0].text);
+  assert.deepEqual(out.changed.sort(), ['hashtags', 'pillars', 'voice']);
+  assert.equal(out.brand.voice, 'Hangat, jenaka, selalu pakai sapaan "Kak"');
+  assert.deepEqual(out.brand.pillars, ['Tips styling', 'Behind the scene', 'Promo kilat']);
+  assert.equal(out.brand.dos, before.dos); // field yang tidak dikirim tak berubah
+
+  // tak bisa menyentuh nama / kredensial, validasi panjang
+  assert.equal((await prof({ name: 'Brand Baru' })).status, 400);
+  assert.equal((await prof({ voice: 'x'.repeat(4001) })).status, 400);
+  assert.equal((await prof({ pillars: Array(13).fill('a') })).status, 400);
+  assert.equal((await prof({})).status, 400);
+  assert.equal((await prof({ voice: out.brand.voice })).body.changed.length, 0); // tanpa perubahan: tak mencatat riwayat
+
+  // riwayat memuat versi SEBELUM perubahan, lengkap dengan jalur
+  const h = (await admin('GET', '/api/brands/daily/history')).body;
+  assert.equal(h.length, 1);
+  assert.equal(h[0].via, 'oauth');
+  assert.equal(h[0].snapshot.voice, before.voice);
+  const hm = JSON.parse((await call_('list_brand_history', { brand: 'daily' }, 43)).content[0].text);
+  assert.equal(hm.length, 1);
+
+  // pemulihan: hanya manusia lewat dashboard; Claude ditolak
+  assert.equal((await bearer(tokens.access_token, 'POST', `/api/brands/daily/history/${h[0].id}/restore`)).status, 403);
+  const rest = await admin('POST', `/api/brands/daily/history/${h[0].id}/restore`);
+  assert.equal(rest.status, 200);
+  assert.equal(rest.body.voice, before.voice);
+  assert.deepEqual(rest.body.pillars, before.pillars);
+  assert.equal((await admin('GET', '/api/brands/daily/history')).body.length, 2); // versi sebelum dipulihkan ikut tersimpan
+
+  // dashboard (PUT biasa) juga masuk riwayat; nama boleh diubah di sana
+  assert.equal((await admin('PUT', '/api/brands/daily', { dos: 'Pakai emoji secukupnya' })).status, 200);
+  assert.equal((await admin('GET', '/api/brands/daily/history')).body.length, 3);
+
+  await admin('PUT', '/api/settings/claude', { can_edit_brand: false });
+  assert.equal((await prof({ voice: 'Lagi' })).status, 403);
+});
+
 test('saklar utama: Claude dimatikan → semua jalur Claude 403, dashboard tetap jalan', async () => {
   await admin('PUT', '/api/settings/claude', { claude_enabled: false });
   assert.equal((await bearer(tokens.access_token, 'GET', '/api/me')).status, 403);
