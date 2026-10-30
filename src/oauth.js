@@ -45,14 +45,14 @@ function sendPage(res, status, html) {
   res.status(status).set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" }).send(html);
 }
 
-const loginForm = (back, error = '') => `<h1>Masuk ke Delova Threads Hub</h1><p class="m">Masuk untuk menghubungkan Claude ke akun Hub Anda.</p>
+const loginForm = (back, error = '') => `<h1>Masuk ke Delova Social Hub</h1><p class="m">Masuk untuk menghubungkan Claude ke akun Hub Anda.</p>
 <form method="post" action="/oauth/login" style="display:grid;gap:10px"><input type="hidden" name="back" value="${esc(back)}">
 <label>Email<input name="email" type="email" required autocomplete="username"></label>
 <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
 <p class="e">${esc(error)}</p><div class="row"><button class="p">Masuk</button></div></form>`;
 
 const consentForm = (client, user, ticket) => `<h1>Izinkan akses Claude?</h1>
-<p><b>${esc(client.name)}</b> ingin terhubung ke Delova Threads Hub sebagai <b>${esc(user.name)}</b> (peran: ${esc(user.role)}).</p>
+<p><b>${esc(client.name)}</b> ingin terhubung ke Delova Social Hub sebagai <b>${esc(user.name)}</b> (peran: ${esc(user.role)}).</p>
 <p class="m">Claude akan bisa:</p>
 <ul><li>Membaca brand voice, antrean, insight, dan reply</li><li>Membuat draft dan mengajukan approval</li><li>Aksi lain (setujui, publish, balas komentar) hanya bila peran Anda mengizinkan <b>dan</b> admin mengaktifkannya di menu Kontrol Claude</li></ul>
 <p class="m">Anda bisa mencabut akses kapan saja lewat admin (Kontrol Claude → Sesi).</p>
@@ -81,7 +81,7 @@ export function mountOAuth(app, { sessionUser, login, setCookie }) {
 
   /* ----- Discovery ----- */
   const resourceMeta = (req, res) =>
-    res.json({ resource: `${baseUrl()}/mcp`, authorization_servers: [baseUrl()], bearer_methods_supported: ['header'], scopes_supported: [SCOPE], resource_name: 'Delova Threads Hub' });
+    res.json({ resource: `${baseUrl()}/mcp`, authorization_servers: [baseUrl()], bearer_methods_supported: ['header'], scopes_supported: [SCOPE], resource_name: 'Delova Social Hub' });
   app.get('/.well-known/oauth-protected-resource', resourceMeta);
   app.get('/.well-known/oauth-protected-resource/mcp', resourceMeta);
   app.get('/.well-known/oauth-authorization-server', (req, res) =>

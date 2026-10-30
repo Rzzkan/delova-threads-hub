@@ -1,4 +1,4 @@
-# Delova Threads Hub
+# Delova Social Hub
 
 Dashboard tim marketing untuk mengelola **4 akun Threads**: Delova Wardrobe, Delova Kids, Delova Scarf, dan Delova Daily. Terintegrasi dengan Claude dengan dua cara: asisten AI di dalam dashboard, dan server MCP agar tim bisa menyuruh Claude Desktop / Claude Code langsung.
 
