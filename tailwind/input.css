@@ -141,6 +141,22 @@ pre { @apply overflow-auto rounded-md border border-line bg-bg p-3 text-[.82rem]
 table input[type=checkbox], .bulkbar input[type=checkbox] { @apply size-4 cursor-pointer accent-[var(--accent)]; }
 .hrow { @apply grid gap-1.5 border-b border-line pb-3 last:border-0 last:pb-0; }
 .skiplist.hist { @apply max-h-[55vh]; }
+.tabs { @apply flex flex-wrap gap-1 border-b border-line; }
+.tab { @apply -mb-px rounded-t-md border border-transparent px-4 py-2 text-sm font-semibold text-muted no-underline hover:text-ink; }
+.tab.on { @apply border-line border-b-panel bg-panel text-accent; }
+.mini { @apply relative block size-12 shrink-0 overflow-hidden rounded-md border border-line bg-bg; } .mini img, .mini video { @apply size-full object-cover; }
+.mini i { @apply absolute bottom-0 right-0 rounded-tl bg-black/65 px-1 text-[.65rem] not-italic text-white; }
+.thumbs.lib .thumb { @apply cursor-pointer p-0 hover:border-accent; }
+.cmt { @apply grid gap-1 border-t border-line pt-2 text-sm; } .cmt.sub { @apply ml-6 border-l-2 border-line pl-3 pt-1; border-top: 0; }
+.dmgrid { @apply grid gap-3 lg:grid-cols-[300px_1fr]; }
+.dmlist { @apply grid max-h-[560px] content-start gap-1 overflow-y-auto p-2; }
+.dmitem { @apply grid cursor-pointer gap-0.5 rounded-md border border-transparent bg-transparent p-2.5 text-left text-sm text-ink hover:bg-bg; font-family: inherit; }
+.dmitem.on { @apply border-accent bg-accent-soft; }
+.dmthread { @apply grid content-start gap-3; }
+.msgs { @apply flex max-h-[380px] flex-col gap-2 overflow-y-auto rounded-md border border-line bg-bg p-3; }
+.bubble { @apply max-w-[78%] self-start rounded-2xl rounded-bl-sm border border-line bg-panel px-3 py-2 text-sm; }
+.bubble.me { @apply self-end rounded-bl-2xl rounded-br-sm border-transparent bg-accent text-accent-ink; } .bubble span { @apply opacity-70; }
+.kpi2 { @apply grid gap-1 p-3; } .kpi2 b { @apply text-xl; }
 .lbl { @apply text-sm font-medium; }
 .upl { @apply mx-auto grid min-h-screen max-w-xl content-start gap-4 p-4 sm:pt-12; }
 .cal-sums { @apply mb-3 grid gap-2; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }

@@ -115,7 +115,7 @@ export function cleanupMedia(at = Date.now()) {
   const iso = new Date(at).toISOString();
   const orphanBefore = new Date(at - ORPHAN_MS).toISOString();
   // post yang sudah dihapus dari dashboard: lepaskan tautan agar dihitung yatim
-  run('UPDATE media SET post_id=NULL WHERE post_id IS NOT NULL AND post_id NOT IN (SELECT id FROM posts)');
+  run('UPDATE media SET post_id=NULL WHERE post_id IS NOT NULL AND post_id NOT IN (SELECT id FROM posts UNION SELECT id FROM ig_posts)');
   const dead = all('SELECT name FROM media WHERE (delete_after IS NOT NULL AND delete_after<=?) OR (post_id IS NULL AND created_at<?)', iso, orphanBefore);
   for (const { name } of dead) removeMedia(name);
   // file di disk tanpa catatan (sisa unggahan gagal)

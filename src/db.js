@@ -111,6 +111,38 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 CREATE INDEX IF NOT EXISTS idx_oauth_access ON oauth_tokens(access_hash);
 CREATE INDEX IF NOT EXISTS idx_oauth_refresh ON oauth_tokens(refresh_hash);
 
+CREATE TABLE IF NOT EXISTS ig_accounts (
+  brand_id TEXT PRIMARY KEY REFERENCES brands(id),
+  ig_user_id TEXT,
+  username TEXT,
+  account_type TEXT,
+  followers INTEGER,
+  token_enc TEXT,
+  token_expires_at TEXT,
+  token_refreshed_at TEXT,
+  granted_scopes TEXT,
+  connected_at TEXT
+);
+CREATE TABLE IF NOT EXISTS ig_posts (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT NOT NULL REFERENCES brands(id),
+  kind TEXT NOT NULL DEFAULT 'feed' CHECK (kind IN ('feed','reels','story')),
+  caption TEXT NOT NULL DEFAULT '',
+  media_urls TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft','pending_approval','scheduled','publishing','published','failed')),
+  scheduled_at TEXT,
+  published_at TEXT,
+  ig_media_id TEXT,
+  permalink TEXT,
+  error TEXT,
+  review_note TEXT,
+  created_by TEXT,
+  approved_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ig_posts_due ON ig_posts(status, scheduled_at);
 CREATE TABLE IF NOT EXISTS brand_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   brand_id TEXT NOT NULL,

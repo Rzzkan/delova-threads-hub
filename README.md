@@ -220,3 +220,10 @@ Saklar baru **"Ubah profil brand"** di Kontrol Claude (default **mati**). Bila a
 `update_brand_profile` untuk mengubah deskripsi, brand voice, content pillars, hashtag, dos/donts — wajib `user_confirmed=true`
 setelah user setuju di percakapan. Nama brand, token, dan kredensial tidak bisa diubah Claude. Setiap perubahan (dari dashboard
 maupun Claude) menyimpan versi sebelumnya; lihat/pulihkan di **Brand & Akun → Riwayat perubahan** (pemulihan hanya manusia).
+
+## Instagram (menu baru)
+
+Menu **Instagram** memakai *Instagram API with Instagram Login* (host `graph.instagram.com`) dan punya lima tab per brand:
+**Konten & Jadwal** (draft → ajukan → setujui → terbit otomatis, Feed/Reels/Story, foto wajib JPG), **Komentar** (balas/sembunyikan), **Pesan (DM)** (balas dalam jendela 24 jam), **Insight** (akun 7/14/30 hari + insight per konten dengan pencarian caption/hashtag, filter jenis, urutan), dan **Akun** (hubungkan akun, token diperpanjang otomatis tiap 6 jam).
+
+Setup live: di Meta for Developers tambahkan produk Instagram → *API setup with Instagram login*, salin **Instagram App ID/Secret** ke tab Akun (admin), dan daftarkan redirect URL `<APP_BASE_URL>/auth/instagram/callback`. Akun harus Instagram Professional. Izin: `instagram_business_basic`, `_content_publish`, `_manage_comments`, `_manage_messages`, `_manage_insights` (Advanced Access lewat App Review untuk akun di luar tester). Tanpa kredensial / dalam mode simulasi, semua data adalah contoh dan tidak ada yang dikirim.

@@ -123,6 +123,7 @@ const ICON = {
   compose: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   queue: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
   plan: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".6"/>',
   media: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>', chevl: '<path d="m15 18-6-6 6-6"/>', chevr: '<path d="m9 18 6-6-6-6"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>',
@@ -143,7 +144,7 @@ const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none
 // [id, label, peran minimal, grup]
 const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
-  ['calendar', 'Kalender', 'viewer', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
+  ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
   ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
@@ -390,6 +391,216 @@ function actions(p) {
   return out.join('');
 }
 
+
+/* ---------- Instagram ---------- */
+const IG_TABS = [['konten', 'Konten & Jadwal', 'viewer'], ['komentar', 'Komentar', 'editor'], ['dm', 'Pesan (DM)', 'editor'], ['insight', 'Insight', 'viewer'], ['akun', 'Akun', 'viewer']];
+const IG_KIND = { feed: 'Feed', reels: 'Reels', story: 'Story' };
+const igTime = (iso) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+
+VIEWS.instagram = async (v) => {
+  const q = params(); const st = await api('GET', '/api/ig/status');
+  const tab = IG_TABS.some((t) => t[0] === q.get('tab') && can(t[2])) ? q.get('tab') : 'konten';
+  const bid = st.brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : (st.brands.find((b) => b.connected) || st.brands[0]).id;
+  const cur = st.brands.find((b) => b.id === bid);
+  const nav = (t, b = bid) => `#/instagram?tab=${t}&brand=${b}`;
+  if (q.get('connect')) toast(q.get('connect') === 'ok' ? 'Akun Instagram berhasil terhubung.' : `Gagal menghubungkan: ${q.get('msg') || 'coba lagi'}`, q.get('connect') !== 'ok');
+  v.innerHTML = `<div class="page-head"><h1>Instagram</h1><p class="muted">Kelola konten & jadwal, balas komentar dan DM, serta pantau insight untuk akun Instagram brand.</p></div>
+  ${st.simulated ? '<div class="banner"><b>Mode simulasi:</b> data di halaman ini adalah contoh dan tidak ada yang dikirim ke Instagram asli. Admin: isi kredensial di tab Akun dan set mode Live di Pengaturan Meta.</div>' : ''}
+  <div class="chips" style="margin-bottom:10px">${st.brands.map((b) => `<a class="chip" href="${nav(tab, b.id)}" ${b.id === bid ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot ${b.connected || st.simulated ? 'on' : 'off'}" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}${b.username ? ` <span class="muted small">@${esc(b.username)}</span>` : ''}</a>`).join('')}</div>
+  <div class="tabs">${IG_TABS.filter((t) => can(t[2])).map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}</a>`).join('')}</div>
+  ${!cur.connected && !st.simulated && tab !== 'akun' ? `<div class="banner">Akun Instagram ${esc(cur.name)} belum terhubung. ${can('manager') ? `<a href="${nav('akun')}">Hubungkan di tab Akun</a>.` : 'Minta manajer menghubungkannya.'}</div>` : ''}
+  <div id="igbody" class="stack" style="margin-top:14px"><span class="muted">Memuat…</span></div>`;
+  const ctx = { v, st, bid, cur, tab, nav, body: $('#igbody') };
+  try { await IGV[tab](ctx); } catch (e) { ctx.body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+};
+
+const IGV = {};
+
+/* ---- Konten & jadwal ---- */
+IGV.konten = async ({ v, bid, cur, body }) => {
+  const [rows, lib] = await Promise.all([api('GET', `/api/ig/posts?brand=${bid}`), can('editor') ? api('GET', '/api/media?limit=40').catch(() => []) : []]);
+  const libOk = lib.filter((m) => m.free && (m.mime === 'image/jpeg' || m.mime.startsWith('video/')));
+  let editing = null;
+  const isVid = (u) => /\.(mp4|mov)(\?|$)/i.test(u);
+  body.innerHTML = `${can('editor') ? `<div class="row between"><b>${rows.length} konten · ${esc(cur.name)}</b><button class="btn primary" id="newc" type="button">Buat konten</button></div>
+  <div id="comp" class="card stack hidden">
+    <h3 id="ctitle">Konten baru</h3>
+    <div class="grid g2"><label>Jenis<select id="kind"><option value="feed">Feed (foto / carousel)</option><option value="reels">Reels (video)</option><option value="story">Story (foto / video)</option></select></label>
+      <label>Jadwal tayang (WIB)<input id="iwhen" class="dtp" placeholder="Pilih tanggal &amp; jam" /></label></div>
+    <label>Caption <textarea id="cap" style="min-height:110px" placeholder="Tulis caption. Maks 2200 karakter dan 30 hashtag."></textarea></label>
+    <div class="counter" id="ccnt">0/2200 · 0/30 hashtag</div>
+    <div class="stack" style="gap:8px"><span class="lbl">Foto / video <span class="muted small">(Instagram hanya menerima foto JPG; video MP4/MOV)</span></span>
+      <div id="idrop" class="dropzone" tabindex="0"><input id="ifile" type="file" multiple accept="image/jpeg,video/mp4,video/quicktime" hidden /><b>Klik atau seret file ke sini</b><span class="small muted">Disimpan sementara, dihapus 24 jam setelah terbit</span></div>
+      ${libOk.length ? `<div class="small muted">Atau pilih dari Foto Sementara:</div><div class="thumbs lib">${libOk.slice(0, 12).map((m) => `<button type="button" class="thumb pick-lib" data-url="${esc(m.url)}" title="${esc(m.original_name || m.name)}">${m.mime.startsWith('video/') ? `<video src="${esc(m.url)}" muted preload="metadata"></video>` : `<img src="${esc(m.url)}" alt="" loading="lazy" />`}</button>`).join('')}</div>` : ''}
+      <div id="ithumbs" class="thumbs"></div>
+      <details><summary class="small muted">Tempel URL sendiri (HTTPS publik, satu per baris)</summary><textarea id="imedia" style="min-height:64px"></textarea></details></div>
+    <div class="row"><button class="btn" id="isave" type="button">Simpan draft</button><button class="btn primary" id="isubmit" type="button">Ajukan approval</button>${can('manager') ? '<button class="btn primary" id="iapprove" type="button">Setujui &amp; jadwalkan</button><button class="btn danger" id="inow" type="button">Terbitkan sekarang</button>' : ''}<button class="btn ghost" id="icancel" type="button">Batal</button></div>
+  </div>` : ''}
+  <div class="card"><table><thead><tr><th>Konten</th><th>Jenis</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
+  ${rows.map((p) => `<tr data-id="${p.id}"><td><div class="row" style="flex-wrap:nowrap"><span class="mini">${isVid(p.media_urls[0]) ? `<video src="${esc(p.media_urls[0])}" muted preload="metadata"></video>` : `<img src="${esc(p.media_urls[0])}" alt="" loading="lazy" />`}${p.media_urls.length > 1 ? `<i>${p.media_urls.length}</i>` : ''}</span><span>${esc((p.caption || '(tanpa caption)').slice(0, 110))}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}<div class="small muted">${esc(p.author || '')}</div></span></div></td>
+    <td><span class="badge">${IG_KIND[p.kind]}</span></td><td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
+    <td><div class="row">${igActions(p)}</div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Belum ada konten untuk akun ini.</td></tr>'}</tbody></table></div>`;
+  if (!can('editor')) return;
+  pickers(body);
+  const $c = (s) => $(s, body); const lines = () => $c('#imedia').value.split('\n').map((x) => x.trim()).filter(Boolean);
+  const paint = () => { $c('#ithumbs').innerHTML = lines().map((u, i) => `<div class="thumb">${isVid(u) ? `<video src="${esc(u)}" muted preload="metadata"></video>` : `<img src="${esc(u)}" alt="" loading="lazy" />`}<button type="button" class="thumb-x" data-i="${i}" aria-label="Hapus media ${i + 1}">×</button><span class="thumb-n">${i + 1}</span></div>`).join(''); };
+  const cnt = () => { const c = $c('#cap').value; const h = (c.match(/#[\p{L}\p{N}_]+/gu) || []).length; const el = $c('#ccnt'); el.textContent = `${len(c)}/2200 · ${h}/30 hashtag`; el.className = 'counter' + (len(c) > 2200 || h > 30 ? ' over' : ''); };
+  const open = (p) => {
+    editing = p || null; $c('#comp').classList.remove('hidden'); $c('#ctitle').textContent = p ? 'Edit konten' : 'Konten baru';
+    $c('#kind').value = p?.kind || 'feed'; $c('#cap').value = p?.caption || ''; $c('#imedia').value = (p?.media_urls || []).join('\n');
+    const w = $c('#iwhen')._flatpickr; if (w) w.setDate(p?.scheduled_at ? toInput(p.scheduled_at) : null, false); paint(); cnt(); $c('#comp').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  $c('#newc').onclick = () => open(null); $c('#icancel').onclick = () => $c('#comp').classList.add('hidden');
+  $c('#cap').addEventListener('input', cnt); $c('#imedia').addEventListener('input', paint);
+  body.addEventListener('click', (e) => {
+    const lb = e.target.closest('.pick-lib'); if (lb) { $c('#imedia').value = [...lines(), lb.dataset.url].join('\n'); paint(); }
+    const x = e.target.closest('.thumb-x'); if (x) { const l = lines(); l.splice(Number(x.dataset.i), 1); $c('#imedia').value = l.join('\n'); paint(); }
+  });
+  const send = async (files) => {
+    const box = $c('#idrop'); box.classList.add('busy');
+    for (const f of files) {
+      const r = await fetch(`/api/media?brand=${bid}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(`${f.name}: ${j.error || 'gagal diunggah'}`, true); continue; }
+      if (!/\.(jpg|mp4|mov)$/.test(j.name)) { toast(`${f.name}: Instagram hanya menerima JPG, MP4, atau MOV.`, true); continue; }
+      $c('#imedia').value = [...lines(), j.url].join('\n'); paint();
+    }
+    box.classList.remove('busy'); $c('#ifile').value = '';
+  };
+  $c('#idrop').onclick = (e) => { if (e.target.id !== 'ifile') $c('#ifile').click(); };
+  $c('#ifile').onchange = (e) => send([...e.target.files]);
+  ['dragenter', 'dragover'].forEach((ev) => $c('#idrop').addEventListener(ev, (e) => { e.preventDefault(); $c('#idrop').classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => $c('#idrop').addEventListener(ev, (e) => { e.preventDefault(); $c('#idrop').classList.remove('over'); }));
+  $c('#idrop').addEventListener('drop', (e) => send([...e.dataTransfer.files]));
+  const payload = () => ({ brand_id: bid, kind: $c('#kind').value, caption: $c('#cap').value, media_urls: lines(), scheduled_at: fromInput($c('#iwhen').value) });
+  const saveIt = async () => { const b = payload(); if (editing) { const { brand_id, ...rest } = b; editing = await api('PUT', `/api/ig/posts/${editing.id}`, rest); } else editing = await api('POST', '/api/ig/posts', b); return editing; };
+  $c('#isave').onclick = (e) => busy(e.target, async () => { await saveIt(); toast('Draft tersimpan.'); route(); });
+  $c('#isubmit').onclick = (e) => busy(e.target, async () => { await saveIt(); await api('POST', `/api/ig/posts/${editing.id}/submit`); toast('Diajukan ke manajer.'); route(); });
+  if (can('manager')) {
+    $c('#iapprove').onclick = (e) => busy(e.target, async () => { const w = fromInput($c('#iwhen').value); if (!w) throw new Error('Pilih jadwal tayang dulu.'); await saveIt(); await api('POST', `/api/ig/posts/${editing.id}/approve`, { scheduled_at: w }); toast('Disetujui dan dijadwalkan.'); route(); });
+    $c('#inow').onclick = (e) => busy(e.target, async () => {
+      if (!(await ui.confirm({ title: 'Terbitkan ke Instagram sekarang?', message: 'Konten langsung tayang di akun Instagram tanpa menunggu jadwal.', quote: $c('#cap').value.slice(0, 200), quoteLabel: cur.name, ok: 'Terbitkan sekarang' }))) return;
+      await saveIt(); const r = await api('POST', `/api/ig/posts/${editing.id}/publish-now`); if (r.status === 'failed') throw new Error(r.error); toast('Terbit.'); route();
+    });
+  }
+  body.onclick = async (e) => {
+    const btn = e.target.closest('[data-iact]'); if (!btn) return;
+    const id = btn.closest('tr').dataset.id; const act = btn.dataset.iact; const p = rows.find((r) => r.id === id);
+    await busy(btn, async () => {
+      if (act === 'edit') return open(p);
+      if (act === 'delete' && !(await ui.confirm({ title: 'Hapus konten ini?', message: 'Konten dihapus dari antrean. Yang sudah terbit di Instagram tidak ikut terhapus.', ok: 'Hapus', danger: true }))) return;
+      if (act === 'now' && !(await ui.confirm({ title: 'Terbitkan sekarang?', message: 'Konten langsung tayang di Instagram.', ok: 'Terbitkan sekarang' }))) return;
+      let b; if (act === 'reject') { const note = await ui.ask({ title: 'Kembalikan konten ke penulis', label: 'Catatan (opsional)', optional: true, max: 300, rows: 3, ok: 'Kembalikan' }); if (note === null) return; b = { note }; }
+      if (act === 'approve' && !p.scheduled_at) { toast('Tentukan jadwal dulu (Edit → pilih jadwal).', true); return open(p); }
+      if (act === 'delete') await api('DELETE', `/api/ig/posts/${id}`);
+      else { const r = await api('POST', `/api/ig/posts/${id}/${act === 'now' ? 'publish-now' : act}`, b); if (r.status === 'failed') throw new Error(r.error); }
+      toast('Berhasil.'); route();
+    });
+  };
+};
+function igActions(p) {
+  const b = (a, l, c = '') => `<button class="btn small ${c}" data-iact="${a}" type="button">${l}</button>`;
+  if (p.status === 'published') return p.permalink ? `<a class="btn small" target="_blank" rel="noopener" href="${esc(p.permalink)}">Buka</a>` : '';
+  if (p.status === 'publishing') return '';
+  const o = [];
+  if (can('editor')) o.push(b('edit', 'Edit'));
+  if (can('editor') && ['draft', 'failed'].includes(p.status)) o.push(b('submit', 'Ajukan'));
+  if (can('manager') && ['pending_approval', 'draft', 'failed'].includes(p.status)) o.push(b('approve', 'Setujui', 'primary'));
+  if (can('manager') && ['pending_approval', 'scheduled'].includes(p.status)) o.push(b('reject', 'Kembalikan'));
+  if (can('manager')) o.push(b('now', 'Terbitkan'));
+  if (can('editor')) o.push(b('delete', 'Hapus', 'danger'));
+  return o.join('');
+}
+
+/* ---- Komentar ---- */
+IGV.komentar = async ({ bid, body }) => {
+  const groups = await api('GET', `/api/ig/${bid}/comments`);
+  const one = (c, sub = false) => `<div class="cmt ${sub ? 'sub' : ''}" data-cid="${esc(c.id)}"><div class="row between"><span><b>@${esc(c.username || '-')}</b> <span class="small muted">${esc(igTime(c.timestamp))}</span>${c.hidden ? ' <span class="badge">Disembunyikan</span>' : ''}</span>
+    ${!sub ? `<span class="row"><button type="button" class="btn small" data-c="reply">Balas</button><button type="button" class="btn small" data-c="${c.hidden ? 'unhide' : 'hide'}">${c.hidden ? 'Tampilkan' : 'Sembunyikan'}</button></span>` : ''}</div>
+    <div style="white-space:pre-wrap">${esc(c.text)}</div>${(c.replies || []).map((r) => one(r, true)).join('')}</div>`;
+  body.innerHTML = groups.length ? groups.map((g) => `<div class="card stack"><div class="row between"><b class="trunc" style="max-width:70%">${esc(g.media.caption || '(tanpa caption)')}</b><a class="btn small" target="_blank" rel="noopener" href="${esc(g.media.permalink)}">Buka post</a></div>${g.comments.map((c) => one(c)).join('')}</div>`).join('') : '<div class="card muted">Belum ada komentar pada post terbaru.</div>';
+  body.onclick = (e) => {
+    const a = e.target.dataset.c; if (!a) return; const el = e.target.closest('[data-cid]'); const id = el.dataset.cid;
+    busy(e.target, async () => {
+      if (a === 'reply') {
+        const quote = $('div[style]', el).textContent; const who = $('b', el).textContent;
+        const text = await ui.ask({ title: `Balas komentar ${who}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: 2200, rows: 5, ok: 'Kirim balasan', quote, quoteLabel: 'Komentar' });
+        if (text === null) return; await api('POST', `/api/ig/${bid}/comments/${id}/reply`, { text }); toast('Balasan terkirim.'); return route();
+      }
+      await api('POST', `/api/ig/${bid}/comments/${id}/hide`, { hide: a === 'hide' }); toast(a === 'hide' ? 'Komentar disembunyikan.' : 'Komentar ditampilkan lagi.'); route();
+    });
+  };
+};
+
+/* ---- DM ---- */
+IGV.dm = async ({ bid, body }) => {
+  const convs = await api('GET', `/api/ig/${bid}/conversations`);
+  body.innerHTML = `<div class="dmgrid"><div class="card dmlist">${convs.map((c) => `<button type="button" class="dmitem" data-conv="${esc(c.id)}"><b>@${esc(c.participant.username || c.participant.id)}</b><span class="small muted trunc">${esc(c.last_message)}</span><span class="small muted">${esc(igTime(c.updated_time))}${c.can_reply ? '' : ' · jendela 24 jam habis'}</span></button>`).join('') || '<span class="muted">Belum ada percakapan.</span>'}</div>
+    <div class="card dmthread" id="thread"><span class="muted">Pilih percakapan di kiri.</span></div></div>
+    <p class="small muted">Instagram hanya mengizinkan membalas dalam 24 jam sejak pesan terakhir pelanggan. Pesan tampil atas nama brand.</p>`;
+  const open = async (id) => {
+    const c = convs.find((x) => x.id === id); $$('.dmitem', body).forEach((b) => b.classList.toggle('on', b.dataset.conv === id));
+    const th = $('#thread'); th.innerHTML = '<span class="muted">Memuat…</span>';
+    const msgs = await api('GET', `/api/ig/${bid}/conversations/${encodeURIComponent(id)}`);
+    th.innerHTML = `<div class="row between"><b>@${esc(c.participant.username || '')}</b></div><div class="msgs">${msgs.map((m) => { const mine = String(m.from?.id) !== String(c.participant.id); return `<div class="bubble ${mine ? 'me' : ''}"><div>${esc(m.message || '(lampiran)')}</div><span class="small">${esc(igTime(m.created_time))}</span></div>`; }).join('')}</div>
+      ${c.can_reply ? `<form id="dmf" class="stack"><label>Balas<textarea name="text" maxlength="1000" style="min-height:70px" placeholder="Tulis balasan…"></textarea></label><div><button class="btn primary" type="submit">Kirim</button></div></form>` : '<div class="banner">Jendela balasan 24 jam sudah habis atau pesan terakhir berasal dari brand. Tunggu pelanggan membalas.</div>'}`;
+    const box = $('.msgs', th); box.scrollTop = box.scrollHeight;
+    const f = $('#dmf', th); if (f) f.onsubmit = (e) => { e.preventDefault(); const text = f.elements.text.value.trim(); if (!text) return; busy($('button', f), async () => {
+      if (!(await ui.confirm({ title: 'Kirim pesan ini?', message: `Dikirim ke @${c.participant.username} atas nama brand.`, quote: text, quoteLabel: 'Pesan', ok: 'Kirim' }))) return;
+      await api('POST', `/api/ig/${bid}/conversations/${encodeURIComponent(id)}/send`, { recipient_id: c.participant.id, text }); toast('Pesan terkirim.'); open(id);
+    }); };
+  };
+  body.onclick = (e) => { const b = e.target.closest('[data-conv]'); if (b) open(b.dataset.conv).catch((err) => toast(err.message, true)); };
+  if (convs[0]) open(convs[0].id).catch((err) => toast(err.message, true));
+};
+
+/* ---- Insight ---- */
+IGV.insight = async ({ bid, body }) => {
+  const days = Number(params().get('days')) || 7;
+  const [acc, media] = await Promise.all([api('GET', `/api/ig/${bid}/insights?days=${days}`), api('GET', `/api/ig/${bid}/media-insights`)]);
+  const K = [['followers', 'Followers', acc.followers], ['reach', 'Jangkauan', acc.metrics.reach], ['views', 'Tayangan', acc.metrics.views], ['accounts_engaged', 'Akun berinteraksi', acc.metrics.accounts_engaged], ['total_interactions', 'Interaksi', acc.metrics.total_interactions], ['likes', 'Suka', acc.metrics.likes], ['comments', 'Komentar', acc.metrics.comments], ['shares', 'Dibagikan', acc.metrics.shares], ['saves', 'Disimpan', acc.metrics.saves]];
+  body.innerHTML = `<div class="row between"><b>Ringkasan akun</b><select id="days" style="width:auto">${[7, 14, 30].map((d) => `<option value="${d}" ${d === days ? 'selected' : ''}>${d} hari terakhir</option>`).join('')}</select></div>
+  <div class="stats">${K.map(([k, l, val]) => `<div class="card kpi2"><span class="small muted">${l}</span><b>${num(val)}</b></div>`).join('')}</div>
+  <div class="card stack"><div class="row between"><b>Insight per konten</b><button type="button" class="btn small" id="fresh">Segarkan</button></div>
+    <div class="grid g4"><label>Cari caption / hashtag<input id="qs" placeholder="mis. kebaya, #batikmodern"></label>
+    <label>Jenis<select id="qt"><option value="">Semua</option><option value="IMAGE">Foto</option><option value="VIDEO">Video / Reels</option><option value="CAROUSEL_ALBUM">Carousel</option></select></label>
+    <label>Urutkan<select id="qo"><option value="timestamp">Terbaru</option><option value="reach">Jangkauan</option><option value="views">Tayangan</option><option value="likes">Suka</option><option value="comments">Komentar</option><option value="saved">Disimpan</option><option value="er">Engagement rate</option></select></label>
+    <div class="small muted" id="qc" style="align-self:end"></div></div>
+    <div style="overflow-x:auto"><table><thead><tr><th>Konten</th><th>Terbit</th><th>Jangkauan</th><th>Tayangan</th><th>Suka</th><th>Komentar</th><th>Dibagikan</th><th>Disimpan</th><th>ER</th></tr></thead><tbody id="qrows"></tbody></table></div></div>`;
+  const er = (m) => (m.insights.reach ? ((m.insights.total_interactions ?? 0) / m.insights.reach) * 100 : null);
+  const draw = () => {
+    const qs = $('#qs').value.trim().toLowerCase(); const qt = $('#qt').value; const qo = $('#qo').value;
+    const rows = media.filter((m) => (!qt || m.media_type === qt) && (!qs || (m.caption || '').toLowerCase().includes(qs))).sort((a, b) => qo === 'timestamp' ? Date.parse(b.timestamp) - Date.parse(a.timestamp) : (qo === 'er' ? (er(b) ?? -1) - (er(a) ?? -1) : (b.insights[qo] ?? -1) - (a.insights[qo] ?? -1)));
+    $('#qc').textContent = `${rows.length} dari ${media.length} konten`;
+    $('#qrows').innerHTML = rows.map((m) => `<tr><td style="max-width:340px"><a href="${esc(m.permalink)}" target="_blank" rel="noopener">${esc((m.caption || '(tanpa caption)').slice(0, 90))}</a> <span class="badge">${esc(({ IMAGE: 'Foto', VIDEO: 'Video', CAROUSEL_ALBUM: 'Carousel' })[m.media_type] || m.media_type)}</span></td><td class="small">${esc(igTime(m.timestamp))}</td>${['reach', 'views', 'likes', 'comments', 'shares', 'saved'].map((k) => `<td>${num(m.insights[k])}</td>`).join('')}<td>${er(m) === null ? '–' : `${er(m).toFixed(1)}%`}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Tidak ada konten yang cocok.</td></tr>';
+  };
+  ['qs', 'qt', 'qo'].forEach((i) => $(`#${i}`).addEventListener('input', draw)); draw();
+  $('#days').onchange = (e) => { location.hash = `#/instagram?tab=insight&brand=${bid}&days=${e.target.value}`; };
+  $('#fresh').onclick = (e) => busy(e.target, async () => { await api('GET', `/api/ig/${bid}/media-insights?fresh=1`); toast('Insight disegarkan.'); route(); });
+};
+
+/* ---- Akun ---- */
+IGV.akun = async ({ st, body }) => {
+  body.innerHTML = `<div class="grid g2">${st.brands.map((b) => `<div class="card stack bcard" style="--c:${b.color}" data-b="${b.id}"><div class="row between"><h3>${esc(b.name)}</h3>${b.connected ? `<span class="badge s-published">@${esc(b.username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
+    ${b.connected ? `<div class="small muted">${esc(b.account_type || '')}${b.followers !== null ? ` · ${num(b.followers)} followers` : ''} · token berlaku s/d ${wib(b.token_expires_at)} (diperpanjang otomatis)</div>` : '<div class="small muted">Butuh akun Instagram Professional (Business/Creator).</div>'}
+    <div class="row">${can('manager') && !st.simulated ? `<a class="btn small primary" href="/auth/instagram/start?brand=${b.id}">${b.connected ? 'Hubungkan ulang' : 'Hubungkan ke Instagram'}</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}</div></div>`).join('')}</div>
+  <div class="card stack"><h3>Izin yang diminta</h3><div class="chips">${st.scopes.map((s) => `<span class="chip">${esc(s)}</span>`).join('')}</div>
+    <p class="small muted">Konten &amp; jadwal memakai <code>content_publish</code>; komentar memakai <code>manage_comments</code>; DM memakai <code>manage_messages</code>; insight memakai <code>manage_insights</code>. Izin ini perlu Advanced Access lewat App Review Meta bila dipakai untuk akun di luar tester.</p></div>
+  ${can('admin') ? `<form id="igf" class="card stack"><h3>Aplikasi Instagram (Meta for Developers)</h3>
+    <p class="small muted">Di aplikasi Meta Anda, tambahkan produk <b>Instagram</b> → <i>API setup with Instagram login</i>. Pakai <b>Instagram App ID</b> dan <b>Instagram App Secret</b> dari halaman itu (berbeda dari App ID Threads). Sumber aktif: <b>${esc({ dashboard: 'Dashboard', env: '.env server', none: 'Belum diisi' }[st.source])}</b>.</p>
+    <div class="grid g2"><label>Instagram App ID<input name="app_id" value="${esc(st.app_id || '')}" autocomplete="off"></label>
+    <label>Instagram App Secret<input name="app_secret" type="password" autocomplete="new-password" placeholder="${st.has_secret ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel App Secret'}"></label></div>
+    <label>Redirect URL OAuth (salin ke Meta)<span class="row"><input id="igru" value="${esc(st.redirect_uri)}" readonly><button type="button" class="btn small" id="igcp">Salin</button></span></label>
+    <div class="row"><button class="btn primary">Simpan</button>${st.app_id || st.has_secret ? '<button type="button" class="btn small danger" id="igclear">Hapus kredensial</button>' : ''}</div></form>` : ''}`;
+  const f = $('#igf', body);
+  if (f) {
+    f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => { await api('PUT', '/api/ig/credentials', { app_id: f.elements.app_id.value, app_secret: f.elements.app_secret.value }); toast('Kredensial Instagram disimpan.'); route(); }); };
+    $('#igcp').onclick = () => copyText($('#igru').value);
+    const c = $('#igclear'); if (c) c.onclick = (e) => busy(e.target, async () => { if (!(await ui.confirm({ title: 'Hapus kredensial Instagram?', message: 'Akun yang terhubung tetap tersimpan, tetapi koneksi baru dan perpanjangan token tidak bisa dilakukan sampai kredensial diisi lagi.', ok: 'Hapus', danger: true }))) return; await api('PUT', '/api/ig/credentials', { clear: true }); toast('Kredensial dihapus.'); route(); });
+  }
+  body.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('[data-b]').dataset.b;
+    busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/ig/accounts/${id}/refresh`); if (x === 'disc') { if (!(await ui.confirm({ title: 'Putuskan akun Instagram ini?', message: 'Token dihapus dari Hub. Konten terjadwal untuk akun ini akan gagal sampai dihubungkan lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/ig/accounts/${id}`); } toast('Berhasil.'); route(); }); };
+};
 
 /* ---------- Foto sementara ---------- */
 const fmtBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);

@@ -14,6 +14,7 @@ import { mountOAuth, baseUrl } from './oauth.js';
 import * as M from './media.js';
 import { mountLegal } from './legal.js';
 import * as R from './research.js';
+import { mountInstagram } from './ig-routes.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
 const need = (min) => (req, res, next) =>
@@ -913,6 +914,7 @@ export function createApp() {
     res.sendFile(req.params.name, { root: M.MEDIA_DIR, dotfiles: 'deny', headers: { 'Content-Type': m.mime } });
   });
 
+  mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, brandOr404, baseUrl });
   app.use('/api', api);
 
   /* ---------------- MCP lewat HTTP (stateless, Bearer token) ---------------- */
