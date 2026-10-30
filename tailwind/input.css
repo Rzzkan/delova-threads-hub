@@ -221,3 +221,16 @@ body.modal-open { overflow: hidden; }
 .flatpickr-time .flatpickr-time-separator { color: var(--ink); }
 .fp-clear { @apply block w-full cursor-pointer border-t border-line bg-transparent py-2 text-sm font-semibold text-accent hover:bg-accent-soft; font-family: inherit; }
 
+
+@layer components {
+  .btag { @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold; border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 10%, transparent); }
+  .pitem { border-left: 4px solid var(--c); }
+  .psec { @apply mt-2; }
+  .psec-h { @apply flex flex-wrap items-baseline justify-between gap-2 border-b-2 border-line pb-2; }
+  .psec-h h2 { @apply m-0 flex items-center gap-2; }
+}
+
+@layer components {
+  .tbar { @apply inline-block h-2 w-24 overflow-hidden rounded-full bg-line align-middle; } .tbar i { @apply block h-full rounded-full; }
+  .spark { @apply flex h-24 items-end gap-1; } .spark > div { @apply flex h-full flex-1 flex-col items-center justify-end gap-1 text-[.65rem] text-muted; } .spark i { @apply block w-full rounded-t bg-accent; min-height: 2px; }
+}

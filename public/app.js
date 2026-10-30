@@ -127,6 +127,8 @@ const ICON = {
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".6"/>',
   media: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>', chevl: '<path d="m15 18-6-6 6-6"/>', chevr: '<path d="m9 18 6-6-6-6"/>',
+  trends: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+  pesan: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>',
   insights: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
   research: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
@@ -145,8 +147,8 @@ const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none
 // [id, label, peran minimal, grup]
 const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
-  ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
-  ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
+  ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
+  ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
   ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
 ];
@@ -920,6 +922,93 @@ VIEWS.inbox = async (v) => {
         if (a === 'send') { const t = $('.rt', card).value.trim(); if (!t) throw new Error('Tulis balasan dulu.'); if (!(await ui.confirm({ title: 'Kirim balasan?', message: 'Balasan tampil publik atas nama brand.', quote: t, quoteLabel: 'Balasan Anda', ok: 'Kirim balasan' }))) return; await api('POST', `/api/brands/${id}/replies/${x.reply.id}/reply`, { text: t }); toast('Balasan terkirim.'); $('.rt', card).value = ''; }
       });
     };
+  });
+};
+
+/* ---------- Kotak Pesan: komentar, mention, dan DM per platform ---------- */
+const PS_KIND = { comment: 'Komentar', reply: 'Reply', mention: 'Mention', dm: 'DM' };
+VIEWS.pesan = async (v) => {
+  const q = params(); const tab = q.get('tab') === 'dm' ? 'dm' : 'komentar'; const bid = brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : '';
+  const kf = ['comment', 'reply', 'mention'].includes(q.get('k')) ? q.get('k') : '';
+  const href = (o = {}) => { const n = { tab, brand: bid, k: kf, ...o }; return `#/pesan?tab=${n.tab}${n.brand ? `&brand=${n.brand}` : ''}${n.tab === 'komentar' && n.k ? `&k=${n.k}` : ''}`; };
+  const bmap = Object.fromEntries(brands.map((b) => [b.id, b]));
+  const tag = (id) => { const b = bmap[id] || { name: id, color: '#999' }; return `<span class="btag" style="--c:${b.color}"><i class="cal-dot on" style="--c:${b.color}"></i>${esc(b.name.replace('Delova ', ''))}</span>`; };
+  v.innerHTML = `<div class="page-head"><h1>Kotak Pesan</h1><p class="muted">Komentar, reply, mention, dan DM yang masuk ke semua akun, dipisah per platform. Setiap baris diberi penanda akun brand-nya.</p></div>
+  <div class="tabs" style="margin-bottom:10px"><a class="tab ${tab === 'komentar' ? 'on' : ''}" href="${href({ tab: 'komentar' })}">Komentar & Mention</a><a class="tab ${tab === 'dm' ? 'on' : ''}" href="${href({ tab: 'dm' })}">Pesan Langsung (DM)</a></div>
+  <div class="row between" style="margin-bottom:12px"><div class="chips"><a class="chip" href="${href({ brand: '' })}" ${bid ? '' : 'style="border-color:var(--accent);color:var(--accent)"'}>Semua akun</a>${brands.map((b) => `<a class="chip" href="${href({ brand: b.id })}" ${bid === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}</a>`).join('')}</div><button type="button" class="btn small" id="pfresh">Segarkan</button></div>
+  ${tab === 'komentar' ? `<div class="chips" style="margin-bottom:12px">${[['', 'Semua jenis'], ['comment', 'Komentar'], ['reply', 'Reply'], ['mention', 'Mention']].map(([k, l]) => `<a class="chip" href="${href({ k })}" ${kf === k ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${l}</a>`).join('')}</div>` : ''}
+  <div id="pout" class="stack"><p class="muted">Memuat…</p></div>`;
+  let data; const lim = { instagram: 25, threads: 25 };
+  const load = async (fresh) => {
+    data = await api('GET', `/api/pesan?type=${tab}${bid ? `&brand=${bid}` : ''}${fresh ? '&fresh=1' : ''}`);
+    const row = (x, i) => `<div class="card pitem stack" style="--c:${(bmap[x.brand_id] || {}).color || '#999'}" data-p="${x.platform}" data-i="${i}">
+      <div class="row between"><span class="row">${tag(x.brand_id)}<span class="badge">${PS_KIND[x.kind] || x.kind}</span><b>@${esc(x.author || '-')}</b>${x.hidden ? '<span class="badge">Disembunyikan</span>' : ''}${x.answered ? '<span class="badge s-published">Sudah dibalas</span>' : ''}${x.simulated ? '<span class="badge">Simulasi</span>' : ''}</span><span class="small muted">${x.at ? igTime(x.at) : ''}</span></div>
+      ${x.post ? `<div class="small muted">Pada post: “${esc(x.post)}”</div>` : ''}
+      <div style="white-space:pre-wrap">${esc(x.text || '(tanpa teks)')}</div>
+      <div class="row">${x.permalink ? `<a class="btn small" target="_blank" rel="noopener" href="${esc(x.permalink)}">Buka</a>` : ''}${actions(x)}</div></div>`;
+    const actions = (x) => {
+      if (x.kind === 'dm') return `<a class="btn small primary" href="#/instagram?tab=dm&brand=${x.brand_id}">Buka percakapan</a>${x.can_reply === false ? '<span class="small muted">Di luar jendela balas 24 jam</span>' : ''}`;
+      if (x.platform === 'instagram' && x.kind === 'comment' && x.source === 'live') return '<button type="button" class="btn small" data-a="reply">Balas</button>';
+      if (x.platform === 'threads' && x.kind === 'reply' && can('manager')) return '<button type="button" class="btn small" data-a="reply">Balas</button>';
+      return x.event_id ? `<a class="btn small" href="#/autoreply?tab=inbox&f=all">Lihat di Auto Reply</a>` : '';
+    };
+    const sec = (platform, title, hint) => {
+      const list = data[platform].map((x, i) => [x, i]).filter(([x]) => !kf || x.kind === kf);
+      const notes = data.notes.filter((n) => n.platform === platform).map((n) => `<div class="small ${n.error ? 'err' : 'muted'}">${tag(n.brand_id)} ${esc(n.text)}</div>`).join('');
+      return `<section class="psec stack" data-plat="${platform}"><div class="psec-h"><h2>${title} <span class="badge">${list.length}</span></h2><span class="small muted">${hint}</span></div>${notes}${list.slice(0, lim[platform]).map(([x, i]) => row(x, i)).join('') || '<div class="card muted">Belum ada data.</div>'}${list.length > lim[platform] ? `<button type="button" class="btn" data-more="${platform}">Tampilkan lebih banyak (${list.length - lim[platform]} lagi)</button>` : ''}</section>`;
+    };
+    $('#pout').innerHTML = sec('instagram', 'Instagram', tab === 'dm' ? 'Percakapan terbaru, balasan DM hanya dalam 24 jam setelah pesan pelanggan.' : 'Komentar pada 5 post terbaru + mention dari webhook.')
+      + (tab === 'dm' ? `<section class="psec stack" data-plat="threads"><div class="psec-h"><h2>Threads <span class="badge">0</span></h2></div><div class="card muted">${esc(data.threads_dm_note)}</div></section>` : sec('threads', 'Threads', 'Reply pada 5 post terbaru + mention yang dikumpulkan.'));
+  };
+  $('#pfresh').onclick = (e) => busy(e.target, async () => { await load(true); toast('Diperbarui.'); });
+  v.onclick = (e) => {
+    const mo = e.target.closest('[data-more]'); if (mo) { lim[mo.dataset.more] += 25; return load(false); }
+    const b = e.target.closest('[data-a="reply"]'); if (!b) return;
+    const el = b.closest('[data-i]'); const x = data[el.dataset.p][Number(el.dataset.i)];
+    busy(b, async () => {
+      const text = await ui.ask({ title: `Balas @${x.author}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: x.platform === 'threads' ? 500 : 2200, rows: 5, ok: 'Kirim balasan', quote: x.text, quoteLabel: 'Pesan' });
+      if (text === null) return;
+      await api('POST', x.platform === 'instagram' ? `/api/ig/${x.brand_id}/comments/${x.ext_id}/reply` : `/api/brands/${x.brand_id}/replies/${x.ext_id}/reply`, { text });
+      toast('Balasan terkirim.'); await load(true);
+    });
+  };
+  await load(false);
+};
+
+/* ---------- Tren: Threads (pencarian publik) + Instagram (performa akun sendiri) ---------- */
+VIEWS.trends = async (v) => {
+  let last = null;
+  const bar = (n, max, c = 'var(--accent)') => `<span class="tbar"><i style="width:${max ? Math.max(4, Math.round((n / max) * 100)) : 0}%;background:${c}"></i></span>`;
+  const mom = (m) => `<span class="badge ${m > 0 ? 's-published' : m < 0 ? 's-failed' : ''}">${m > 0 ? '▲' : m < 0 ? '▼' : '='} ${Math.abs(m)}%</span>`;
+  v.innerHTML = `<div class="page-head"><h1>Tren</h1><p class="muted">Cari tren di Threads dari kata kunci, dan lihat apa yang paling berhasil di Instagram brand Anda. Hasil dipakai ulang 1 menit agar hemat kuota API Meta.</p></div>
+  <form class="card stack" id="tf"><div class="grid g2"><label>Kata kunci (pisahkan koma, maks 6)<input name="kw" placeholder="kebaya, batik modern, outfit lebaran" required></label>
+  <label>Periode<select name="days"><option value="3">3 hari</option><option value="7" selected>7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select></label></div>
+  <div class="grid g2"><label>Akun Threads untuk mencari${brandPick(brands[0].id, 'brand')}</label><div><span class="small muted">Akun Instagram yang dianalisis</span><div class="chips" style="margin-top:6px">${brands.map((b) => `<label class="chip"><input type="checkbox" name="igb" value="${b.id}" checked> <i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}</label>`).join('')}</div></div></div>
+  <div class="row"><button class="btn primary" type="submit">Cari tren</button>${can('manager') && health.ai ? '<button type="button" class="btn" id="tai" disabled>Analisis Claude</button>' : ''}</div></form><div id="tout" class="stack" style="margin-top:14px"></div>`;
+  const render = (d) => {
+    const th = d.threads; const ig = d.instagram;
+    const mx = (a, k) => Math.max(1, ...a.map((x) => x[k]));
+    const thHtml = th ? `<section class="psec stack"><div class="psec-h"><h2>Threads <span class="badge">${th.total} post</span> ${mom(th.momentum)}</h2><span class="small muted">Momentum = post paruh terbaru vs paruh awal periode (${d.days} hari)</span></div>
+      <div class="card stack"><b>Kata kunci</b>${th.keywords.map((k) => `<div class="row between"><span><b>${esc(k.keyword)}</b> <span class="small muted">${k.posts} post</span></span><span>${bar(k.posts, mx(th.keywords, 'posts'))} ${mom(k.momentum)}</span></div>`).join('')}</div>
+      <div class="grid g2"><div class="card stack"><b>Hashtag terpopuler</b>${th.hashtags.map((h) => `<div class="row between"><span>${esc(h.tag)}</span><span>${bar(h.posts, mx(th.hashtags, 'posts'))} <span class="small muted">${h.posts}</span></span></div>`).join('') || '<span class="muted small">Tidak ada hashtag.</span>'}</div>
+      <div class="card stack"><b>Kata yang sering muncul</b><div class="chips">${th.terms.map((t) => `<span class="chip">${esc(t.term)} <span class="muted small">${t.posts}</span></span>`).join('') || '<span class="muted small">-</span>'}</div><b style="margin-top:8px">Akun paling aktif</b><div class="chips">${th.authors.map((a) => `<span class="chip">@${esc(a.username)} <span class="muted small">${a.posts}</span></span>`).join('')}</div></div></div>
+      <div class="card stack"><b>Volume per hari</b><div class="spark">${th.daily.map((x) => `<div title="${x.day}: ${x.posts}"><i style="height:${Math.round((x.posts / mx(th.daily, 'posts')) * 100)}%"></i><span>${x.day.slice(8)}</span></div>`).join('')}</div></div>
+      ${Object.entries(th.sample).map(([k, l]) => `<details class="card"><summary><b>Contoh post: ${esc(k)}</b></summary><div class="stack" style="margin-top:8px">${l.map((p) => `<div><b>@${esc(p.username)}</b> <span class="small muted">${p.timestamp ? igTime(p.timestamp) : ''}</span>${p.permalink ? ` <a target="_blank" rel="noopener" href="${esc(p.permalink)}">buka</a>` : ''}<div style="white-space:pre-wrap">${esc(p.text)}</div></div>`).join('')}</div></details>`).join('')}</section>` : '';
+    const igHtml = ig ? `<section class="psec stack"><div class="psec-h"><h2>Instagram <span class="badge">${ig.total} post dianalisis</span></h2><span class="small muted">${esc(d.instagram_note)}</span></div>
+      <div class="grid g2"><div class="card stack"><b>Hashtag paling berhasil (rata-rata interaksi)</b>${ig.hashtags.map((h) => `<div class="row between"><span>${esc(h.tag)} <span class="small muted">${h.posts}x</span></span><span>${bar(h.avg_interactions, mx(ig.hashtags, 'avg_interactions'))} <b>${h.avg_interactions}</b></span></div>`).join('') || '<span class="muted small">Belum ada hashtag di caption.</span>'}</div>
+      <div class="card stack"><b>Format terbaik</b>${ig.formats.map((f) => `<div class="row between"><span>${esc(f.type)} <span class="small muted">${f.posts} post</span></span><span>${bar(f.avg_interactions, mx(ig.formats, 'avg_interactions'))} <b>${f.avg_interactions}</b></span></div>`).join('')}<b style="margin-top:8px">Jam tayang terbaik (WIB)</b><div class="chips">${ig.best_hours.map((h) => `<span class="chip">${String(h.hour).padStart(2, '0')}:00 <span class="muted small">~${h.avg_interactions}</span></span>`).join('')}</div></div></div>
+      <div class="card stack"><b>Post teratas</b>${ig.top_posts.map((p) => { const bb = brands.find((x) => x.id === p.brand_id) || { color: '#999', name: p.brand_id }; return `<div class="row between"><span class="trunc" style="max-width:70%"><span class="btag" style="--c:${bb.color}"><i class="cal-dot on" style="--c:${bb.color}"></i>${esc(bb.name.replace('Delova ', ''))}</span> ${esc(p.caption || '(tanpa caption)')}</span><span><b>${p.interactions}</b> <span class="small muted">interaksi${p.reach ? ` · ${p.reach} reach` : ''}</span> ${p.permalink ? `<a target="_blank" rel="noopener" href="${esc(p.permalink)}">buka</a>` : ''}</span></div>`; }).join('')}</div></section>` : '';
+    $('#tout').innerHTML = (d.notes || []).map((n) => `<div class="banner">${esc(n)}</div>`).join('') + thHtml + igHtml || '<div class="card muted">Belum ada data.</div>';
+  };
+  $('#tf').onsubmit = (e) => { e.preventDefault(); const f = e.target; busy($('button[type=submit]', f), async () => {
+    last = await api('POST', '/api/trends', { keywords: f.elements.kw.value, days: Number(f.elements.days.value), brand_id: f.elements.brand.value, ig_brands: $$('[name=igb]:checked', f).map((x) => x.value) });
+    render(last); const t = $('#tai'); if (t) t.disabled = !last.threads;
+  }); };
+  const t = $('#tai'); if (t) t.onclick = (e) => busy(e.target, async () => {
+    const posts = Object.values(last.threads.sample).flat().slice(0, 30);
+    const r = await api('POST', '/api/ai/research', { brand_id: $('[name=brand]').value, q: last.keywords.join(', '), posts });
+    const a = r.insights; const ul = (l) => `<ul>${(l || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+    $('#tout').insertAdjacentHTML('afterbegin', `<div class="card stack"><h3>Analisis Claude</h3><p>${esc(a.summary)}</p><div class="grid g2"><div><b>Tema</b>${ul(a.themes)}<b>Pertanyaan audiens</b>${ul(a.audience_questions)}</div><div><b>Celah konten</b>${ul(a.content_gaps)}</div></div></div>`);
   });
 };
 

@@ -16,6 +16,7 @@ import { mountLegal } from './legal.js';
 import * as R from './research.js';
 import { mountInstagram } from './ig-routes.js';
 import { mountAuto } from './auto-routes.js';
+import { mountPesan, mountTrends } from './pesan-routes.js';
 import * as Store from './store-api.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
@@ -929,6 +930,8 @@ export function createApp() {
 
   mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, brandOr404, baseUrl });
   mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 });
+  mountPesan(api, { need, ah, bad });
+  mountTrends(api, { need, ah, bad, A });
   app.use('/api', api);
 
   /* ---------------- MCP lewat HTTP (stateless, Bearer token) ---------------- */
