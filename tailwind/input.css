@@ -234,3 +234,9 @@ body.modal-open { overflow: hidden; }
   .tbar { @apply inline-block h-2 w-24 overflow-hidden rounded-full bg-line align-middle; } .tbar i { @apply block h-full rounded-full; }
   .spark { @apply flex h-24 items-end gap-1; } .spark > div { @apply flex h-full flex-1 flex-col items-center justify-end gap-1 text-[.65rem] text-muted; } .spark i { @apply block w-full rounded-t bg-accent; min-height: 2px; }
 }
+
+@layer components {
+  .ap-bar { @apply sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3; }
+  .ap-item { @apply flex items-start gap-3 rounded-lg border border-line bg-panel p-3; } .ap-item.risky { border-color: var(--bad); }
+  .ap-item > input { @apply mt-1; }
+}

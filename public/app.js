@@ -127,6 +127,8 @@ const ICON = {
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".6"/>',
   media: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>', chevl: '<path d="m15 18-6-6 6-6"/>', chevr: '<path d="m9 18 6-6-6-6"/>',
+  approvals: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  peluang: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>',
   trends: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
   pesan: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z"/>',
@@ -146,9 +148,9 @@ const ICON = {
 const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
 // [id, label, peran minimal, grup]
 const ROUTES = [
-  ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'],
+  ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'], ['approvals', 'Pusat Persetujuan', 'editor', 'Menu'],
   ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
-  ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
+  ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['peluang', 'Peluang Engage', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
   ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
 ];
@@ -606,7 +608,7 @@ IGV.akun = async ({ st, body }) => {
 };
 
 /* ---------- Auto Reply & Webhook ---------- */
-const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
+const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['keyword', 'Aturan keyword', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 const AR_KIND = { reply: 'Reply', mention: 'Mention', comment: 'Komentar', dm: 'DM' };
 const PLAT = { threads: 'Threads', instagram: 'Instagram' };
@@ -639,6 +641,7 @@ ARV.inbox = async ({ cfg, body, q }) => {
       <span class="row">${e.needs_human ? '<span class="badge s-failed">Perlu manusia</span>' : ''}<span class="badge s-${e.status === 'sent' ? 'published' : e.status === 'failed' ? 'failed' : 'pending_approval'}">${AR_STATUS[e.status] || e.status}</span></span></div>
       <div class="quote">${esc(e.text)}</div>
       ${act ? `<label class="lbl">Balasan <span class="muted small">(edit bila perlu)</span><textarea class="dtxt" style="min-height:70px" placeholder="${e.draft ? '' : 'Tulis balasan manual…'}">${esc(e.draft || '')}</textarea></label>` : e.reply_text ? `<div class="quote me"><span class="small muted">Balasan terkirim:</span><br>${esc(e.reply_text)}</div>` : e.draft ? `<div class="small muted">Draf: ${esc(e.draft)}</div>` : ''}
+      ${e.dm_text ? `<div class="small muted">Juga dikirim lewat DM${e.dm_status ? ` (${esc(e.dm_status)})` : ''}: “${esc(e.dm_text)}”</div>` : ''}
       ${e.used_data ? `<div class="small muted">Data produk dipakai: ${esc(e.used_data)}</div>` : ''}${e.note || e.error ? `<div class="small ${e.status === 'failed' ? 'err' : 'muted'}">${esc(e.error || e.note)}</div>` : ''}
       <div class="row">${act && can('editor') ? '<button class="btn primary small" data-a="approve" type="button">Kirim balasan</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped', 'rejected'].includes(e.status) && cfg.ai ? '<button class="btn small" data-a="redraft" type="button">Draf ulang dengan Claude</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped'].includes(e.status) ? '<button class="btn small" data-a="reject" type="button">Tolak</button>' : ''}${e.permalink ? `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(e.permalink)}">Buka</a>` : ''}</div></div>`; }).join('')
     : '<div class="card muted">Belum ada event di sini. Setelah webhook terpasang, reply/komentar/DM baru muncul otomatis. Mode simulasi: pakai kotak uji di tab Aturan.</div>'}`;
@@ -648,7 +651,7 @@ ARV.inbox = async ({ cfg, body, q }) => {
     busy(btn, async () => {
       if (a === 'approve') {
         const text = $('.dtxt', card).value.trim(); const ev = rows.find((r) => r.id === id);
-        if (!text) throw new Error('Tulis balasan dulu.');
+        if (!text && !ev.dm_text) throw new Error('Tulis balasan dulu.');
         if (!(await ui.confirm({ title: `Kirim balasan ke @${ev.author_username || 'pengguna'}?`, message: `Dikirim ke ${PLAT[ev.platform]} atas nama brand dan terlihat ${ev.kind === 'dm' ? 'oleh penerima' : 'publik'}.`, quote: text, quoteLabel: 'Balasan', ok: 'Kirim' }))) return;
         await api('POST', `/api/auto/events/${id}/approve`, { text }); toast('Balasan terkirim.');
       } else if (a === 'reject') { await api('POST', `/api/auto/events/${id}/reject`); toast('Ditolak.'); }
@@ -1010,6 +1013,139 @@ VIEWS.trends = async (v) => {
     const a = r.insights; const ul = (l) => `<ul>${(l || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
     $('#tout').insertAdjacentHTML('afterbegin', `<div class="card stack"><h3>Analisis Claude</h3><p>${esc(a.summary)}</p><div class="grid g2"><div><b>Tema</b>${ul(a.themes)}<b>Pertanyaan audiens</b>${ul(a.audience_questions)}</div><div><b>Celah konten</b>${ul(a.content_gaps)}</div></div></div>`);
   });
+};
+
+/* ---------- Aturan keyword: balas/DM otomatis di post sendiri ---------- */
+ARV.keyword = async ({ cfg, body }) => {
+  const list = await api('GET', '/api/auto/triggers');
+  const bmap = Object.fromEntries(cfg.brands.map((b) => [b.id, b]));
+  const tagOf = (id) => { const b = bmap[id] || { name: id, color: '#999' }; return `<span class="btag" style="--c:${b.color}"><i class="cal-dot on" style="--c:${b.color}"></i>${esc(b.name.replace('Delova ', ''))}</span>`; };
+  const edit = async (t) => {
+    const cur = t || { brand_id: cfg.brands[0].id, platform: 'instagram', name: '', keywords: [], match_mode: 'any', media_id: '', reply_text: '', dm_text: '', cooldown_h: 24, mode: 'draft', enabled: true };
+    const html = `<div class="stack"><div class="grid g2"><label>Akun<select name="brand_id" ${t ? 'disabled' : ''}>${cfg.brands.map((b) => `<option value="${b.id}" ${b.id === cur.brand_id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
+      <label>Platform<select name="platform" ${t ? 'disabled' : ''}><option value="instagram" ${cur.platform === 'instagram' ? 'selected' : ''}>Instagram (komentar)</option><option value="threads" ${cur.platform === 'threads' ? 'selected' : ''}>Threads (reply)</option></select></label></div>
+      <label>Nama aturan<input name="name" maxlength="80" value="${esc(cur.name)}" placeholder="mis. Tanya harga"></label>
+      <div class="grid g2"><label>Kata kunci <span class="muted small">(pisahkan koma)</span><input name="keywords" value="${esc(cur.keywords.join(', '))}" placeholder="harga, price list, katalog"></label>
+      <label>Cocok bila<select name="match_mode"><option value="any" ${cur.match_mode === 'any' ? 'selected' : ''}>salah satu kata kunci</option><option value="all" ${cur.match_mode === 'all' ? 'selected' : ''}>semua kata kunci</option></select></label></div>
+      <label>Hanya untuk post tertentu <span class="muted small">(opsional, isi ID media; kosong = semua post)</span><input name="media_id" value="${esc(cur.media_id || '')}"></label>
+      <label>Balasan publik <span class="muted small">(variasi dipisah baris <code>---</code>; <code>{nama}</code> = @username)</span><textarea name="reply_text" rows="4" placeholder="Halo {nama}, detail & harga ada di Shopee kami ya 😊">${esc(cur.reply_text)}</textarea></label>
+      <label data-ig>Pesan DM otomatis <span class="muted small">(khusus komentar Instagram; 1x per komentar, maks 7 hari setelah komentar)</span><textarea name="dm_text" rows="3" placeholder="Halo Kak, ini katalog lengkap kami...">${esc(cur.dm_text)}</textarea></label>
+      <div class="grid g2"><label>Jeda per penulis (jam)<input type="number" name="cooldown_h" min="0" max="720" value="${cur.cooldown_h}"></label>
+      <label>Mode<select name="mode"><option value="draft" ${cur.mode === 'draft' ? 'selected' : ''}>Draft: tunggu persetujuan</option><option value="auto" ${cur.mode === 'auto' ? 'selected' : ''} ${can('admin') || cur.mode === 'auto' ? '' : 'disabled'}>Auto: kirim sendiri ${can('admin') ? '' : '(admin)'}</option></select></label></div>
+      <label class="row"><input type="checkbox" name="enabled" ${cur.enabled ? 'checked' : ''}> Aturan aktif</label></div>`;
+    const out = await ui.form({ title: t ? 'Ubah aturan keyword' : 'Aturan keyword baru', ok: 'Simpan', extra: { html,
+      init: (f) => { const sync = () => { $('[data-ig]', f).style.display = f.elements.platform.value === 'instagram' ? '' : 'none'; }; f.elements.platform.onchange = sync; sync(); },
+      collect: (f) => { const e = f.elements; if (!e.name.value.trim() || !e.keywords.value.trim()) { f.querySelector('[data-err]').textContent = 'Nama dan kata kunci wajib diisi.'; return undefined; } return { brand_id: e.brand_id.value, platform: e.platform.value, name: e.name.value, keywords: e.keywords.value, match_mode: e.match_mode.value, media_id: e.media_id.value, reply_text: e.reply_text.value, dm_text: e.dm_text.value, cooldown_h: Number(e.cooldown_h.value), mode: e.mode.value, enabled: e.enabled.checked }; } } });
+    if (!out) return;
+    await api(t ? 'PUT' : 'POST', t ? `/api/auto/triggers/${t.id}` : '/api/auto/triggers', out); toast('Aturan tersimpan.'); route();
+  };
+  body.innerHTML = `<div class="banner"><b>Balas otomatis berdasarkan kata kunci, hanya di post milik brand sendiri.</b> Cocok untuk "harga", "ready", "katalog", dsb. Isi balasan dari template buatan Anda (tanpa karangan AI). Di Instagram, aturan bisa sekaligus mengirim <b>DM</b> ke penulis komentar (1x per komentar, maksimal 7 hari). Penulis yang sama tidak dibalas lagi dalam masa jeda, dan batas balasan otomatis per jam tetap berlaku. Mode Draft: menunggu persetujuan di Kotak masuk / Pusat Persetujuan.</div>
+  ${can('manager') ? '<div><button class="btn primary" id="newtr" type="button">Aturan keyword baru</button></div>' : ''}
+  ${list.length ? `<div class="grid g2">${list.map((t) => `<div class="card stack pitem" style="--c:${(bmap[t.brand_id] || {}).color || '#999'}" data-id="${t.id}"><div class="row between"><span class="row">${tagOf(t.brand_id)}<span class="badge">${PLAT[t.platform]}</span><b>${esc(t.name)}</b></span><span class="row"><span class="badge ${t.mode === 'auto' ? 's-failed' : ''}">${t.mode === 'auto' ? 'Auto' : 'Draft'}</span><span class="badge ${t.enabled ? 's-published' : ''}">${t.enabled ? 'Aktif' : 'Mati'}</span></span></div>
+    <div class="chips">${t.keywords.map((k) => `<span class="chip">${esc(k)}</span>`).join('')}<span class="small muted">${t.match_mode === 'all' ? 'semua harus ada' : 'salah satu'}</span></div>
+    ${t.media_id ? `<div class="small muted">Hanya post ${esc(t.media_id)}</div>` : '<div class="small muted">Semua post</div>'}
+    ${t.reply_text ? `<div class="quote">${esc(t.reply_text.slice(0, 220))}</div>` : ''}${t.dm_text ? `<div class="quote me"><span class="small muted">DM:</span> ${esc(t.dm_text.slice(0, 160))}</div>` : ''}
+    <div class="row between small muted"><span>${t.hits} kali cocok · jeda ${t.cooldown_h} jam</span>${can('manager') ? '<span class="row"><button class="btn small" data-a="edit" type="button">Ubah</button><button class="btn small" data-a="tog" type="button">' + (t.enabled ? 'Matikan' : 'Aktifkan') + '</button><button class="btn small" data-a="del" type="button">Hapus</button></span>' : ''}</div></div>`).join('')}</div>` : '<div class="card muted">Belum ada aturan keyword.</div>'}`;
+  const nb = $('#newtr', body); if (nb) nb.onclick = () => edit(null);
+  body.onclick = (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const t = list.find((x) => x.id === b.closest('[data-id]').dataset.id);
+    busy(b, async () => {
+      if (b.dataset.a === 'edit') return edit(t);
+      if (b.dataset.a === 'tog') { await api('PUT', `/api/auto/triggers/${t.id}`, { ...t, keywords: t.keywords, enabled: !t.enabled }); toast('Diperbarui.'); return route(); }
+      if (!(await ui.confirm({ title: 'Hapus aturan ini?', message: `Aturan "${t.name}" dihapus. Event lama tidak terpengaruh.`, ok: 'Hapus', danger: true }))) return;
+      await api('DELETE', `/api/auto/triggers/${t.id}`); toast('Aturan dihapus.'); route();
+    });
+  };
+};
+
+/* ---------- Pusat Persetujuan: checklist massal untuk semua fitur ber-approval ---------- */
+VIEWS.approvals = async (v) => {
+  const bmap = Object.fromEntries(brands.map((b) => [b.id, b]));
+  const tagOf = (id) => { const b = bmap[id] || { name: id, color: '#999' }; return `<span class="btag" style="--c:${b.color}"><i class="cal-dot on" style="--c:${b.color}"></i>${esc(b.name.replace('Delova ', ''))}</span>`; };
+  const SEC = [['posts', 'post', 'Post Threads', 'Menunggu approval (queue)'], ['igposts', 'igpost', 'Konten Instagram', 'Menunggu approval'], ['events', 'event', 'Balasan Auto Reply', 'Draf balasan/DM yang menunggu persetujuan'], ['opps', 'opp', 'Peluang Engage', 'Balasan ke post publik, dikirim satu per satu dengan batas harian']];
+  let d; let result = null;
+  const load = async () => { d = await api('GET', '/api/approvals'); paint(); };
+  const itemHtml = (type, x) => {
+    const key = `${type}:${x.id}`;
+    const risky = type === 'event' && x.needs_human;
+    const noSched = (type === 'post' || type === 'igpost') && !x.scheduled_at;
+    let main = '';
+    if (type === 'post' || type === 'igpost') main = `<div style="white-space:pre-wrap">${esc((x.text || '').slice(0, 280))}</div><div class="small ${noSched ? 'err' : 'muted'}">${x.media_urls?.length ? `${x.media_urls.length} media · ` : ''}${x.scheduled_at ? `Jadwal ${wib(x.scheduled_at)}` : 'Belum dijadwalkan'}${type === 'igpost' ? ` · ${esc(x.kind)}` : ''}</div>`;
+    if (type === 'event') main = `<div class="small muted">${PLAT[x.platform]} · ${AR_KIND[x.kind]} dari @${esc(x.author_username || '-')} · ${esc(igTime(x.received_at))}${x.simulated ? ' · simulasi' : ''}</div><div class="quote">${esc(x.text.slice(0, 240))}</div>${x.draft ? `<div class="quote me"><span class="small muted">Balasan:</span> ${esc(x.draft.slice(0, 300))}</div>` : ''}${x.dm_text ? `<div class="small muted">+ DM: “${esc(x.dm_text.slice(0, 140))}”</div>` : ''}${x.note ? `<div class="small ${risky ? 'err' : 'muted'}">${esc(x.note)}</div>` : ''}`;
+    if (type === 'opp') main = `<div class="small muted">Post @${esc(x.username || '-')} · kata kunci “${esc(x.keyword)}” ${x.permalink ? `· <a href="${esc(x.permalink)}" target="_blank" rel="noopener">buka</a>` : ''}</div><div class="quote">${esc(x.text.slice(0, 240))}</div><div class="quote me"><span class="small muted">Balasan:</span> ${esc(x.draft || '')}</div>`;
+    return `<label class="ap-item ${risky ? 'risky' : ''}"><input type="checkbox" class="ap-c" data-key="${key}" data-safe="${risky || noSched ? 0 : 1}"><span class="stack" style="gap:6px">${x.brand_id ? `<span class="row">${tagOf(x.brand_id)}${risky ? '<span class="badge s-failed">Perlu ditinjau</span>' : ''}${noSched ? '<span class="badge">Tanpa jadwal</span>' : ''}</span>` : ''}${main}</span></label>`;
+  };
+  const paint = () => {
+    const total = Object.values(d.counts).reduce((a, b) => a + b, 0);
+    v.innerHTML = `<div class="page-head"><h1>Pusat Persetujuan</h1><p class="muted">Satu tempat untuk menyetujui atau menolak banyak item sekaligus: post Threads, konten Instagram, balasan Auto Reply, dan peluang engage. Centang item, lalu setujui atau tolak terpilih.</p></div>
+    ${result ? `<div class="card stack"><b>Hasil terakhir: ${result.ok} berhasil, ${result.failed} gagal</b>${result.results.filter((r) => !r.ok).map((r) => `<div class="small err">${esc(r.type)} ${esc(r.id.slice(0, 8))}: ${esc(r.msg)}</div>`).join('')}</div>` : ''}
+    ${total ? `<div class="ap-bar card"><div class="row"><button class="btn small" type="button" data-s="safe">Pilih yang aman</button><button class="btn small" type="button" data-s="all">Pilih semua</button><button class="btn small" type="button" data-s="none">Kosongkan</button><span class="muted small" id="apn">0 dipilih</span></div>
+      <div class="row"><label class="small">Jadwalkan yang belum bertanggal ke <input type="datetime-local" id="apwhen" style="width:auto"></label><button class="btn primary" type="button" id="apok" disabled>Setujui terpilih</button><button class="btn" type="button" id="apno" disabled>Tolak terpilih</button></div></div>` : '<div class="card muted">Tidak ada yang menunggu persetujuan. 🎉</div>'}
+    ${SEC.map(([k, type, title, hint]) => (d[k].length ? `<section class="psec stack"><div class="psec-h"><h2><label class="row" style="gap:8px"><input type="checkbox" data-sec="${type}"> ${title} <span class="badge">${d[k].length}</span></label></h2><span class="small muted">${hint}</span></div>${d[k].map((x) => itemHtml(type, x)).join('')}</section>` : '')).join('')}
+    ${!d.can_posts ? '<div class="small muted">Post Threads dan konten Instagram hanya tampil untuk peran manager ke atas.</div>' : ''}`;
+    sync();
+  };
+  const picked = () => $$('.ap-c:checked', v).map((c) => { const [type, ...id] = c.dataset.key.split(':'); return { type, id: id.join(':') }; });
+  const sync = () => { const n = picked().length; const el = $('#apn', v); if (el) el.textContent = `${n} dipilih`; ['apok', 'apno'].forEach((i) => { const b = $('#' + i, v); if (b) b.disabled = !n; }); };
+  const run_ = async (action, btn) => {
+    const items = picked(); if (!items.length) return;
+    const cnt = (t) => items.filter((i) => i.type === t).length;
+    const sum = [['post', 'post Threads'], ['igpost', 'konten Instagram'], ['event', 'balasan/DM Auto Reply'], ['opp', 'balasan peluang']].filter(([t]) => cnt(t)).map(([t, l]) => `${cnt(t)} ${l}`).join(', ');
+    const risky = $$('.ap-c:checked', v).filter((c) => c.dataset.safe === '0' && c.closest('.risky')).length;
+    const send = action === 'approve' && items.some((i) => i.type === 'event' || i.type === 'opp');
+    if (!(await ui.confirm({ title: action === 'approve' ? `Setujui ${items.length} item?` : `Tolak ${items.length} item?`, message: `${sum}.${action === 'approve' ? (send ? ' Balasan/DM yang dipilih akan langsung dikirim ke platform atas nama brand.' : ' Post akan masuk jadwal tayang.') : ' Post dikembalikan ke draft; balasan ditolak/dilewati.'}${risky ? ` ${risky} item bertanda "Perlu ditinjau" ikut terpilih, pastikan sudah Anda baca.` : ''}`, ok: action === 'approve' ? 'Setujui' : 'Tolak', danger: action === 'reject' }))) return;
+    const when = $('#apwhen', v).value ? new Date($('#apwhen', v).value).toISOString() : undefined;
+    result = await api('POST', '/api/approvals/bulk', { action, items, scheduled_at: when });
+    toast(`${result.ok} berhasil${result.failed ? `, ${result.failed} gagal` : ''}.`, !result.failed); await load();
+  };
+  v.onclick = (e) => {
+    const s = e.target.closest('[data-s]');
+    if (s) { $$('.ap-c', v).forEach((c) => { c.checked = s.dataset.s === 'all' || (s.dataset.s === 'safe' && c.dataset.safe === '1'); }); $$('[data-sec]', v).forEach((c) => { c.checked = false; }); return sync(); }
+    const sec = e.target.closest('[data-sec]');
+    if (sec) { $$('.ap-c', sec.closest('section')).forEach((c) => { c.checked = sec.checked; }); return sync(); }
+    if (e.target.classList?.contains('ap-c')) return sync();
+    const ok = e.target.closest('#apok'); const no = e.target.closest('#apno');
+    if (ok) busy(ok, () => run_('approve')); if (no) busy(no, () => run_('reject'));
+  };
+  await load();
+};
+
+/* ---------- Peluang Engage: cari post publik, draf Claude, disetujui manusia ---------- */
+VIEWS.peluang = async (v) => {
+  const bmap = Object.fromEntries(brands.map((b) => [b.id, b]));
+  const q = params(); const bid = brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : brands[0].id;
+  let d;
+  const STL = { new: 'Baru', drafted: 'Draf siap', sent: 'Terkirim', skipped: 'Dilewati', failed: 'Gagal' };
+  const load = async () => { d = await api('GET', `/api/opps?brand=${bid}&status=open`); paint(); };
+  const paint = () => {
+    const sent = d.sent_today[bid] || 0;
+    $('#opl', v).innerHTML = d.items.length ? d.items.map((o) => `<div class="card stack" data-id="${o.id}"><label class="row" style="align-items:flex-start;gap:10px"><input type="checkbox" class="op-c" value="${o.id}"><span class="stack" style="gap:6px;flex:1"><span class="row between"><span class="row"><b>@${esc(o.username || '-')}</b><span class="badge">${esc(o.keyword)}</span><span class="badge ${o.status === 'failed' ? 's-failed' : o.status === 'drafted' ? 's-published' : ''}">${STL[o.status]}</span></span><span class="small muted">${o.posted_at ? igTime(o.posted_at) : ''}${o.permalink ? ` · <a href="${esc(o.permalink)}" target="_blank" rel="noopener">buka</a>` : ''}</span></span><span class="quote">${esc(o.text.slice(0, 320))}</span></span></label>
+      <textarea class="odr" maxlength="500" style="min-height:60px" placeholder="Draf balasan (buat dengan Claude atau tulis sendiri)…">${esc(o.draft || '')}</textarea>${o.note || o.error ? `<div class="small ${o.error ? 'err' : 'muted'}">${esc(o.error || o.note)}</div>` : ''}
+      <div class="row"><button class="btn small primary" data-a="send" type="button">Kirim balasan</button><button class="btn small" data-a="save" type="button">Simpan draf</button><button class="btn small" data-a="skip" type="button">Lewati</button></div></div>`).join('') : '<div class="card muted">Belum ada peluang. Cari dengan kata kunci di atas.</div>';
+    $('#opq', v).textContent = `Terkirim 24 jam terakhir: ${sent}/${d.cap} untuk ${bmap[bid].name}. Jeda minimal 2 menit antar balasan.`;
+  };
+  v.innerHTML = `<div class="page-head"><h1>Peluang Engage</h1><p class="muted">Cari post publik di Threads dari kata kunci, lalu balas dengan tulus. Claude menyiapkan draf yang bernilai (bukan jualan, tanpa link); <b>setiap balasan dikirim hanya setelah Anda setujui</b>, dengan batas harian agar akun aman dari penilaian spam.</p></div>
+  <form class="card stack" id="osf"><div class="grid g2"><label>Akun pengirim${brandPick(bid, 'brand')}</label><label>Kata kunci <span class="muted small">(koma, maks 5)</span><input name="kw" placeholder="cari kebaya lebaran, rekomendasi batik, outfit kondangan" required></label></div>
+  <div class="row"><button class="btn primary" type="submit">Cari peluang</button><span class="small muted" id="opq"></span></div></form>
+  <div class="row" style="margin-top:12px"><button class="btn small" type="button" id="oall">Pilih semua</button><button class="btn small" type="button" id="odraft">Buat draf terpilih (Claude)</button><button class="btn small primary" type="button" id="osend">Kirim terpilih</button><button class="btn small" type="button" id="oskip">Lewati terpilih</button></div>
+  <div id="opl" class="stack" style="margin-top:12px"></div>`;
+  $('[name=brand]', v).onchange = (e) => { location.hash = `#/peluang?brand=${e.target.value}`; };
+  $('#osf').onsubmit = (e) => { e.preventDefault(); busy($('button[type=submit]', v), async () => { const r = await api('POST', '/api/opps/scan', { brand_id: bid, keywords: e.target.elements.kw.value }); toast(`${r.added} peluang baru (${r.skipped} disaring).`); await load(); }); };
+  const sel = () => $$('.op-c:checked', v).map((c) => c.value);
+  $('#oall').onclick = () => { const all_ = $$('.op-c', v); const on = !all_.every((c) => c.checked); all_.forEach((c) => { c.checked = on; }); };
+  $('#odraft').onclick = (e) => busy(e.target, async () => { const ids = sel().slice(0, 8); if (!ids.length) throw new Error('Centang peluang dulu (maks 8 sekali jalan).'); await api('POST', '/api/opps/draft', { ids }); toast('Draf selesai dibuat.'); await load(); });
+  const bulk = async (action) => { const ids = sel(); if (!ids.length) throw new Error('Centang peluang dulu.'); if (action === 'approve' && !(await ui.confirm({ title: `Kirim ${ids.length} balasan?`, message: 'Balasan tampil publik di post orang lain atas nama brand. Hanya item berdraf yang terkirim; sistem menolak jika melewati batas harian atau jeda 2 menit.', ok: 'Kirim' }))) return; const r = await api('POST', '/api/approvals/bulk', { action, items: ids.map((id) => ({ type: 'opp', id })) }); toast(`${r.ok} berhasil${r.failed ? `, ${r.failed} gagal: ${r.results.find((x) => !x.ok)?.msg}` : ''}.`, !r.failed); await load(); };
+  $('#osend').onclick = (e) => busy(e.target, () => bulk('approve')); $('#oskip').onclick = (e) => busy(e.target, () => bulk('reject'));
+  v.onclick = (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const card = b.closest('[data-id]'); const id = card.dataset.id; const text = $('.odr', card).value.trim();
+    busy(b, async () => {
+      if (b.dataset.a === 'skip') await api('POST', `/api/opps/${id}/skip`);
+      else if (b.dataset.a === 'save') await api('PUT', `/api/opps/${id}`, { draft: text });
+      else { if (!text) throw new Error('Tulis atau buat draf dulu.'); const o = d.items.find((x) => x.id === id); if (!(await ui.confirm({ title: `Balas post @${o.username}?`, message: 'Balasan tampil publik di post orang lain atas nama brand.', quote: text, quoteLabel: 'Balasan', ok: 'Kirim' }))) return; await api('POST', `/api/opps/${id}/send`, { text }); toast('Balasan terkirim.'); }
+      await load();
+    });
+  };
+  await load();
 };
 
 /* ---------- Insights ---------- */

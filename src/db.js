@@ -240,6 +240,46 @@ CREATE INDEX IF NOT EXISTS auto_events_status ON auto_events(status, received_at
 CREATE INDEX IF NOT EXISTS auto_events_brand ON auto_events(brand_id, platform, received_at);
 `);
 try { db.exec('ALTER TABLE auto_events ADD COLUMN used_data TEXT'); } catch { /* kolom sudah ada */ }
+for (const c of ['trigger_id TEXT', 'dm_text TEXT', 'dm_status TEXT']) { try { db.exec(`ALTER TABLE auto_events ADD COLUMN ${c}`); } catch { /* kolom sudah ada */ } }
+db.exec(`
+CREATE TABLE IF NOT EXISTS kw_triggers (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT NOT NULL REFERENCES brands(id),
+  platform TEXT NOT NULL CHECK (platform IN ('threads','instagram')),
+  name TEXT NOT NULL,
+  keywords TEXT NOT NULL DEFAULT '[]',
+  match_mode TEXT NOT NULL DEFAULT 'any' CHECK (match_mode IN ('any','all')),
+  media_id TEXT,
+  reply_text TEXT NOT NULL DEFAULT '',
+  dm_text TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL DEFAULT 'draft' CHECK (mode IN ('draft','auto')),
+  cooldown_h INTEGER NOT NULL DEFAULT 24,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  hits INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS opps (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT NOT NULL REFERENCES brands(id),
+  keyword TEXT NOT NULL,
+  ext_id TEXT NOT NULL,
+  username TEXT,
+  text TEXT NOT NULL DEFAULT '',
+  permalink TEXT,
+  posted_at TEXT,
+  draft TEXT,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','drafted','sent','skipped','failed')),
+  error TEXT,
+  sent_id TEXT,
+  decided_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (brand_id, ext_id)
+);
+`);
 // Riset, mention, dan kandidat kolaborasi (endorse)
 db.exec(`
 CREATE TABLE IF NOT EXISTS research_saves (

@@ -144,7 +144,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
   api.post('/auto/events/:id/approve', need('editor'), humanOnly, ah(async (req, res) => {
     const e = ev(req, res); if (!e) return;
     const text = String(req.body?.text ?? e.draft ?? '').trim();
-    if (!text) return bad(res, 'Teks balasan kosong.');
+    if (!text && !(e.dm_text && e.platform === 'instagram' && e.kind === 'comment')) return bad(res, 'Teks balasan kosong.');
     const limit = e.platform === 'threads' ? 500 : e.kind === 'dm' ? 1000 : 2200;
     if ([...text].length > limit) return bad(res, `Balasan terlalu panjang (maks ${limit}).`);
     if (!['pending', 'failed'].includes(e.status)) return bad(res, `Event berstatus "${e.status}", tidak bisa dikirim.`, 409);
@@ -171,7 +171,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
     const text = String(f.text || '').trim().slice(0, 500);
     if (!text) return bad(res, 'Isi pesan uji kosong.');
     const id = `test_${uid()}`;
-    const ids = A_.ingest([{ platform: f.platform, brand: b, kind, ext_id: id, target_id: kind === 'dm' ? 'user_test' : id, media_id: 'media_test', author_id: 'user_test', author_username: String(f.username || 'pembeli_contoh').slice(0, 40), text, event_at: now() }], { simulated: true });
+    const ids = A_.ingest([{ platform: f.platform, brand: b, kind, ext_id: id, target_id: kind === 'dm' ? `user_${String(f.username || 'pembeli_contoh').slice(0, 40)}` : id, media_id: 'media_test', author_id: `user_${String(f.username || 'pembeli_contoh').slice(0, 40)}`, author_username: String(f.username || 'pembeli_contoh').slice(0, 40), text, event_at: now() }], { simulated: true });
     A(req, 'auto.test_event', { brand: b.id, platform: f.platform });
     res.json(ids[0] ? await A_.processEvent(ids[0]) : { error: 'Duplikat' });
   }));

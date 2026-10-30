@@ -156,6 +156,11 @@ export async function replyComment(acc, brand, commentId, text) {
   if (isDryRun()) return { id: `igdry_reply_${Date.now()}`, dryRun: true };
   return call('POST', `${V}/${commentId}/replies`, { message: text, access_token: tokenOf(acc, brand.name) });
 }
+/** Balasan pribadi (DM) ke penulis komentar: hanya 1x per komentar dan maksimal 7 hari setelah komentar. */
+export async function privateReply(acc, brand, commentId, text) {
+  if (isDryRun()) return { message_id: `igdry_pr_${Date.now()}`, dryRun: true };
+  return call('POST', `${V}/${acc.ig_user_id}/messages`, { recipient: { comment_id: commentId }, message: { text }, access_token: tokenOf(acc, brand.name) }, { json: true });
+}
 export async function hideComment(acc, brand, commentId, hide = true) {
   if (isDryRun()) return { success: true, dryRun: true };
   return call('POST', `${V}/${commentId}`, { hide, access_token: tokenOf(acc, brand.name) });

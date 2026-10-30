@@ -6,6 +6,7 @@
 import crypto from 'node:crypto';
 import { all, get, run, now, uid, getSetting, setSetting, audit } from './db.js';
 import * as T from './threads.js';
+import * as TR from './triggers.js';
 import * as I from './instagram.js';
 import * as AI from './claude.js';
 import * as C from './crypto.js';
@@ -17,7 +18,7 @@ const maxChars = (platform, kind) => MAX[platform]?.[kind] || 280;
 const MIN_CONFIDENCE = 0.75;
 const SAFE_CATEGORIES = ['sapaan', 'pujian', 'pertanyaan_produk', 'pertanyaan_umum'];
 // kata yang selalu butuh manusia, apa pun jawaban LLM
-const SENSITIVE = /\b(refund|retur|pengembalian|komplain|complain|kecewa|penipu|tipu|scam|lapor|polisi|pengacara|somasi|rusak|cacat|salah kirim|belum sampai|nggak sampai|tidak sampai|cancel|batal|uang kembali|konsumen|ylki|viral|endorse|kolaborasi|collab|kerja ?sama|media partner|wartawan)\b/i;
+export const SENSITIVE = /\b(refund|retur|pengembalian|komplain|complain|kecewa|penipu|tipu|scam|lapor|polisi|pengacara|somasi|rusak|cacat|salah kirim|belum sampai|nggak sampai|tidak sampai|cancel|batal|uang kembali|konsumen|ylki|viral|endorse|kolaborasi|collab|kerja ?sama|media partner|wartawan)\b/i;
 
 let drafter = null; // dapat diganti saat uji; null = pakai Claude
 export const setDrafter = (fn) => { drafter = fn || null; };
@@ -178,10 +179,12 @@ export async function processEvent(id) {
   try {
     const rule = ruleOf(ev.brand_id, ev.platform);
     if (!enabled()) return end(id, 'ignored', 'Auto reply dimatikan (saklar utama).');
-    if (!rule.enabled) return end(id, 'ignored', 'Auto reply belum diaktifkan untuk akun ini.');
-    if (!rule.kinds.includes(ev.kind)) return end(id, 'ignored', `Jenis "${ev.kind}" tidak diaktifkan.`);
     if (isSelf(ev, brand)) return end(id, 'ignored', 'Berasal dari akun brand sendiri.');
     if (!ev.text.trim()) return end(id, 'ignored', 'Tidak ada teks (hanya media/stiker).');
+    const trg = TR.find(ev);
+    if (trg) return await runTrigger(ev, trg, brand, rule);
+    if (!rule.enabled) return end(id, 'ignored', 'Auto reply belum diaktifkan untuk akun ini.');
+    if (!rule.kinds.includes(ev.kind)) return end(id, 'ignored', `Jenis "${ev.kind}" tidak diaktifkan.`);
     if (ev.kind === 'dm' && Date.now() - Date.parse(ev.received_at) > 23.5 * 3600e3) return end(id, 'ignored', 'Di luar jendela balas 24 jam Instagram.');
     if (!drafter && !AI.replyAiEnabled()) return end(id, 'pending', 'Model AI belum dikonfigurasi (Auto Reply → Webhook & setup).', { needs_human: 1 });
 
@@ -227,6 +230,23 @@ export async function processEvent(id) {
     return end(id, 'failed', String(e.message).slice(0, 300), { error: String(e.message).slice(0, 300) });
   }
 }
+/** Balasan dari aturan keyword: teks buatan manusia (template), jadi tidak lewat LLM; tetap kena batas per jam dan jeda per penulis. */
+async function runTrigger(ev, t, brand, rule = ruleOf(ev.brand_id, ev.platform)) {
+  const id = ev.id;
+  if (TR.inCooldown(t, ev)) return end(id, 'ignored', `Aturan "${t.name}": penulis ini sudah dibalas dalam ${t.cooldown_h} jam terakhir.`, { trigger_id: t.id });
+  const reply = TR.render(t.reply_text, { username: ev.author_username, seed: ev.ext_id });
+  const dm = ev.platform === 'instagram' && ev.kind === 'comment' ? TR.render(t.dm_text, { username: ev.author_username, seed: ev.ext_id }) : '';
+  if (!reply && !dm) return end(id, 'ignored', `Aturan "${t.name}" cocok, tetapi tidak ada balasan untuk jenis ${ev.kind}.`, { trigger_id: t.id });
+  const f = { category: 'keyword', draft: reply, dm_text: dm || null, trigger_id: t.id };
+  run('UPDATE kw_triggers SET hits=hits+1 WHERE id=?', t.id);
+  const note = `Aturan keyword: ${t.name}`;
+  if (t.mode !== 'auto') return end(id, 'pending', note, { ...f, needs_human: 0 });
+  const since = new Date(Date.now() - 3600e3).toISOString();
+  if (get("SELECT COUNT(*) AS n FROM auto_events WHERE brand_id=? AND platform=? AND status='sent' AND decided_by IS NULL AND updated_at>?", ev.brand_id, ev.platform, since).n >= rule.hourly_cap)
+    return end(id, 'pending', `${note}. Batas ${rule.hourly_cap} balasan otomatis/jam tercapai.`, f);
+  set(id, { ...f, status: 'approved', note });
+  return await send(id, reply, null);
+}
 function end(id, status, note, extra = {}) { set(id, { status, note, ...extra }); return get('SELECT * FROM auto_events WHERE id=?', id); }
 
 /** Kirim balasan. userId null = otomatis. Aman dipanggil ganda: hanya satu yang berhasil mengklaim. */
@@ -236,16 +256,22 @@ export async function send(id, text, userId) {
   const brand = get('SELECT * FROM brands WHERE id=?', ev.brand_id);
   try {
     const t = String(text || '').trim();
-    if (!t) throw new Error('Teks balasan kosong.');
-    let r;
+    const dmText = ev.platform === 'instagram' && ev.kind === 'comment' ? String(ev.dm_text || '').trim() : '';
+    if (!t && !dmText) throw new Error('Teks balasan kosong.');
+    let r = {}; let dmNote = '';
     if (ev.platform === 'threads') r = await T.replyTo(brand, ev.target_id, t);
     else {
       const acc = I.accountOf(brand.id);
       if (!acc?.token_enc && !isDry(ev, brand)) throw new Error('Akun Instagram belum terhubung.');
-      r = ev.kind === 'dm' ? await I.sendMessage(acc || {}, brand, ev.author_id, t) : await I.replyComment(acc || {}, brand, ev.target_id, t);
+      if (ev.kind === 'dm') r = await I.sendMessage(acc || {}, brand, ev.author_id, t);
+      else if (t) r = await I.replyComment(acc || {}, brand, ev.target_id, t);
+      if (dmText) {
+        try { const d = await I.privateReply(acc || {}, brand, ev.ext_id, dmText); if (ev.simulated && !d.dryRun) throw new Error('Event simulasi tidak boleh dikirim ke API asli.'); set(id, { dm_status: 'sent' }); dmNote = ' DM terkirim.'; if (!t) r = { ...d, id: d.message_id }; }
+        catch (e) { if (!t) throw e; set(id, { dm_status: `gagal: ${String(e.message).slice(0, 120)}` }); dmNote = ` DM gagal (${String(e.message).slice(0, 100)}).`; }
+      }
     }
     if (ev.simulated && !r.dryRun) throw new Error('Event simulasi tidak boleh dikirim ke API asli.');
-    set(id, { status: 'sent', reply_text: t, sent_id: String(r.mediaId || r.id || r.message_id || ''), decided_by: userId, error: null, note: r.dryRun ? 'Terkirim (simulasi, tidak ke platform asli).' : 'Terkirim.' });
+    set(id, { status: 'sent', reply_text: t, sent_id: String(r.mediaId || r.id || r.message_id || ''), decided_by: userId, error: null, note: (r.dryRun ? 'Terkirim (simulasi, tidak ke platform asli).' : 'Terkirim.') + dmNote });
     audit(userId, 'auto.sent', { id, platform: ev.platform, brand: brand.id, auto: !userId, dryRun: !!r.dryRun });
   } catch (e) {
     set(id, { status: 'failed', error: String(e.message).slice(0, 300) });
