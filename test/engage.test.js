@@ -86,7 +86,7 @@ test('peluang: scan menyaring dan menyimpan; draf butuh model AI; kirim dibatasi
 });
 
 test('persetujuan massal: daftar, setujui/tolak terpilih, jadwal massal, peran', async () => {
-  const mk = (tbl, extra) => { const id = uid(); const t = now(); if (tbl === 'posts') run("INSERT INTO posts(id,brand_id,text,status,scheduled_at,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", id, 'wardrobe', 'Post ' + id, 'pending_approval', extra, 'x', t, t); else run("INSERT INTO ig_posts(id,brand_id,caption,status,scheduled_at,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", id, 'wardrobe', 'Cap ' + id, 'pending_approval', extra, 'x', t, t); return id; };
+  const mk = (tbl, extra) => { const id = uid(); const t = now(); if (tbl === 'posts') run("INSERT INTO posts(id,brand_id,text,status,scheduled_at,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)", id, 'wardrobe', 'Post ' + id, 'pending_approval', extra, 'x', t, t); else run("INSERT INTO ig_posts(id,brand_id,caption,status,scheduled_at,created_by,created_at,updated_at,media_urls) VALUES (?,?,?,?,?,?,?,?,json_array('https://x/a.jpg'))", id, 'wardrobe', 'Cap ' + id, 'pending_approval', extra, 'x', t, t); return id; };
   const p1 = mk('posts', new Date(Date.now() + 86400e3).toISOString()); const p2 = mk('posts', null); const i1 = mk('ig_posts', null);
   const e1 = (await ev(admin, 'instagram', 'comment', 'harga kebaya sage berapa?', 'siti')).json;
   const list = await call(mgr, 'GET', '/api/approvals');
@@ -109,7 +109,7 @@ test('persetujuan massal: daftar, setujui/tolak terpilih, jadwal massal, peran',
 
 test('jadwal massal: interval untuk item tanpa jadwal di Pusat Persetujuan', async () => {
   const t = now(); const ids = [];
-  for (let i = 0; i < 3; i++) { const id = uid(); ids.push(id); run("INSERT INTO ig_posts(id,brand_id,caption,status,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", id, 'wardrobe', 'x' + i, 'pending_approval', 'x', t, t); }
+  for (let i = 0; i < 3; i++) { const id = uid(); ids.push(id); run("INSERT INTO ig_posts(id,brand_id,caption,status,created_by,created_at,updated_at,media_urls) VALUES (?,?,?,?,?,?,?,json_array('https://x/a.jpg'))", id, 'wardrobe', 'x' + i, 'pending_approval', 'x', t, t); }
   const start = new Date(Date.now() + 3600e3).toISOString();
   const r = await call(mgr, 'POST', '/api/approvals/bulk', { action: 'approve', scheduled_at: start, interval_minutes: 30, items: ids.map((id) => ({ type: 'igpost', id })) });
   assert.equal(r.json.ok, 3);
@@ -133,4 +133,19 @@ test('rangkaian Story: satu slide per media, berurutan; bulk IG; kalender memuat
   const from = new Date(Date.now() - 86400e3).toISOString(); const to = new Date(Date.now() + 5 * 86400e3).toISOString();
   const cal = await call(mgr, 'GET', `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&brand=kids`);
   assert.ok(cal.json.filter((x) => x.platform === 'instagram' && x.kind === 'story').length >= 3);
+});
+
+test('persetujuan: info kebutuhan gambar, IG tanpa media tidak bisa disetujui', async () => {
+  const t = now(); const a = uid(); const b = uid(); const c = uid();
+  run("INSERT INTO ig_posts(id,brand_id,caption,status,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", a, 'wardrobe', 'tanpa media', 'pending_approval', 'x', t, t);
+  run("INSERT INTO posts(id,brand_id,text,status,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", b, 'wardrobe', 'Kebaya baru! [FOTO: model pakai kebaya sage]', 'pending_approval', 'x', t, t);
+  run("INSERT INTO posts(id,brand_id,text,status,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", c, 'wardrobe', 'Teks biasa saja', 'pending_approval', 'x', t, t);
+  const l = (await call(mgr, 'GET', '/api/approvals')).json;
+  const v = (arr, id) => arr.find((x) => x.id === id).visual;
+  assert.deepEqual([v(l.igposts, a).need, v(l.igposts, a).missing], ['wajib', true]);
+  assert.deepEqual([v(l.posts, b).need, v(l.posts, b).missing], ['disarankan', true]); assert.match(v(l.posts, b).hint, /FOTO/);
+  assert.deepEqual([v(l.posts, c).need, v(l.posts, c).missing], ['opsional', false]);
+  const r = await call(mgr, 'POST', '/api/approvals/bulk', { action: 'approve', scheduled_at: new Date(Date.now() + 86400e3).toISOString(), items: [{ type: 'igpost', id: a }] });
+  assert.equal(r.json.ok, 0); assert.match(r.json.results[0].msg, /gambar\/video/);
+  assert.equal(get('SELECT status FROM ig_posts WHERE id=?', a).status, 'pending_approval');
 });

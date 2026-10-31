@@ -119,6 +119,7 @@ $('#theme').addEventListener('click', () => {
 
 /* ---------- routing ---------- */
 const ICON = {
+  akun: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   whatsapp: '<path d="M21 11.5a8.4 8.4 0 0 1-12.5 7.3L3 20l1.3-5.3A8.5 8.5 0 1 1 21 11.5Z"/>',
   katalog: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
   embed: '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
@@ -155,7 +156,7 @@ const ROUTES = [
   ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['whatsapp', 'WhatsApp', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['katalog', 'Katalog Meta', 'manager', 'Riset & Kolaborasi'], ['embed', 'Embed Post', 'editor', 'Riset & Kolaborasi'], ['peluang', 'Peluang Engage', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
-  ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
+  ['akun', 'Akun Terhubung', 'manager', 'Pengaturan'], ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
 ];
 const VIEWS = {};
 
@@ -401,22 +402,22 @@ function actions(p) {
 
 
 /* ---------- Instagram ---------- */
-const IG_TABS = [['konten', 'Konten & Jadwal', 'viewer'], ['komentar', 'Komentar', 'editor'], ['dm', 'Pesan (DM)', 'editor'], ['insight', 'Insight', 'viewer'], ['akun', 'Akun', 'viewer']];
+const IG_TABS = [['konten', 'Konten & Jadwal', 'viewer'], ['komentar', 'Komentar', 'editor'], ['dm', 'Pesan (DM)', 'editor'], ['insight', 'Insight', 'viewer']];
 const IG_KIND = { feed: 'Feed', reels: 'Reels', story: 'Story' };
 const igTime = (iso) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', ':');
 
 VIEWS.instagram = async (v) => {
-  const q = params(); const st = await api('GET', '/api/ig/status');
+  const q = params(); if (q.get('tab') === 'akun') { location.replace('#/akun?tab=instagram'); return; }
+  const st = await api('GET', '/api/ig/status');
   const tab = IG_TABS.some((t) => t[0] === q.get('tab') && can(t[2])) ? q.get('tab') : 'konten';
   const bid = st.brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : (st.brands.find((b) => b.connected) || st.brands[0]).id;
   const cur = st.brands.find((b) => b.id === bid);
   const nav = (t, b = bid) => `#/instagram?tab=${t}&brand=${b}`;
-  if (q.get('connect')) toast(q.get('connect') === 'ok' ? 'Akun Instagram berhasil terhubung.' : `Gagal menghubungkan: ${q.get('msg') || 'coba lagi'}`, q.get('connect') !== 'ok');
   v.innerHTML = `<div class="page-head"><h1>Instagram</h1><p class="muted">Kelola konten & jadwal, balas komentar dan DM, serta pantau insight untuk akun Instagram brand.</p></div>
-  ${st.simulated ? '<div class="banner"><b>Mode simulasi:</b> data di halaman ini adalah contoh dan tidak ada yang dikirim ke Instagram asli. Admin: isi kredensial di tab Akun dan set mode Live di Pengaturan Meta.</div>' : ''}
+  ${st.simulated ? '<div class="banner"><b>Mode simulasi:</b> data di halaman ini adalah contoh dan tidak ada yang dikirim ke Instagram asli. Admin: isi kredensial di Pengaturan → Akun Terhubung dan set mode Live di Pengaturan Meta.</div>' : ''}
   <div class="chips" style="margin-bottom:10px">${st.brands.map((b) => `<a class="chip" href="${nav(tab, b.id)}" ${b.id === bid ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot ${b.connected || st.simulated ? 'on' : 'off'}" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}${b.username ? ` <span class="muted small">@${esc(b.username)}</span>` : ''}</a>`).join('')}</div>
   <div class="tabs">${IG_TABS.filter((t) => can(t[2])).map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}</a>`).join('')}</div>
-  ${!cur.connected && !st.simulated && tab !== 'akun' ? `<div class="banner">Akun Instagram ${esc(cur.name)} belum terhubung. ${can('manager') ? `<a href="${nav('akun')}">Hubungkan di tab Akun</a>.` : 'Minta manajer menghubungkannya.'}</div>` : ''}
+  ${!cur.connected && !st.simulated ? `<div class="banner">Akun Instagram ${esc(cur.name)} belum terhubung. ${can('manager') ? `<a href="#/akun?tab=instagram">Hubungkan di Pengaturan → Akun Terhubung</a>.` : 'Minta manajer menghubungkannya.'}</div>` : ''}
   <div id="igbody" class="stack" style="margin-top:14px"><span class="muted">Memuat…</span></div>`;
   const ctx = { v, st, bid, cur, tab, nav, body: $('#igbody') };
   try { await IGV[tab](ctx); } catch (e) { ctx.body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
@@ -848,17 +849,18 @@ VIEWS.calendar = async (v) => {
   const q = params(); const todayKey = wibKey(new Date());
   const [Y, M] = (/^\d{4}-\d{2}$/.test(q.get('m') || '') ? q.get('m') : todayKey.slice(0, 7)).split('-').map(Number);
   const bid = brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : '';
+  const pf = q.get('p') === 'instagram' ? 'instagram' : 'threads'; const PFL = { threads: 'Threads', instagram: 'Instagram' };
   const monthKey = `${Y}-${pad2(M)}`;
   const nextM = M === 12 ? `${Y + 1}-01` : `${Y}-${pad2(M + 1)}`; const prevM = M === 1 ? `${Y - 1}-12` : `${Y}-${pad2(M - 1)}`;
   const from = new Date(`${monthKey}-01T00:00:00+07:00`).toISOString(); const to = new Date(`${nextM}-01T00:00:00+07:00`).toISOString();
-  const items = await api('GET', `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${bid ? `&brand=${bid}` : ''}`);
+  const items = (await api('GET', `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${bid ? `&brand=${bid}` : ''}`)).filter((x) => x.platform === pf);
   const days = new Date(Date.UTC(Y, M, 0)).getUTCDate(); const lead = (new Date(Date.UTC(Y, M - 1, 1)).getUTCDay() + 6) % 7;
   const shown = bid ? brands.filter((b) => b.id === bid) : brands;
   const byDay = {}; // 'YYYY-MM-DD' -> posts
   for (const it of items) (byDay[wibKey(it.published_at || it.scheduled_at)] ||= []).push(it);
   const key = (d) => `${monthKey}-${pad2(d)}`;
   const stateOf = (d, b) => { const ps = (byDay[key(d)] || []).filter((p) => p.brand_id === b); return ps.some((p) => SET_STATUS.includes(p.status)) ? 'set' : ps.some((p) => PLAN_STATUS.includes(p.status)) ? 'plan' : ps.length ? 'failed' : 'none'; };
-  const nav = (m, b = bid) => `#/calendar?m=${m}${b ? `&brand=${b}` : ''}`;
+  const nav = (m, b = bid, p = pf) => `#/calendar?p=${p}&m=${m}${b ? `&brand=${b}` : ''}`;
   // ringkasan per akun: hari mulai hari ini yang sudah/belum terisi
   const summary = shown.map((b) => {
     let set = 0, plan = 0, empty = 0;
@@ -878,7 +880,8 @@ VIEWS.calendar = async (v) => {
     } else inner = `<span class="cal-dots">${shown.map((b) => dot(b, stateOf(d, b.id))).join('')}</span>`;
     cells.push(`<button type="button" class="cal-cell ${k === todayKey ? 'today' : ''} ${past ? 'past' : ''} ${!ps.length && !past && bid ? 'free' : ''}" data-day="${k}"><span class="cal-num">${d}</span>${inner}</button>`);
   }
-  v.innerHTML = `<div class="page-head row between"><div><h1>Kalender</h1><p class="muted">Tanggal yang sudah dan belum punya jadwal post (Threads, Instagram, dan Story) untuk tiap akun (WIB). Klik tanggal untuk melihat detail atau menjadwalkan.</p></div></div>
+  v.innerHTML = `<div class="page-head row between"><div><h1>Kalender</h1><p class="muted">Tanggal yang sudah dan belum punya jadwal post untuk tiap akun (WIB), dipisah per platform. Klik tanggal untuk melihat detail atau menjadwalkan.</p></div></div>
+  <div class="tabs" style="margin-bottom:10px">${Object.entries(PFL).map(([k, l]) => `<a class="tab ${k === pf ? 'on' : ''}" href="${nav(monthKey, bid, k)}">${l}</a>`).join('')}</div>
   <div class="row between" style="margin-bottom:12px"><div class="chips"><a class="chip" href="${nav(monthKey, '')}" ${bid ? '' : 'style="border-color:var(--accent);color:var(--accent)"'}>Semua akun</a>${brands.map((b) => `<a class="chip" href="${nav(monthKey, b.id)}" ${bid === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}</a>`).join('')}</div>
     <div class="row"><a class="btn small" href="${nav(prevM)}" aria-label="Bulan sebelumnya">${ico('chevl')}</a><b style="min-width:9.5rem;text-align:center">${MONTHS[M - 1]} ${Y}</b><a class="btn small" href="${nav(nextM)}" aria-label="Bulan berikutnya">${ico('chevr')}</a><a class="btn small" href="${nav(todayKey.slice(0, 7))}">Hari ini</a></div></div>
   <div class="cal-sums">${summary}</div>
@@ -889,7 +892,7 @@ VIEWS.calendar = async (v) => {
     const d = Number(k.slice(8)); const ps = byDay[k] || []; const label = new Date(`${k}T12:00:00+07:00`).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     const rowFor = (b) => {
       const mine = ps.filter((p) => p.brand_id === b.id); const past = k < todayKey;
-      return `<div class="cal-day-brand" style="--c:${b.color}"><div class="row between"><b>${esc(b.name)}</b>${can('editor') && !past ? `<span class="row"><a class="btn small primary" href="#/compose?brand=${b.id}&date=${k}">${mine.length ? 'Tambah post' : 'Jadwalkan post'}</a><a class="btn small" href="#/instagram?tab=konten&brand=${b.id}&date=${k}">Jadwalkan IG / Story</a></span>` : ''}</div>
+      return `<div class="cal-day-brand" style="--c:${b.color}"><div class="row between"><b>${esc(b.name)}</b>${can('editor') && !past ? `<span class="row">${pf === 'threads' ? `<a class="btn small primary" href="#/compose?brand=${b.id}&date=${k}">${mine.length ? 'Tambah post' : 'Jadwalkan post'}</a>` : `<a class="btn small primary" href="#/instagram?tab=konten&brand=${b.id}&date=${k}">${mine.length ? 'Tambah konten / Story' : 'Jadwalkan IG / Story'}</a>`}</span>` : ''}</div>
         ${mine.length ? mine.map((p) => `<div class="row between cal-post"><span><span class="small muted">${wib(p.published_at || p.scheduled_at).replace(' WIB', '')}</span> <span class="badge">${p.platform === 'instagram' ? `IG ${IG_KIND[p.kind] || ''}` : 'Threads'}</span> ${esc(p.text || (p.kind === 'story' ? '(Story)' : ''))}</span><span class="row">${badge(p.status)}${can('editor') && p.status !== 'published' ? `<a class="btn small" href="${p.platform === 'instagram' ? `#/instagram?tab=konten&brand=${b.id}` : `#/compose?edit=${p.id}`}">${p.platform === 'instagram' ? 'Buka' : 'Edit'}</a>` : ''}</span></div>`).join('') : `<span class="muted small">${past ? 'Tidak ada post pada tanggal ini.' : 'Belum ada jadwal pada tanggal ini.'}</span>`}</div>`;
     };
     $('#day').innerHTML = `<h3>${esc(label)}</h3>${(bid ? shown : brands).map(rowFor).join('')}`; void d;
@@ -1197,11 +1200,15 @@ VIEWS.approvals = async (v) => {
     const key = `${type}:${x.id}`;
     const risky = type === 'event' && x.needs_human;
     const noSched = (type === 'post' || type === 'igpost') && !x.scheduled_at;
+    const vis = (type === 'post' || type === 'igpost') ? x.visual : null;
+    const visHtml = !vis ? '' : vis.missing
+      ? `<div class="banner" style="margin:0;padding:6px 10px"><b>${vis.need === 'wajib' ? 'Butuh gambar/video' : 'Butuh gambar/ilustrasi'}.</b> ${vis.need === 'wajib' ? 'Instagram wajib punya media, belum ada yang terlampir; tidak bisa disetujui sebelum dilampirkan.' : `Teks menandai butuh visual${vis.hint ? ` (“${esc(vis.hint.slice(0, 60))}”)` : ''}, tetapi belum ada gambar terlampir.`} <a href="${type === 'igpost' ? `#/instagram?tab=konten&brand=${x.brand_id}` : `#/compose?edit=${x.id}`}">Lampirkan</a></div>`
+      : `<div class="small muted">${vis.have ? `🖼 ${vis.have} gambar/video terlampir` : 'Tanpa gambar (hanya teks). Gambar opsional untuk Threads.'}</div>`;
     let main = '';
-    if (type === 'post' || type === 'igpost') main = `<div style="white-space:pre-wrap">${esc((x.text || '').slice(0, 280))}</div><div class="small ${noSched ? 'err' : 'muted'}">${x.media_urls?.length ? `${x.media_urls.length} media · ` : ''}${x.scheduled_at ? `Jadwal ${wib(x.scheduled_at)}` : 'Belum dijadwalkan'}${type === 'igpost' ? ` · ${esc(x.kind)}` : ''}</div>`;
+    if (type === 'post' || type === 'igpost') main = `<div style="white-space:pre-wrap">${esc((x.text || '').slice(0, 280))}</div><div class="small ${noSched ? 'err' : 'muted'}">${x.media_urls?.length ? `${x.media_urls.length} media · ` : ''}${x.scheduled_at ? `Jadwal ${wib(x.scheduled_at)}` : 'Belum dijadwalkan'}${type === 'igpost' ? ` · ${esc(x.kind)}` : ''}</div>${visHtml}`;
     if (type === 'event') main = `<div class="small muted">${PLAT[x.platform]} · ${AR_KIND[x.kind]} dari @${esc(x.author_username || '-')} · ${esc(igTime(x.received_at))}${x.simulated ? ' · simulasi' : ''}</div><div class="quote">${esc(x.text.slice(0, 240))}</div>${x.draft ? `<div class="quote me"><span class="small muted">Balasan:</span> ${esc(x.draft.slice(0, 300))}</div>` : ''}${x.dm_text ? `<div class="small muted">+ DM: “${esc(x.dm_text.slice(0, 140))}”</div>` : ''}${x.note ? `<div class="small ${risky ? 'err' : 'muted'}">${esc(x.note)}</div>` : ''}`;
     if (type === 'opp') main = `<div class="small muted">Post @${esc(x.username || '-')} · kata kunci “${esc(x.keyword)}” ${x.permalink ? `· <a href="${esc(x.permalink)}" target="_blank" rel="noopener">buka</a>` : ''}</div><div class="quote">${esc(x.text.slice(0, 240))}</div><div class="quote me"><span class="small muted">Balasan:</span> ${esc(x.draft || '')}</div>`;
-    return `<label class="ap-item ${risky ? 'risky' : ''}"><input type="checkbox" class="ap-c" data-key="${key}" data-safe="${risky || noSched ? 0 : 1}"><span class="stack" style="gap:6px">${x.brand_id ? `<span class="row">${tagOf(x.brand_id)}${risky ? '<span class="badge s-failed">Perlu ditinjau</span>' : ''}${noSched ? '<span class="badge">Tanpa jadwal</span>' : ''}</span>` : ''}${main}</span></label>`;
+    return `<label class="ap-item ${risky ? 'risky' : ''}"><input type="checkbox" class="ap-c" data-key="${key}" data-safe="${risky || noSched || vis?.missing ? 0 : 1}"><span class="stack" style="gap:6px">${x.brand_id ? `<span class="row">${tagOf(x.brand_id)}${risky ? '<span class="badge s-failed">Perlu ditinjau</span>' : ''}${noSched ? '<span class="badge">Tanpa jadwal</span>' : ''}${vis?.missing ? '<span class="badge s-failed">Butuh gambar</span>' : ''}</span>` : ''}${main}</span></label>`;
   };
   const paint = () => {
     const total = Object.values(d.counts).reduce((a, b) => a + b, 0);
@@ -1326,22 +1333,10 @@ const checkPerm = (btn, id, brand) => busy(btn, async () => {
   toast(bad_.length ? `${bad_.length} izin bermasalah, lihat detail.` : 'Cek izin selesai.', bad_.length > 0);
 });
 VIEWS.brands = async (v) => {
-  let ig = { simulated: true, brands: [] };
-  [brands, ig] = await Promise.all([api('GET', '/api/brands'), api('GET', '/api/ig/status').catch(() => ig)]);
-  const igOf = (id) => ig.brands.find((x) => x.id === id) || {};
-  const cq = params().get('connect'); const iq = params().get('ig');
-  if (cq) toast(cq === 'ok' ? 'Akun Threads berhasil terhubung.' : `Gagal menghubungkan: ${params().get('msg') || 'coba lagi'}`, cq !== 'ok');
-  if (iq) toast(iq === 'ok' ? 'Akun Instagram berhasil terhubung.' : `Gagal menghubungkan Instagram: ${params().get('msg') || 'coba lagi'}`, iq !== 'ok');
-  v.innerHTML = `<h1>Brand &amp; Akun</h1><p class="muted">Brand voice di sini dipakai Claude (di dashboard maupun via MCP) setiap menulis untuk akun tersebut.</p>
+  brands = await api('GET', '/api/brands');
+  v.innerHTML = `<h1>Brand &amp; Akun</h1><p class="muted">Profil dan brand voice tiap brand, dipakai Claude (di dashboard maupun via MCP) setiap menulis untuk akun tersebut. Koneksi akun Threads dan Instagram ada di Pengaturan → Akun Terhubung.</p>
   <div class="grid g2">${brands.map((b) => `<form class="card stack bcard" style="--c:${b.color}" data-id="${b.id}">
-    <div class="row between"><h2>${esc(b.name)}</h2>${b.connected ? `<span class="badge s-published">@${esc(b.username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
-    ${b.connected ? `<div class="small muted">Token berlaku s/d ${wib(b.token_expires_at)} (diperpanjang otomatis).</div>` : ''}
-    <div class="row">${can('manager') && !b.connected ? `<a class="btn small primary" href="/auth/threads/start?brand=${b.id}">Hubungkan ke Threads</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}</div>
-    <div class="stack igbox" style="gap:6px;border-top:1px solid var(--line);padding-top:10px"><div class="row between"><b>Instagram</b>${igOf(b.id).connected ? `<span class="badge s-published">@${esc(igOf(b.id).username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
-      ${igOf(b.id).connected ? `<div class="small muted">${esc(igOf(b.id).account_type || '')}${igOf(b.id).followers != null ? ` · ${num(igOf(b.id).followers)} followers` : ''} · token berlaku s/d ${wib(igOf(b.id).token_expires_at)} (diperpanjang otomatis)</div>` : '<div class="small muted">Butuh akun Instagram Professional (Business/Creator).</div>'}
-      <div class="row">${can('manager') && !ig.simulated ? `<a class="btn small primary" href="/auth/instagram/start?brand=${b.id}&back=brands">${igOf(b.id).connected ? 'Hubungkan ulang' : 'Hubungkan ke Instagram'}</a>` : ''}${can('admin') && igOf(b.id).connected ? '<button type="button" class="btn small" data-x="igrefresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="igdisc">Putuskan</button>' : ''}</div>
-      ${ig.simulated && can('manager') ? `<div class="small muted">Tombol hubungkan aktif setelah App ID/Secret Instagram diisi${can('admin') ? ' (<a href="#/instagram?tab=akun">Instagram → Akun</a>)' : ' oleh admin'} dan mode simulasi dimatikan.</div>` : ''}</div>
-    ${permBlock(b)}
+    <div class="row between"><h2>${esc(b.name)}</h2><span class="row">${b.connected ? `<span class="badge s-published">Threads @${esc(b.username || '')}</span>` : '<span class="badge">Threads belum terhubung</span>'}${can('manager') ? '<a class="btn small" href="#/akun">Kelola koneksi</a>' : ''}</span></div>
     <label>Deskripsi<input name="description" value="${esc(b.description)}" ${can('manager') ? '' : 'disabled'}></label>
     <label>Brand voice<textarea name="voice" ${can('manager') ? '' : 'disabled'}>${esc(b.voice)}</textarea></label>
     <label>Content pillars (satu per baris)<textarea name="pillars" ${can('manager') ? '' : 'disabled'}>${esc(b.pillars.join('\n'))}</textarea></label>
@@ -1352,10 +1347,32 @@ VIEWS.brands = async (v) => {
   v.onsubmit = (e) => { e.preventDefault(); const f = e.target; const d = Object.fromEntries(new FormData(f)); d.pillars = d.pillars.split('\n').map((s) => s.trim()).filter(Boolean);
     busy($('button[type=submit]', f), async () => { await api('PUT', `/api/brands/${f.dataset.id}`, d); toast('Brand tersimpan.'); }); };
   v.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('form').dataset.id;
-    if (x === 'igrefresh') return busy(e.target, async () => { await api('POST', `/api/ig/accounts/${id}/refresh`); toast('Token Instagram diperpanjang.'); route(); });
-    if (x === 'igdisc') return busy(e.target, async () => { if (!(await ui.confirm({ title: 'Putuskan Instagram?', message: 'Token Instagram dihapus dari Hub. Jadwal post, balasan, dan DM untuk akun ini berhenti sampai dihubungkan lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/ig/accounts/${id}`); toast('Instagram diputuskan.'); route(); });
-    if (x === 'perm') return checkPerm(e.target, id, brands.find((y) => y.id === id));
     if (x === 'hist') return busy(e.target, () => showHistory(id));
+  };
+};
+
+/* ---------- Akun Terhubung (Pengaturan): koneksi Threads dan Instagram dipisah ---------- */
+const AKUN_TABS = [['threads', 'Threads'], ['instagram', 'Instagram']];
+VIEWS.akun = async (v) => {
+  const q = params(); const tab = q.get('tab') === 'instagram' ? 'instagram' : 'threads';
+  const cq = q.get('connect');
+  if (cq) toast(cq === 'ok' ? `Akun ${tab === 'instagram' ? 'Instagram' : 'Threads'} berhasil terhubung.` : `Gagal menghubungkan: ${q.get('msg') || 'coba lagi'}`, cq !== 'ok');
+  v.innerHTML = `<div class="page-head"><h1>Akun Terhubung</h1><p class="muted">Hubungkan, perpanjang, atau putuskan akun sosial tiap brand. Threads dan Instagram dikelola terpisah. Profil dan brand voice ada di <a href="#/brands">Brand &amp; Akun</a>.</p></div>
+  <div class="tabs" style="margin-bottom:12px">${AKUN_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="#/akun?tab=${t[0]}">${t[1]}</a>`).join('')}</div><div id="akb" class="stack"></div>`;
+  const body = $('#akb', v);
+  if (tab === 'instagram') {
+    const st = await api('GET', '/api/ig/status');
+    if (st.simulated) body.insertAdjacentHTML('beforebegin', '<div class="banner"><b>Mode simulasi:</b> tombol hubungkan aktif setelah App ID/Secret Instagram diisi di bawah (admin) dan mode Live aktif di Pengaturan Meta.</div>');
+    return IGV.akun({ st, body });
+  }
+  brands = await api('GET', '/api/brands');
+  body.innerHTML = `${can('admin') ? '<div class="small muted">Kredensial aplikasi Threads dan mode Live/simulasi ada di <a href="#/meta">Pengaturan Meta</a>.</div>' : ''}<div class="grid g2">${brands.map((b) => `<div class="card stack bcard" style="--c:${b.color}" data-id="${b.id}">
+    <div class="row between"><h2>${esc(b.name)}</h2>${b.connected ? `<span class="badge s-published">@${esc(b.username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
+    ${b.connected ? `<div class="small muted">Token berlaku s/d ${wib(b.token_expires_at)} (diperpanjang otomatis).</div>` : ''}
+    <div class="row">${can('manager') && !b.connected ? `<a class="btn small primary" href="/auth/threads/start?brand=${b.id}">Hubungkan ke Threads</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}</div>
+    ${permBlock(b)}</div>`).join('')}</div>`;
+  body.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('[data-id]').dataset.id;
+    if (x === 'perm') return checkPerm(e.target, id, brands.find((y) => y.id === id));
     busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/brands/${id}/refresh-token`); if (x === 'disc') { if (!(await ui.confirm({ title: 'Putuskan akun ini?', message: 'Token Threads dihapus dari Hub. Posting terjadwal untuk akun ini akan gagal sampai Anda menghubungkannya lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/brands/${id}/connection`); } toast('Berhasil.'); route(); }); };
 };
 

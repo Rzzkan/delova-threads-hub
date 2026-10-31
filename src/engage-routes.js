@@ -126,6 +126,13 @@ export function mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 }) {
   });
 
   /* ---------------- Pusat persetujuan massal ---------------- */
+  // Kebutuhan gambar/ilustrasi: Instagram selalu wajib; Threads opsional, tetapi teks bisa menandai butuh foto/ilustrasi.
+  const HINT = /\[(?:foto|gambar|visual|ilustrasi|video|image|photo)[^\]]*\]|\((?:foto|gambar|visual|ilustrasi)\s*:[^)]*\)|\b(?:ilustrasi|foto produk|lampirkan (?:foto|gambar)|tambahkan (?:foto|gambar)|sertakan (?:foto|gambar))\b/i;
+  const visualOf = (igKind, text, urls) => {
+    const have = urls.length; const hint = String(text || '').match(HINT)?.[0] || null;
+    const need = igKind ? 'wajib' : hint ? 'disarankan' : 'opsional';
+    return { need, have, hint, missing: have === 0 && need !== 'opsional' };
+  };
   api.get('/approvals', need('editor'), (req, res) => {
     const m = RANK[req.user.role] >= RANK.manager;
     const j = (s) => { try { return JSON.parse(s || '[]'); } catch { return []; } };
@@ -133,7 +140,7 @@ export function mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 }) {
     const igposts = m ? all("SELECT id,brand_id,kind,caption AS text,media_urls,scheduled_at,created_by,updated_at FROM ig_posts WHERE status='pending_approval' ORDER BY scheduled_at IS NULL, scheduled_at, updated_at").map((p) => ({ ...p, media_urls: j(p.media_urls) })) : [];
     const events = all("SELECT id,platform,brand_id,kind,author_username,text,draft,dm_text,category,needs_human,note,simulated,received_at FROM auto_events WHERE status='pending' ORDER BY needs_human, received_at DESC LIMIT 200").map((e) => ({ ...e, needs_human: !!e.needs_human, simulated: !!e.simulated }));
     const opps = all("SELECT id,brand_id,keyword,username,text,permalink,draft,note,created_at FROM opps WHERE status='drafted' ORDER BY created_at DESC LIMIT 100");
-    res.json({ posts, igposts, events, opps, counts: { posts: posts.length, igposts: igposts.length, events: events.length, opps: opps.length }, can_posts: m });
+    res.json({ posts: posts.map((p) => ({ ...p, visual: visualOf(null, p.text, p.media_urls) })), igposts: igposts.map((p) => ({ ...p, visual: visualOf(p.kind || 'feed', p.text, p.media_urls) })), events, opps, counts: { posts: posts.length, igposts: igposts.length, events: events.length, opps: opps.length }, can_posts: m });
   });
 
   api.post('/approvals/bulk', need('editor'), humanOnly, ah(async (req, res) => {
@@ -158,6 +165,7 @@ export function mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 }) {
           if (!p) r.msg = 'Tidak ditemukan.';
           else if (action === 'approve') {
             if (p.status !== 'pending_approval') r.msg = `Berstatus ${p.status}.`;
+            else if (it.type === 'igpost' && !JSON.parse(p.media_urls || '[]').length) r.msg = 'Belum ada gambar/video (wajib untuk Instagram). Lampirkan dulu di menu Instagram.';
             else {
               let at = p.scheduled_at;
               if (!at && slot !== null) { at = new Date(slot).toISOString(); slot += step; }

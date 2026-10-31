@@ -48,14 +48,14 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
     const b = brandOr404(String(req.query.brand));
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
     if (I.isDryRun()) return bad(res, 'Mode simulasi aktif atau kredensial Instagram belum diisi. Admin: isi di menu Instagram → Akun.');
-    const state = C.randomToken(req.query.back === 'brands' ? 'igb' : 'ig');
+    const state = C.randomToken('ig');
     run('INSERT INTO oauth_states(state,brand_id,user_id,expires_at) VALUES (?,?,?,?)', state, b.id, req.user.id, Date.now() + 10 * 60_000);
     res.redirect(I.authorizeUrl(state));
   });
   app.get('/auth/instagram/callback', auth, ah(async (req, res) => {
     const { code, state, error_description: err } = req.query;
     const st = get('SELECT * FROM oauth_states WHERE state=?', String(state || ''));
-    const home = String(state || '').startsWith('igb_') ? '/#/brands?ig=' : '/#/instagram?tab=akun&connect=';
+    const home = '/#/akun?tab=instagram&connect=';
     const fail = (m) => res.redirect(`${home}gagal${m ? `&msg=${encodeURIComponent(m)}` : ''}`);
     if (!st || st.expires_at < Date.now() || st.user_id !== req.user.id) return fail();
     run('DELETE FROM oauth_states WHERE state=?', st.state);

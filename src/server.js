@@ -172,9 +172,9 @@ export function createApp() {
   app.get('/auth/threads/callback', auth, ah(async (req, res) => {
     const { code, state, error_description: err } = req.query;
     const st = get('SELECT * FROM oauth_states WHERE state=?', String(state || ''));
-    if (!st || st.expires_at < Date.now() || st.user_id !== req.user.id) return res.redirect('/#/brands?connect=gagal');
+    if (!st || st.expires_at < Date.now() || st.user_id !== req.user.id) return res.redirect('/#/akun?tab=threads&connect=gagal');
     run('DELETE FROM oauth_states WHERE state=?', st.state);
-    if (!code) return res.redirect(`/#/brands?connect=gagal&msg=${encodeURIComponent(err || 'dibatalkan')}`);
+    if (!code) return res.redirect(`/#/akun?tab=threads&connect=gagal&msg=${encodeURIComponent(err || 'dibatalkan')}`);
     try {
       const r = await T.exchangeCode(String(code), brandOr404(st.brand_id));
       run(
@@ -182,9 +182,9 @@ export function createApp() {
         C.encrypt(r.token), new Date(Date.now() + r.expiresIn * 1000).toISOString(), now(), r.userId, r.username, JSON.stringify(T.scopes()), st.brand_id,
       );
       A(req, 'brand.connected', { brand: st.brand_id, username: r.username });
-      res.redirect('/#/brands?connect=ok');
+      res.redirect('/#/akun?tab=threads&connect=ok');
     } catch (e) {
-      res.redirect(`/#/brands?connect=gagal&msg=${encodeURIComponent(e.message)}`);
+      res.redirect(`/#/akun?tab=threads&connect=gagal&msg=${encodeURIComponent(e.message)}`);
     }
   }));
 
