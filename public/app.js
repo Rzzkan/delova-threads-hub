@@ -564,7 +564,7 @@ IGV.komentar = async ({ bid, body }) => {
     busy(e.target, async () => {
       if (a === 'reply') {
         const quote = $('div[style]', el).textContent; const who = $('b', el).textContent;
-        const text = await ui.ask({ title: `Balas komentar ${who}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: 2200, rows: 5, ok: 'Kirim balasan', quote, quoteLabel: 'Komentar', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: bid, platform: 'instagram', kind: 'comment', username: who.replace(/^@/, ''), text: quote }, $('textarea', f), se) } });
+        const text = await ui.ask({ title: `Balas komentar ${who}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: 2200, rows: 5, ok: 'Kirim balasan', quote, quoteLabel: 'Komentar', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: bid, platform: 'instagram', kind: 'comment', username: who.replace(/^@/, ''), text: quote }, $('textarea', f), se, true) } });
         if (text === null) return; await api('POST', `/api/ig/${bid}/comments/${id}/reply`, { text }); toast('Balasan terkirim.'); return route();
       }
       await api('POST', `/api/ig/${bid}/comments/${id}/hide`, { hide: a === 'hide' }); toast(a === 'hide' ? 'Komentar disembunyikan.' : 'Komentar ditampilkan lagi.'); route();
@@ -648,17 +648,20 @@ const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['keyword', 'Aturan keyword
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 /** Tombol "Saran AI": model LLM terpilih + aturan brand + Pengetahuan brand + data produk delova.id. Hanya mengisi kotak balasan; manusia yang mengirim. */
 const aiBtn = () => (health.ai && can('editor') ? '<button type="button" class="btn small" data-ai title="Dibuat dengan model AI terpilih, mengikuti brand voice dan Pengetahuan brand">✨ Saran AI</button>' : '');
-function wireAi(btn, ctx, ta, setErr) {
+function wireAi(btn, ctx, ta, setErr, auto = false) {
   if (!btn) return;
-  btn.onclick = () => busy(btn, async () => {
+  const run = () => busy(btn, async () => {
     const c = typeof ctx === 'function' ? ctx() : ctx; if (setErr) setErr('');
     if (!c.text) { toast('Tidak ada pesan pelanggan untuk dibalas.', true); return; }
     const r = await api('POST', '/api/ai/compose-reply', { brand_id: c.brand_id, platform: c.platform, kind: c.kind, username: c.username, text: c.text, post_text: c.post_text });
     if (!r.reply) { toast(r.reason || 'Model memilih tidak membalas pesan ini.', true); return; }
+    if (auto && ta.value.trim()) return; // pengguna sudah mengetik sendiri: jangan ditimpa
     ta.value = r.reply; ta.dispatchEvent(new Event('input')); ta.focus();
     const warn = [r.sensitive ? 'Pesan memuat kata sensitif (komplain/refund/kerja sama): tinjau dengan teliti.' : '', r.warning || '', r.action === 'escalate' ? `Model menyarankan ditangani manusia${r.reason ? `: ${r.reason}` : ''}.` : ''].filter(Boolean).join(' ');
     if (warn) { if (setErr) setErr(`⚠ ${warn}`); toast('Saran dibuat, ada catatan: periksa sebelum kirim.', true); } else toast(`Saran dibuat${r.used?.length ? ` (data produk: ${r.used.slice(0, 2).join(', ')})` : ''}. Periksa lalu kirim.`);
   });
+  btn.onclick = run;
+  if (auto) run();
 }
 
 const AR_KIND = { reply: 'Reply', mention: 'Mention', comment: 'Komentar', dm: 'DM' };
@@ -1093,7 +1096,7 @@ VIEWS.pesan = async (v) => {
     const b = e.target.closest('[data-a="reply"]'); if (!b) return;
     const el = b.closest('[data-i]'); const x = data[el.dataset.p][Number(el.dataset.i)];
     busy(b, async () => {
-      const text = await ui.ask({ title: `Balas @${x.author}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: x.platform === 'threads' ? 500 : 2200, rows: 5, ok: 'Kirim balasan', quote: x.text, quoteLabel: 'Pesan', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: x.brand_id, platform: x.platform, kind: x.kind || 'reply', username: x.author, text: x.text, post_text: x.post_text }, $('textarea', f), se) } });
+      const text = await ui.ask({ title: `Balas @${x.author}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: x.platform === 'threads' ? 500 : 2200, rows: 5, ok: 'Kirim balasan', quote: x.text, quoteLabel: 'Pesan', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: x.brand_id, platform: x.platform, kind: x.kind || 'reply', username: x.author, text: x.text, post_text: x.post_text }, $('textarea', f), se, true) } });
       if (text === null) return;
       await api('POST', x.platform === 'instagram' ? `/api/ig/${x.brand_id}/comments/${x.ext_id}/reply` : `/api/brands/${x.brand_id}/replies/${x.ext_id}/reply`, { text });
       toast('Balasan terkirim.'); await load(true);
