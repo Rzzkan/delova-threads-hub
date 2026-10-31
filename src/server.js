@@ -18,6 +18,8 @@ import { mountInstagram } from './ig-routes.js';
 import { mountAuto } from './auto-routes.js';
 import { mountPesan, mountTrends } from './pesan-routes.js';
 import { mountEngage } from './engage-routes.js';
+import { mountWhatsApp } from './wa-routes.js';
+import { mountCatalog } from './catalog-routes.js';
 import * as Store from './store-api.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
@@ -937,6 +939,8 @@ export function createApp() {
   mountPesan(api, { need, ah, bad });
   mountTrends(api, { need, ah, bad, A });
   mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 });
+  mountWhatsApp(api, { need, ah, bad, A, humanOnly, brandOr404 });
+  mountCatalog(api, { need, ah, bad, A, humanOnly, brandOr404 });
   app.use('/api', api);
 
   /* ---------------- MCP lewat HTTP (stateless, Bearer token) ---------------- */

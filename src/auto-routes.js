@@ -5,9 +5,10 @@ import * as I from './instagram.js';
 import * as AI from './claude.js';
 import * as C from './crypto.js';
 import * as Store from './store-api.js';
+import * as W from './whatsapp.js';
 import { all, get, run, now, uid, setSetting, getSetting, audit } from './db.js';
 
-const PLATFORMS = ['threads', 'instagram'];
+const PLATFORMS = ['threads', 'instagram', 'whatsapp'];
 
 export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 }) {
   /* ---------- Webhook publik (diverifikasi tanda tangan HMAC) ---------- */
@@ -20,7 +21,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
       if (!A_.verifySignature(platform, req.rawBody, req.get('x-hub-signature-256'))) return res.status(401).json({ error: 'Tanda tangan tidak valid.' });
       res.sendStatus(200); // balas cepat; Meta mengulang bila lambat
       try {
-        const events = platform === 'threads' ? A_.parseThreads(req.body) : A_.parseInstagram(req.body);
+        const events = platform === 'threads' ? A_.parseThreads(req.body) : platform === 'whatsapp' ? A_.parseWhatsApp(req.body) : A_.parseInstagram(req.body);
         const ids = A_.ingest(events);
         for (const id of ids) setImmediate(() => A_.processEvent(id).catch((e) => console.error('[auto]', e.message)));
       } catch (e) { console.error('[webhook]', e.message); }
@@ -42,7 +43,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
       brands: brands.map((b) => ({
         ...b,
         rules: Object.fromEntries(PLATFORMS.map((p) => [p, A_.ruleOf(b.id, p)])),
-        connected: { threads: !!get('SELECT token_enc FROM brands WHERE id=?', b.id)?.token_enc, instagram: !!I.accountOf(b.id)?.token_enc },
+        connected: { threads: !!get('SELECT token_enc FROM brands WHERE id=?', b.id)?.token_enc, instagram: !!I.accountOf(b.id)?.token_enc, whatsapp: !!W.numberOf(b.id)?.token_enc },
       })),
     });
   });
@@ -164,9 +165,9 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 })
     const f = req.body || {};
     const b = brandOr404(String(f.brand_id || ''));
     if (!b || !PLATFORMS.includes(f.platform)) return bad(res, 'Brand/platform tidak valid.');
-    const kind = f.kind || (f.platform === 'threads' ? 'reply' : 'comment');
-    if (!A_.KINDS.includes(kind) || (f.platform === 'threads' && kind !== 'reply' && kind !== 'mention') || (f.platform === 'instagram' && kind === 'reply')) return bad(res, 'Jenis event tidak cocok dengan platform.');
-    const dry = f.platform === 'threads' ? T.isDryRun(b) : I.isDryRun();
+    const kind = f.kind || (f.platform === 'threads' ? 'reply' : f.platform === 'whatsapp' ? 'dm' : 'comment');
+    if (!A_.KINDS.includes(kind) || (f.platform === 'threads' && kind !== 'reply' && kind !== 'mention') || (f.platform === 'instagram' && kind === 'reply') || (f.platform === 'whatsapp' && kind !== 'dm')) return bad(res, 'Jenis event tidak cocok dengan platform.');
+    const dry = f.platform === 'threads' ? T.isDryRun(b) : f.platform === 'whatsapp' ? W.isDryRun() : I.isDryRun();
     if (!dry) return bad(res, 'Uji event hanya tersedia saat mode simulasi, supaya tidak mengirim ke akun asli.', 409);
     const text = String(f.text || '').trim().slice(0, 500);
     if (!text) return bad(res, 'Isi pesan uji kosong.');

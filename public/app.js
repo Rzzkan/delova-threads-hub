@@ -119,6 +119,9 @@ $('#theme').addEventListener('click', () => {
 
 /* ---------- routing ---------- */
 const ICON = {
+  whatsapp: '<path d="M21 11.5a8.4 8.4 0 0 1-12.5 7.3L3 20l1.3-5.3A8.5 8.5 0 1 1 21 11.5Z"/>',
+  katalog: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  embed: '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
   dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   compose: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   queue: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
@@ -149,8 +152,8 @@ const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none
 // [id, label, peran minimal, grup]
 const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'], ['approvals', 'Pusat Persetujuan', 'editor', 'Menu'],
-  ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
-  ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['peluang', 'Peluang Engage', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
+  ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['whatsapp', 'WhatsApp', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
+  ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['katalog', 'Katalog Meta', 'manager', 'Riset & Kolaborasi'], ['embed', 'Embed Post', 'editor', 'Riset & Kolaborasi'], ['peluang', 'Peluang Engage', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
   ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
 ];
@@ -635,7 +638,7 @@ IGV.akun = async ({ st, body }) => {
 const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['keyword', 'Aturan keyword', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 const AR_KIND = { reply: 'Reply', mention: 'Mention', comment: 'Komentar', dm: 'DM' };
-const PLAT = { threads: 'Threads', instagram: 'Instagram' };
+const PLAT = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' };
 
 VIEWS.autoreply = async (v) => {
   const q = params(); const cfg = await api('GET', '/api/auto/config');
@@ -687,17 +690,17 @@ ARV.inbox = async ({ cfg, body, q }) => {
 
 ARV.aturan = async ({ cfg, body }) => {
   body.innerHTML = `<div class="banner"><b>Cara kerja pagar pengaman.</b> Mode <b>Draft</b>: semua balasan menunggu persetujuan Anda. Mode <b>Auto</b> (khusus admin): Claude hanya mengirim sendiri bila pesan tergolong aman (sapaan, pujian, pertanyaan yang jawabannya ada di <i>Pengetahuan brand</i>), keyakinan ≥ 75%, tidak memuat kata sensitif (komplain, refund, kerja sama), tidak ada tautan/nomor di luar pengetahuan, dan belum melewati batas per jam. Sisanya tetap masuk Kotak masuk sebagai "Perlu manusia".</div>
-  <div class="grid g2">${cfg.brands.map((b) => ['threads', 'instagram'].map((p) => { const r = b.rules[p]; const ok = b.connected[p];
+  <div class="grid g2">${cfg.brands.map((b) => ['threads', 'instagram', 'whatsapp'].map((p) => { const r = b.rules[p]; const ok = b.connected[p];
     return `<form class="card stack rule" data-b="${b.id}" data-p="${p}" style="border-top:3px solid ${b.color}"><div class="row between"><h3>${esc(b.name)} · ${PLAT[p]}</h3>${ok ? '<span class="badge s-published">Terhubung</span>' : '<span class="badge">Belum terhubung</span>'}</div>
       <label class="row"><input type="checkbox" name="enabled" ${r.enabled ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> <b>Aktifkan auto reply</b></label>
       <label>Mode<select name="mode" ${can('manager') ? '' : 'disabled'}><option value="draft" ${r.mode === 'draft' ? 'selected' : ''}>Draft: tinjau dulu (disarankan)</option><option value="auto" ${r.mode === 'auto' ? 'selected' : ''} ${can('admin') || r.mode === 'auto' ? '' : 'disabled'}>Auto: kirim sendiri bila aman ${can('admin') ? '' : '(admin)'}</option></select></label>
-      <div class="chips">${(p === 'threads' ? ['reply', 'mention'] : ['comment', 'mention', 'dm']).map((k) => `<label class="chip"><input type="checkbox" name="k_${k}" ${r.kinds.includes(k) ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> ${AR_KIND[k]}</label>`).join('')}</div>
+      <div class="chips">${(p === 'threads' ? ['reply', 'mention'] : p === 'whatsapp' ? ['dm'] : ['comment', 'mention', 'dm']).map((k) => `<label class="chip"><input type="checkbox" name="k_${k}" ${r.kinds.includes(k) ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> ${AR_KIND[k]}</label>`).join('')}</div>
       <label>Maks balasan otomatis per jam<input type="number" name="hourly_cap" min="1" max="200" value="${r.hourly_cap}" ${can('manager') ? '' : 'disabled'}></label>
       <label>Pengetahuan brand <span class="muted small">(satu-satunya sumber fakta untuk Claude)</span><textarea name="knowledge" style="min-height:140px" maxlength="6000" placeholder="Contoh:&#10;- Order resmi lewat Shopee: https://shopee.co.id/delovawardrobe&#10;- Ukuran kebaya S-XXL, size chart ada di deskripsi produk&#10;- Pengiriman dari Yogyakarta, resi dikirim maks 2 hari kerja&#10;- Kerja sama/reseller: arahkan ke DM" ${can('manager') ? '' : 'disabled'}>${esc(r.knowledge)}</textarea></label>
       ${can('manager') ? `<div class="row"><button class="btn primary small">Simpan</button>${p === 'instagram' && ok ? '<button type="button" class="btn small" data-sub="1">Daftarkan webhook akun ini</button>' : ''}</div>` : ''}</form>`; }).join('')).join('')}</div>
   ${can('manager') ? `<form id="tf" class="card stack"><h3>Uji coba (mode simulasi)</h3><p class="small muted">Menyuntik event palsu lewat jalur yang sama dengan webhook asli, tanpa mengirim apa pun ke Threads/Instagram. Hanya tersedia saat mode simulasi.</p>
     <div class="grid g4"><label>Brand<select name="brand_id">${cfg.brands.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></label>
-    <label>Platform &amp; jenis<select name="pk"><option value="threads:reply">Threads · Reply</option><option value="threads:mention">Threads · Mention</option><option value="instagram:comment">Instagram · Komentar</option><option value="instagram:dm">Instagram · DM</option></select></label>
+    <label>Platform &amp; jenis<select name="pk"><option value="threads:reply">Threads · Reply</option><option value="threads:mention">Threads · Mention</option><option value="instagram:comment">Instagram · Komentar</option><option value="instagram:dm">Instagram · DM</option><option value="whatsapp:dm">WhatsApp · DM</option></select></label>
     <label>Pesan<input name="text" value="Kak, kebaya sage ini ready ukuran M?"></label><div style="align-self:end"><button class="btn primary">Kirim event uji</button></div></div></form>` : ''}`;
   $$('.rule', body).forEach((f) => {
     f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
@@ -965,7 +968,7 @@ VIEWS.pesan = async (v) => {
   <div class="row between" style="margin-bottom:12px"><div class="chips"><a class="chip" href="${href({ brand: '' })}" ${bid ? '' : 'style="border-color:var(--accent);color:var(--accent)"'}>Semua akun</a>${brands.map((b) => `<a class="chip" href="${href({ brand: b.id })}" ${bid === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}</a>`).join('')}</div><button type="button" class="btn small" id="pfresh">Segarkan</button></div>
   ${tab === 'komentar' ? `<div class="chips" style="margin-bottom:12px">${[['', 'Semua jenis'], ['comment', 'Komentar'], ['reply', 'Reply'], ['mention', 'Mention']].map(([k, l]) => `<a class="chip" href="${href({ k })}" ${kf === k ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${l}</a>`).join('')}</div>` : ''}
   <div id="pout" class="stack"><p class="muted">Memuat…</p></div>`;
-  let data; const lim = { instagram: 25, threads: 25 };
+  let data; const lim = { instagram: 25, threads: 25, whatsapp: 25 };
   const load = async (fresh) => {
     data = await api('GET', `/api/pesan?type=${tab}${bid ? `&brand=${bid}` : ''}${fresh ? '&fresh=1' : ''}`);
     const row = (x, i) => `<div class="card pitem stack" style="--c:${(bmap[x.brand_id] || {}).color || '#999'}" data-p="${x.platform}" data-i="${i}">
@@ -974,6 +977,7 @@ VIEWS.pesan = async (v) => {
       <div style="white-space:pre-wrap">${esc(x.text || '(tanpa teks)')}</div>
       <div class="row">${x.permalink ? `<a class="btn small" target="_blank" rel="noopener" href="${esc(x.permalink)}">Buka</a>` : ''}${actions(x)}</div></div>`;
     const actions = (x) => {
+      if (x.platform === 'whatsapp') return `<a class="btn small primary" href="#/whatsapp?tab=chat&brand=${x.brand_id}&wa=${x.recipient_id || ''}">Buka percakapan</a>`;
       if (x.kind === 'dm') return `<a class="btn small primary" href="#/instagram?tab=dm&brand=${x.brand_id}">Buka percakapan</a>${x.can_reply === false ? '<span class="small muted">Di luar jendela balas 24 jam</span>' : ''}`;
       if (x.platform === 'instagram' && x.kind === 'comment' && x.source === 'live') return '<button type="button" class="btn small" data-a="reply">Balas</button>';
       if (x.platform === 'threads' && x.kind === 'reply' && can('manager')) return '<button type="button" class="btn small" data-a="reply">Balas</button>';
@@ -985,7 +989,8 @@ VIEWS.pesan = async (v) => {
       return `<section class="psec stack" data-plat="${platform}"><div class="psec-h"><h2>${title} <span class="badge">${list.length}</span></h2><span class="small muted">${hint}</span></div>${notes}${list.slice(0, lim[platform]).map(([x, i]) => row(x, i)).join('') || '<div class="card muted">Belum ada data.</div>'}${list.length > lim[platform] ? `<button type="button" class="btn" data-more="${platform}">Tampilkan lebih banyak (${list.length - lim[platform]} lagi)</button>` : ''}</section>`;
     };
     $('#pout').innerHTML = sec('instagram', 'Instagram', tab === 'dm' ? 'Percakapan terbaru, balasan DM hanya dalam 24 jam setelah pesan pelanggan.' : 'Komentar pada 5 post terbaru + mention dari webhook.')
-      + (tab === 'dm' ? `<section class="psec stack" data-plat="threads"><div class="psec-h"><h2>Threads <span class="badge">0</span></h2></div><div class="card muted">${esc(data.threads_dm_note)}</div></section>` : sec('threads', 'Threads', 'Reply pada 5 post terbaru + mention yang dikumpulkan.'));
+      + (tab === 'dm' ? `<section class="psec stack" data-plat="threads"><div class="psec-h"><h2>Threads <span class="badge">0</span></h2></div><div class="card muted">${esc(data.threads_dm_note)}</div></section>` : sec('threads', 'Threads', 'Reply pada 5 post terbaru + mention yang dikumpulkan.'))
+      + (tab === 'dm' ? sec('whatsapp', 'WhatsApp', 'Pesan masuk lewat webhook WhatsApp Business. Balas teks bebas hanya dalam 24 jam.') : '');
   };
   $('#pfresh').onclick = (e) => busy(e.target, async () => { await load(true); toast('Diperbarui.'); });
   v.onclick = (e) => {
@@ -1000,6 +1005,105 @@ VIEWS.pesan = async (v) => {
     });
   };
   await load(false);
+};
+
+/* ---------- WhatsApp Business ---------- */
+const WA_TABS = [['chat', 'Percakapan', 'editor'], ['template', 'Template', 'editor'], ['setelan', 'Pengaturan', 'admin']];
+VIEWS.whatsapp = async (v) => {
+  const q = params(); const allowed = WA_TABS.filter((t) => can(t[2])); const tab = allowed.some((t) => t[0] === q.get('tab')) ? q.get('tab') : 'chat';
+  const bid = q.get('brand') || ''; const wa = q.get('wa') || '';
+  const nav = (o = {}) => { const n = { tab, brand: bid, wa: '', ...o }; return `#/whatsapp?tab=${n.tab}${n.brand ? `&brand=${n.brand}` : ''}${n.wa ? `&wa=${n.wa}` : ''}`; };
+  const cfg = await api('GET', '/api/wa/config');
+  const bmap = Object.fromEntries(brands.map((b) => [b.id, b]));
+  const tag = (id) => { const b = bmap[id] || { name: id, color: '#999' }; return `<span class="btag" style="--c:${b.color}"><i class="cal-dot on" style="--c:${b.color}"></i>${esc(b.name.replace('Delova ', ''))}</span>`; };
+  v.innerHTML = `<div class="page-head"><h1>WhatsApp</h1><p class="muted">WhatsApp Business (Cloud API) per brand: pesan masuk lewat webhook, balasan teks bebas hanya dalam 24 jam setelah pesan pelanggan, di luar itu wajib template yang disetujui Meta.${cfg.simulated ? ' <b>Mode simulasi:</b> tidak ada pesan yang benar-benar terkirim.' : ''}</p></div>
+  <div class="tabs" style="margin-bottom:12px">${allowed.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav({ tab: t[0], wa: '' })}">${t[1]}</a>`).join('')}</div><div id="wab" class="stack"></div>`;
+  const body = $('#wab', v);
+  const chips = (list) => `<div class="chips"><a class="chip" href="${nav({ brand: '', wa: '' })}" ${bid ? '' : 'style="border-color:var(--accent);color:var(--accent)"'}>Semua akun</a>${list.map((b) => `<a class="chip" href="${nav({ brand: b.id, wa: '' })}" ${bid === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${esc(b.name.replace('Delova ', ''))}</a>`).join('')}</div>`;
+
+  if (tab === 'chat') {
+    const list = await api('GET', `/api/wa/conversations${bid ? `?brand=${bid}` : ''}`);
+    body.innerHTML = `${chips(brands)}<div class="grid g2" style="align-items:start"><div class="stack">${list.length ? list.map((c) => `<a class="card pitem stack" style="--c:${(bmap[c.brand_id] || {}).color || '#999'};text-decoration:none;color:inherit;${wa === c.wa_id && bid === c.brand_id ? 'outline:2px solid var(--accent)' : ''}" href="${nav({ brand: c.brand_id, wa: c.wa_id })}"><div class="row between"><span class="row">${tag(c.brand_id)}<b>${esc(c.name || '+' + c.wa_id)}</b></span><span class="small muted">${esc(igTime(c.last_in))}</span></div><div class="small muted">${esc((c.last_text || '').slice(0, 120))}</div><div class="row">${c.needs_action ? `<span class="badge s-pending_approval">${c.needs_action} perlu tindakan</span>` : ''}${c.can_reply ? '<span class="badge s-published">Bisa dibalas</span>' : '<span class="badge">Di luar 24 jam</span>'}</div></a>`).join('') : '<div class="card muted">Belum ada percakapan. Pesan pelanggan muncul di sini setelah webhook WhatsApp tersambung.</div>'}</div>
+    <div id="thread" class="card stack">${wa && bid ? '<p class="muted">Memuat…</p>' : '<p class="muted">Pilih percakapan di kiri. Pilih satu akun brand dulu untuk membuka percakapan.</p>'}</div></div>`;
+    if (wa && bid) {
+      const draw = async () => {
+        const t = await api('GET', `/api/wa/conversations/${bid}/${wa}`);
+        $('#thread', body).innerHTML = `<div class="row between"><b>+${esc(wa)}</b>${tag(bid)}</div><div class="stack" style="max-height:420px;overflow:auto">${t.messages.map((m) => `<div class="quote ${m.dir === 'out' ? 'me' : ''}"><span class="small muted">${m.dir === 'out' ? (m.auto ? 'Auto reply' : 'Tim') : 'Pelanggan'} · ${esc(igTime(m.at))}${m.status === 'pending' ? ' · menunggu keputusan' : ''}</span>\n${esc(m.text || '')}${m.draft && m.status === 'pending' ? `\n<span class="small muted">Draf: ${esc(m.draft)}</span>` : ''}</div>`).join('') || '<p class="muted">Kosong.</p>'}</div>
+          ${can('editor') ? (t.can_reply ? `<form id="wsend" class="stack"><textarea name="text" maxlength="1000" rows="3" placeholder="Tulis balasan…" required></textarea><div class="row"><button class="btn primary">Kirim</button><span class="small muted">Teks bebas, jendela 24 jam terbuka.</span></div></form>` : `<div class="banner">Di luar jendela 24 jam: teks bebas tidak bisa dikirim. ${can('manager') ? `<a href="${nav({ tab: 'template' })}">Kirim lewat template</a>.` : 'Minta manager mengirim template.'}</div>`) : ''}`;
+        const f = $('#wsend', body); if (f) f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
+          const text = f.elements.text.value.trim(); if (!text) return;
+          if (!(await ui.confirm({ title: `Kirim ke +${wa}?`, message: 'Dikirim lewat WhatsApp brand ini dan langsung diterima pelanggan.', quote: text, quoteLabel: 'Pesan', ok: 'Kirim' }))) return;
+          const r = await api('POST', '/api/wa/send', { brand_id: bid, to: wa, text }); toast(r.dryRun ? 'Simulasi: pesan dicatat, tidak dikirim.' : 'Terkirim.'); await draw(); });
+        };
+      };
+      await draw();
+    }
+  }
+
+  if (tab === 'template') {
+    const b0 = bid || brands[0].id;
+    body.innerHTML = `<div class="row">${tag(b0)}<span class="chips">${brands.map((b) => `<a class="chip" href="${nav({ brand: b.id })}" ${b0 === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${esc(b.name.replace('Delova ', ''))}</a>`).join('')}</span></div><div id="tpl" class="grid g2"><p class="muted">Memuat…</p></div>`;
+    let tpls = [];
+    try { tpls = await api('GET', `/api/wa/${b0}/templates`); $('#tpl', body).innerHTML = tpls.length ? tpls.map((t, i) => `<div class="card stack"><div class="row between"><b>${esc(t.name)}</b><span class="row"><span class="badge">${esc(t.language)}</span><span class="badge ${t.status === 'APPROVED' ? 's-published' : ''}">${esc(t.status)}</span><span class="badge">${esc(t.category)}</span></span></div><div class="quote">${esc(t.body)}</div>${can('manager') && t.status === 'APPROVED' ? `<div><button class="btn small primary" data-send="${i}">Kirim template</button></div>` : ''}</div>`).join('') : '<div class="card muted">Belum ada template. Buat dan ajukan di WhatsApp Manager, lalu muncul di sini setelah disetujui Meta.</div>'; }
+    catch (e) { $('#tpl', body).innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+    body.onclick = async (e) => {
+      const b = e.target.closest('[data-send]'); if (!b) return; const t = tpls[Number(b.dataset.send)];
+      const fields = Array.from({ length: t.params }, (_, k) => `<label>Variabel {{${k + 1}}}<input name="p${k}" required></label>`).join('');
+      const out = await ui.form({ title: `Kirim template “${t.name}”`, ok: 'Kirim', extra: { html: `<label>Nomor tujuan (format internasional, tanpa +)<input name="to" placeholder="62812xxxxxxx" required></label>${fields}<div class="quote">${esc(t.body)}</div>`, collect: (f) => { const to = f.elements.to.value.replace(/\D/g, ''); if (to.length < 8 || to.length > 15) { f.querySelector('[data-err]').textContent = 'Nomor tidak valid.'; return undefined; } const ps = Array.from({ length: t.params }, (_, k) => f.elements[`p${k}`].value.trim()); if (ps.some((x) => !x)) { f.querySelector('[data-err]').textContent = 'Isi semua variabel.'; return undefined; } return { to, params: ps }; } } });
+      if (!out) return;
+      const r = await api('POST', '/api/wa/send-template', { brand_id: b0, to: out.to, name: t.name, language: t.language, params: out.params }); toast(r.dryRun ? 'Simulasi: template dicatat, tidak dikirim.' : 'Template terkirim.');
+    };
+  }
+
+  if (tab === 'setelan') {
+    const copy = (id, val) => `<span class="row"><input id="${id}" readonly value="${esc(val || '')}" style="flex:1"><button type="button" class="btn small" data-cp="${id}">Salin</button></span>`;
+    body.innerHTML = `<div class="card stack"><h3>Webhook Meta</h3><p class="small muted">Di Meta for Developers → WhatsApp → Configuration, isi Callback URL dan Verify token berikut, lalu subscribe field <b>${cfg.fields.join(', ')}</b>. Tanda tangan diverifikasi memakai App Secret.</p><label>Callback URL${copy('wa_u', cfg.webhook_url)}</label><label>Verify token${copy('wa_t', cfg.verify_token)}</label></div>
+    <div class="grid g2">${cfg.brands.map((b) => { const n = b.number; return `<form class="card stack wnum" data-b="${b.id}" style="border-top:3px solid ${b.color}"><div class="row between"><h3>${esc(b.name)}</h3>${n ? '<span class="badge s-published">Tersimpan</span>' : '<span class="badge">Belum terhubung</span>'}</div>
+      <label>Phone number ID<input name="phone_number_id" value="${esc(n?.phone_number_id || '')}" inputmode="numeric" required></label><label>WhatsApp Business Account ID (untuk template)<input name="waba_id" value="${esc(n?.waba_id || '')}"></label><label>Nomor tampilan<input name="display_phone" value="${esc(n?.display_phone || '')}" placeholder="+62 8xx"></label>
+      <label>Access token ${n?.has_token ? '<span class="badge s-published">terisi</span>' : ''}<input name="token" type="password" autocomplete="off" placeholder="${n?.has_token ? 'Kosongkan untuk mempertahankan' : 'Token System User (permanen)'}"></label>
+      <div class="row"><button class="btn primary small">Simpan</button><button type="button" class="btn small" data-test="1">Tes koneksi</button>${n ? '<button type="button" class="btn small" data-del="1">Hapus</button>' : ''}</div></form>`; }).join('')}</div>`;
+    $$('.wnum', body).forEach((f) => {
+      f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => { const d = Object.fromEntries(new FormData(f)); await api('PUT', `/api/wa/numbers/${f.dataset.b}`, d); toast('Tersimpan.'); route(); }); };
+      $('[data-test]', f).onclick = (e) => busy(e.target, async () => { const r = await api('POST', `/api/wa/numbers/${f.dataset.b}/test`); toast(r.simulated ? 'Simulasi: koneksi dianggap berhasil.' : `Terhubung: ${r.verified_name || ''} ${r.display_phone_number || ''} (kualitas ${r.quality_rating || '-'})`); });
+      const d = $('[data-del]', f); if (d) d.onclick = async () => { if (!(await ui.confirm({ title: 'Hapus nomor WhatsApp?', message: 'Token dihapus dari Hub. Pesan masuk dari nomor ini tidak lagi dikenali.', ok: 'Hapus' }))) return; await api('DELETE', `/api/wa/numbers/${f.dataset.b}`); toast('Dihapus.'); route(); };
+    });
+    body.onclick = (e) => { const c = e.target.closest('[data-cp]'); if (c) { const i = $('#' + c.dataset.cp, body); i.select(); navigator.clipboard?.writeText(i.value); toast('Disalin.'); } };
+  }
+};
+
+/* ---------- Katalog Meta (Catalog API) ---------- */
+VIEWS.katalog = async (v) => {
+  const cfg = await api('GET', '/api/catalog/config');
+  v.innerHTML = `<div class="page-head"><h1>Katalog Meta</h1><p class="muted">Sinkronkan produk delova.id (harga, stok, gambar, tautan) ke katalog Meta tiap brand lewat Catalog API, untuk Shop Instagram/Facebook dan iklan katalog.${cfg.simulated ? ' <b>Mode simulasi:</b> tidak ada yang dikirim ke Meta.' : ''}</p></div>
+  ${cfg.store_ready ? '' : '<div class="banner">API produk delova.id belum diisi (Auto Reply → Data produk). Sinkron butuh kunci itu.</div>'}
+  ${can('admin') ? `<form id="cf" class="card stack"><h3>Pengaturan</h3><label>Access token katalog ${cfg.token_set ? '<span class="badge s-published">terisi</span>' : '<span class="badge s-failed">belum diisi</span>'}<input name="token" type="password" autocomplete="off" placeholder="Token dengan izin catalog_management"></label><label class="row"><input type="checkbox" name="auto" ${cfg.auto ? 'checked' : ''}> Sinkron otomatis tiap ±6 jam</label><div class="row"><button class="btn primary small">Simpan</button>${cfg.token_set ? '<button type="button" class="btn small" data-clr="1">Hapus token</button>' : ''}</div></form>` : ''}
+  <div class="grid g2">${cfg.brands.map((b) => { const l = b.last; return `<div class="card stack" data-b="${b.id}" style="border-top:3px solid ${b.color}"><div class="row between"><h3>${esc(b.name)}</h3>${b.last_sync_at ? `<span class="small muted">Sinkron ${esc(igTime(b.last_sync_at))}</span>` : '<span class="badge">Belum pernah</span>'}</div>
+    <label>Catalog ID<span class="row"><input name="cid" value="${esc(b.catalog_id)}" inputmode="numeric" placeholder="dari Commerce Manager" style="flex:1" ${can('manager') ? '' : 'disabled'}><button type="button" class="btn small" data-save="1">Simpan</button></span></label>
+    ${l ? (l.error ? `<div class="small err">${esc(l.error)}</div>` : `<div class="small">${l.simulated ? 'Simulasi · ' : ''}${l.sent} item dikirim dari ${l.total}${l.skipped ? `, ${l.skipped} dilewati (data tidak lengkap)` : ''}${l.errors?.length ? `, ${l.errors.length} ditolak Meta` : ''}</div>${(l.errors || []).slice(0, 3).map((x) => `<div class="small err">${esc(x)}</div>`).join('')}`) : ''}
+    <div class="row"><button type="button" class="btn small" data-prev="1">Pratinjau</button><button type="button" class="btn small primary" data-sync="1" ${b.catalog_id ? '' : 'disabled'}>Sinkronkan sekarang</button></div><div class="stack" data-out></div></div>`; }).join('')}</div>`;
+  const cf = $('#cf', v);
+  if (cf) { cf.onsubmit = (e) => { e.preventDefault(); busy($('button', cf), async () => { await api('PUT', '/api/catalog/config', { token: cf.elements.token.value.trim() || undefined, auto: cf.elements.auto.checked }); toast('Tersimpan.'); route(); }); }; const c = $('[data-clr]', cf); if (c) c.onclick = async () => { await api('PUT', '/api/catalog/config', { clear_token: true }); toast('Token dihapus.'); route(); }; }
+  v.onclick = (e) => {
+    const card = e.target.closest('[data-b]'); const b = e.target.closest('button'); if (!card || !b) return; const id = card.dataset.b; const out = $('[data-out]', card);
+    if (b.dataset.save) return busy(b, async () => { await api('PUT', `/api/catalog/${id}`, { catalog_id: $('[name=cid]', card).value }); toast('Catalog ID tersimpan.'); route(); });
+    if (b.dataset.prev) return busy(b, async () => { const r = await api('POST', `/api/catalog/${id}/preview`); out.innerHTML = `<div class="small"><b>${r.total}</b> produk, <b>${r.bad}</b> bermasalah.</div>${r.problems.map((p) => `<div class="small err">${esc(p.title)}: ${esc(p.issues.join(', '))}</div>`).join('')}${r.sample.slice(0, 4).map((s) => `<div class="quote small"><b>${esc(s.title)}</b>\n${esc(s.price)}${s.sale_price ? ' → ' + esc(s.sale_price) : ''} · ${esc(s.availability)}</div>`).join('')}`; });
+    if (b.dataset.sync) return busy(b, async () => { if (!(await ui.confirm({ title: 'Sinkronkan katalog?', message: 'Produk di katalog Meta akan dibuat/diperbarui sesuai data delova.id.', ok: 'Sinkronkan' }))) return; const r = await api('POST', `/api/catalog/${id}/sync`); toast(`${r.simulated ? 'Simulasi: ' : ''}${r.sent} item diproses.`); route(); });
+  };
+};
+
+/* ---------- Embed Post (oEmbed) ---------- */
+VIEWS.embed = async (v) => {
+  const own = await api('GET', '/api/embed/own');
+  v.innerHTML = `<div class="page-head"><h1>Embed Post</h1><p class="muted">Buat kode embed untuk post Instagram atau Threads agar bisa ditempel di website/blog (mis. delova.id). Kode dibuat sesaat dan tidak disimpan di Hub (ketentuan Meta). Pratinjau tidak tampil di sini karena keamanan dashboard; tempel kodenya di halaman Anda.</p></div>
+  <form id="ef" class="card stack"><label>URL post<input name="url" placeholder="https://www.instagram.com/p/… atau https://www.threads.com/@akun/post/…" required></label><div class="row"><button class="btn primary">Buat kode embed</button></div></form><div id="eo"></div>
+  <div class="card stack"><h3>Post terbitan Hub</h3>${own.length ? own.map((p, i) => `<div class="row between"><span class="row"><span class="badge">${p.platform === 'instagram' ? 'Instagram' : 'Threads'}</span><span class="small">${esc((p.text || '').slice(0, 80))}</span></span><button type="button" class="btn small" data-use="${i}">Pakai</button></div>`).join('') : '<p class="muted small">Belum ada post terbit dengan tautan.</p>'}</div>`;
+  const go = async (url) => {
+    const r = await api('GET', `/api/embed?url=${encodeURIComponent(url)}`);
+    $('#eo', v).innerHTML = `<div class="card stack"><div class="row between"><h3>${r.platform === 'instagram' ? 'Instagram' : 'Threads'}${r.author_name ? ' · @' + esc(r.author_name) : ''}</h3>${r.simulated ? '<span class="badge">Simulasi</span>' : ''}</div>${r.thumbnail_url ? `<img src="${esc(r.thumbnail_url)}" alt="" style="max-width:220px;border-radius:8px">` : ''}${r.note ? `<div class="small muted">${esc(r.note)}</div>` : ''}<textarea id="ecode" readonly rows="6">${esc(r.html)}</textarea><div class="row"><button type="button" class="btn small primary" id="ecp">Salin kode</button></div></div>`;
+    $('#ecp', v).onclick = () => { $('#ecode', v).select(); navigator.clipboard?.writeText($('#ecode', v).value); toast('Kode disalin.'); };
+  };
+  const f = $('#ef', v); f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), () => go(f.elements.url.value.trim())); };
+  v.onclick = (e) => { const b = e.target.closest('[data-use]'); if (!b) return; const p = own[Number(b.dataset.use)]; f.elements.url.value = p.permalink; busy(b, () => go(p.permalink)); };
 };
 
 /* ---------- Tren: Threads (pencarian publik) + Instagram (performa akun sendiri) ---------- */

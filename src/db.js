@@ -200,7 +200,7 @@ const SETTING_DEFAULTS = {
 db.exec(`
 CREATE TABLE IF NOT EXISTS auto_rules (
   brand_id TEXT NOT NULL REFERENCES brands(id),
-  platform TEXT NOT NULL CHECK (platform IN ('threads','instagram')),
+  platform TEXT NOT NULL CHECK (platform IN ('threads','instagram','whatsapp')),
   enabled INTEGER NOT NULL DEFAULT 0,
   mode TEXT NOT NULL DEFAULT 'draft' CHECK (mode IN ('draft','auto')),
   kinds TEXT NOT NULL DEFAULT '["reply","mention","comment"]',
@@ -241,6 +241,58 @@ CREATE INDEX IF NOT EXISTS auto_events_brand ON auto_events(brand_id, platform, 
 `);
 try { db.exec('ALTER TABLE auto_events ADD COLUMN used_data TEXT'); } catch { /* kolom sudah ada */ }
 for (const c of ['trigger_id TEXT', 'dm_text TEXT', 'dm_status TEXT']) { try { db.exec(`ALTER TABLE auto_events ADD COLUMN ${c}`); } catch { /* kolom sudah ada */ } }
+
+// Migrasi: auto_rules lama hanya mengizinkan threads/instagram. Bangun ulang tabel agar WhatsApp diterima.
+{
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='auto_rules'").get()?.sql || '';
+  if (sql && !sql.includes("'whatsapp'")) {
+    db.exec(`
+      ALTER TABLE auto_rules RENAME TO auto_rules_old;
+      CREATE TABLE auto_rules (
+        brand_id TEXT NOT NULL REFERENCES brands(id),
+        platform TEXT NOT NULL CHECK (platform IN ('threads','instagram','whatsapp')),
+        enabled INTEGER NOT NULL DEFAULT 0,
+        mode TEXT NOT NULL DEFAULT 'draft' CHECK (mode IN ('draft','auto')),
+        kinds TEXT NOT NULL DEFAULT '["reply","mention","comment"]',
+        hourly_cap INTEGER NOT NULL DEFAULT 20,
+        knowledge TEXT NOT NULL DEFAULT '',
+        updated_at TEXT,
+        PRIMARY KEY (brand_id, platform)
+      );
+      INSERT INTO auto_rules SELECT brand_id,platform,enabled,mode,kinds,hourly_cap,knowledge,updated_at FROM auto_rules_old;
+      DROP TABLE auto_rules_old;
+    `);
+  }
+}
+db.exec(`
+CREATE TABLE IF NOT EXISTS wa_numbers (
+  brand_id TEXT PRIMARY KEY REFERENCES brands(id),
+  phone_number_id TEXT NOT NULL UNIQUE,
+  waba_id TEXT,
+  display_phone TEXT,
+  token_enc TEXT,
+  connected_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS wa_out (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'text',
+  text TEXT NOT NULL DEFAULT '',
+  template TEXT,
+  wa_msg_id TEXT,
+  sent_by TEXT,
+  simulated INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS wa_out_idx ON wa_out(brand_id, to_id, created_at);
+CREATE TABLE IF NOT EXISTS meta_catalogs (
+  brand_id TEXT PRIMARY KEY REFERENCES brands(id),
+  catalog_id TEXT NOT NULL,
+  last_sync_at TEXT,
+  last_result TEXT
+);
+`);
 db.exec(`
 CREATE TABLE IF NOT EXISTS kw_triggers (
   id TEXT PRIMARY KEY,

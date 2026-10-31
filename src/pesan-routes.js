@@ -64,7 +64,7 @@ export function mountPesan(api, { need, ah, bad }) {
     const only = brands.find((b) => b.id === req.query.brand);
     if (req.query.brand && !only) return bad(res, 'Brand tidak ditemukan.', 404);
     const targets = only ? [only] : brands;
-    const out = { instagram: [], threads: [], notes: [], fetched_at: new Date().toISOString() };
+    const out = { instagram: [], threads: [], whatsapp: [], notes: [], fetched_at: new Date().toISOString() };
     const seen = new Set();
     const push = (platform, brand, x) => {
       const k = `${platform}:${x.ext_id}`;
@@ -89,7 +89,7 @@ export function mountPesan(api, { need, ah, bad }) {
 
     // Gabungkan data webhook (termasuk mention yang tidak bisa ditarik lewat API list).
     const kinds = type === 'dm' ? ['dm'] : ['comment', 'reply', 'mention'];
-    for (const platform of ['instagram', 'threads']) {
+    for (const platform of type === 'dm' ? ['instagram', 'threads', 'whatsapp'] : ['instagram', 'threads']) {
       for (const e of stored(platform, kinds, only?.id)) {
         const b = brands.find((x) => x.id === e.brand_id); if (!b) continue;
         const exist = out[platform].find((x) => x.ext_id === e.ext_id);
@@ -108,7 +108,7 @@ export function mountPesan(api, { need, ah, bad }) {
     } else {
       out.threads_dm_note = 'Threads belum menyediakan API pesan langsung (DM), jadi DM Threads tidak bisa ditampilkan di Hub. Balas DM Threads langsung dari aplikasi Threads.';
     }
-    out.instagram.sort(byTime); out.threads.sort(byTime);
+    out.instagram.sort(byTime); out.threads.sort(byTime); out.whatsapp.sort(byTime);
     res.json(out);
   }));
 }

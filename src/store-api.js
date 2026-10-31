@@ -138,3 +138,14 @@ export async function productDetail(ref) {
   const d = await storeGet(`/products/${encodeURIComponent(ref)}`);
   return { ...d, description: cut(d.description, 1500), images: (d.images || []).slice(0, 8) };
 }
+
+/** Seluruh produk satu brand (paginasi, maks 10 halaman x 100) untuk sinkron katalog. */
+export async function listAllProducts(brand, { maxPages = 10 } = {}) {
+  const out = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const r = await storeGet('/products', { brand, limit: 100, page }, { fresh: page === 1 });
+    out.push(...(r.data || []));
+    if (page >= (r.meta?.total_pages || 1)) break;
+  }
+  return out;
+}

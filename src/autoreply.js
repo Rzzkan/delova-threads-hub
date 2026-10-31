@@ -8,12 +8,13 @@ import { all, get, run, now, uid, getSetting, setSetting, audit } from './db.js'
 import * as T from './threads.js';
 import * as TR from './triggers.js';
 import * as I from './instagram.js';
+import * as W from './whatsapp.js';
 import * as AI from './claude.js';
 import * as C from './crypto.js';
 import * as Store from './store-api.js';
 
 export const KINDS = ['reply', 'mention', 'comment', 'dm'];
-const MAX = { threads: { reply: 280, mention: 280 }, instagram: { comment: 300, mention: 300, dm: 800 } };
+const MAX = { threads: { reply: 280, mention: 280 }, instagram: { comment: 300, mention: 300, dm: 800 }, whatsapp: { dm: 700 } };
 const maxChars = (platform, kind) => MAX[platform]?.[kind] || 280;
 const MIN_CONFIDENCE = 0.75;
 const SAFE_CATEGORIES = ['sapaan', 'pujian', 'pertanyaan_produk', 'pertanyaan_umum'];
@@ -37,7 +38,7 @@ export const webhookUrl = (platform) => `${baseUrl()}/webhooks/${platform}`;
 export function ruleOf(brandId, platform) {
   const r = get('SELECT * FROM auto_rules WHERE brand_id=? AND platform=?', brandId, platform);
   return r ? { ...r, enabled: !!r.enabled, kinds: JSON.parse(r.kinds || '[]') }
-    : { brand_id: brandId, platform, enabled: false, mode: 'draft', kinds: ['reply', 'mention', 'comment'], hourly_cap: 20, knowledge: '' };
+    : { brand_id: brandId, platform, enabled: false, mode: 'draft', kinds: platform === 'whatsapp' ? ['dm'] : ['reply', 'mention', 'comment'], hourly_cap: 20, knowledge: '' };
 }
 export function saveRule(brandId, platform, f) {
   const cur = ruleOf(brandId, platform);
@@ -59,6 +60,7 @@ function secrets(platform) {
   const out = new Set();
   const add = (s) => { if (s) out.add(s); };
   if (platform === 'instagram') { add(I.creds().appSecret); add(T.creds().appSecret); }
+  else if (platform === 'whatsapp') { add(T.creds().appSecret); add(I.creds().appSecret); }
   else { add(T.creds().appSecret); for (const b of all('SELECT * FROM brands')) add(T.creds(b).appSecret); }
   return [...out];
 }
@@ -92,6 +94,26 @@ export function parseThreads(body) {
       if (!kind || !v.id) continue;
       out.push({ platform: 'threads', brand, kind, ext_id: String(v.id), target_id: String(v.id), media_id: String(v.replied_to?.id || v.root_post?.id || ''),
         author_id: String(v.owner?.id || v.user_id || ''), author_username: v.username || '', text: v.text || '', permalink: v.permalink || '', event_at: iso(v.timestamp || en.time) });
+    }
+  }
+  return out;
+}
+/** Webhook WhatsApp Cloud API: entry[].changes[].value.{metadata,contacts,messages,statuses}. Status pengiriman diabaikan. */
+export function parseWhatsApp(body) {
+  const out = [];
+  for (const en of body?.entry || []) {
+    for (const ch of en.changes || []) {
+      if (ch.field !== 'messages') continue;
+      const v = ch.value || {};
+      const num = W.numberByPhoneId(v.metadata?.phone_number_id);
+      const brand = num && get('SELECT * FROM brands WHERE id=?', num.brand_id);
+      if (!brand) continue;
+      const names = Object.fromEntries((v.contacts || []).map((c) => [String(c.wa_id), c.profile?.name || '']));
+      for (const m of v.messages || []) {
+        if (!m.id || !m.from) continue;
+        const text = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : m.type === 'interactive' ? (m.interactive?.button_reply?.title || m.interactive?.list_reply?.title) : '';
+        out.push({ platform: 'whatsapp', brand, kind: 'dm', ext_id: String(m.id), target_id: String(m.from), media_id: '', author_id: String(m.from), author_username: names[String(m.from)] || `+${m.from}`, text: text || '', permalink: '', event_at: iso(m.timestamp) });
+      }
     }
   }
   return out;
@@ -150,7 +172,7 @@ const isSelf = (ev, brand) => {
   const own = [brand.threads_user_id, I.accountOf(brand.id)?.ig_user_id].filter(Boolean).map(String);
   return !!ev.author_id && own.includes(String(ev.author_id));
 };
-const isDry = (ev, brand) => !!ev.simulated || (ev.platform === 'threads' ? T.isDryRun(brand) : I.isDryRun());
+const isDry = (ev, brand) => !!ev.simulated || (ev.platform === 'threads' ? T.isDryRun(brand) : ev.platform === 'whatsapp' ? W.isDryRun() : I.isDryRun());
 const URL_RE = /(https?:\/\/|www\.)\S+|\b\S+\.(com|id|co|me|link|shop)\b\S*/gi;
 
 /** Kembalikan alasan penolakan bila draf tidak aman untuk dikirim, atau null bila aman. */
@@ -260,7 +282,10 @@ export async function send(id, text, userId) {
     if (!t && !dmText) throw new Error('Teks balasan kosong.');
     let r = {}; let dmNote = '';
     if (ev.platform === 'threads') r = await T.replyTo(brand, ev.target_id, t);
-    else {
+    else if (ev.platform === 'whatsapp') {
+      if (!W.numberOf(brand.id)?.token_enc && !isDry(ev, brand)) throw new Error('Nomor WhatsApp belum terhubung.');
+      r = await W.sendText(brand, ev.target_id, t);
+    } else {
       const acc = I.accountOf(brand.id);
       if (!acc?.token_enc && !isDry(ev, brand)) throw new Error('Akun Instagram belum terhubung.');
       if (ev.kind === 'dm') r = await I.sendMessage(acc || {}, brand, ev.author_id, t);
