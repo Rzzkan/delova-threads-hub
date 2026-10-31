@@ -153,7 +153,7 @@ const ICON = {
 const ico = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n] || ''}</svg>`;
 // [id, label, peran minimal, grup]
 const ROUTES = [
-  ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'], ['approvals', 'Pusat Persetujuan', 'editor', 'Menu'],
+  ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Persetujuan', 'viewer', 'Menu'],
   ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['whatsapp', 'WhatsApp', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['katalog', 'Katalog Meta', 'manager', 'Riset & Kolaborasi'], ['embed', 'Embed Post', 'editor', 'Riset & Kolaborasi'], ['peluang', 'Peluang Engage', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Pengetahuan Brand', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
@@ -183,6 +183,7 @@ let routeSeq = 0;
 async function route() {
   if (!me) return;
   const name = (location.hash.slice(2).split('?')[0]) || 'dashboard';
+  if (name === 'approvals') { location.replace('#/queue?tab=persetujuan'); return; }
   const r = ROUTES.find((x) => x[0] === name && can(x[2])) || ROUTES[0];
   $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === r[0]));
   $('#crumb').textContent = r[1]; closeDrawer(); window.scrollTo(0, 0);
@@ -318,20 +319,23 @@ VIEWS.compose = async (v) => {
 };
 
 /* ---------- Antrean ---------- */
+const qTabs = (on) => `<div class="tabs"><a class="tab ${on === 'persetujuan' ? 'on' : ''}" href="#/queue?tab=persetujuan">Perlu disetujui</a><a class="tab ${on === 'semua' ? 'on' : ''}" href="#/queue?tab=semua">Semua post Threads</a></div>`;
 VIEWS.queue = async (v) => {
   const q = params(); const fb = q.get('brand') || ''; const fs = q.get('status') || '';
+  const tab = q.get('tab') || (can('editor') && !fb && !fs ? 'persetujuan' : 'semua');
+  if (tab === 'persetujuan' && can('editor')) return VIEWS.approvals(v);
   const rows = await api('GET', `/api/posts?${new URLSearchParams({ ...(fb && { brand: fb }), ...(fs && { status: fs }) })}`);
-  v.innerHTML = `<h1>Antrean &amp; Approval</h1>
+  v.innerHTML = `<h1>Antrean &amp; Persetujuan</h1>${can('editor') ? qTabs('semua') : ''}
   <div class="row"><select id="fb" style="width:auto"><option value="">Semua akun</option>${brands.map((b) => `<option value="${b.id}" ${b.id === fb ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
   <select id="fs" style="width:auto"><option value="">Semua status</option>${Object.entries(STATUS).map(([k, l]) => `<option value="${k}" ${k === fs ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
   <div id="bulk" class="bulkbar hidden"><b id="bn">0 dipilih</b><span class="row">${can('manager') ? '<button type="button" class="btn small primary" data-bulk="approve">Setujui terpilih</button><button type="button" class="btn small" data-bulk="reject">Kembalikan</button>' : ''}${can('editor') ? '<button type="button" class="btn small" data-bulk="submit">Ajukan approval</button>' : ''}<button type="button" class="btn small ghost" data-bulk="clear">Batal pilih</button></span></div>
   <div class="card" style="margin-top:12px"><table><thead><tr><th style="width:34px">${can('editor') ? `<input type="checkbox" id="all" aria-label="Pilih semua" title="Pilih semua yang bisa diproses" />` : ''}</th><th>Akun</th><th>Isi</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
-  ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && ['pending_approval', 'draft', 'failed', 'scheduled'].includes(p.status) ? `<input type="checkbox" class="pick" aria-label="Pilih post" />` : ''}</td><td><b style="color:${brandOf(p.brand_id).color}">${esc(brandOf(p.brand_id).name)}</b><div class="small muted">${esc(p.author || '')}${p.source === 'claude' ? ' · via Claude' : p.source === 'ai' ? ' · AI' : ''}</div></td>
+  ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && ['pending_approval', 'draft', 'failed', 'scheduled'].includes(p.status) ? `<input type="checkbox" class="pick" aria-label="Pilih post" />` : ''}</td><td><span class="btag" style="--c:${brandOf(p.brand_id).color}"><i class="cal-dot on" style="--c:${brandOf(p.brand_id).color}"></i><b>${esc(brandOf(p.brand_id).name.replace('Delova ', ''))}</b></span><div class="small muted">${esc(p.author || '')}${p.source === 'claude' ? ' · via Claude' : p.source === 'ai' ? ' · AI' : ''}</div></td>
     <td>${esc(p.text.slice(0, 140))}${p.text.length > 140 ? '…' : ''}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}</td>
     <td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
     <td><div class="row">${actions(p)}</div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada post.</td></tr>'}
   </tbody></table></div>`;
-  const go = () => { location.hash = `#/queue?brand=${$('#fb').value}&status=${$('#fs').value}`; };
+  const go = () => { location.hash = `#/queue?tab=semua&brand=${$('#fb').value}&status=${$('#fs').value}`; };
   $('#fb').onchange = go; $('#fs').onchange = go;
   // ---- persetujuan massal ----
   const picked = () => $$('.pick:checked', v).map((c) => rows.find((r) => r.id === c.closest('tr').dataset.id));
@@ -1304,7 +1308,7 @@ VIEWS.approvals = async (v) => {
   const bmap = Object.fromEntries(brands.map((b) => [b.id, b]));
   const tagOf = (id) => { const b = bmap[id] || { name: id, color: '#999' }; return `<span class="btag" style="--c:${b.color}"><i class="cal-dot on" style="--c:${b.color}"></i>${esc(b.name.replace('Delova ', ''))}</span>`; };
   const SEC = [['posts', 'post', 'Post Threads', 'Menunggu approval (queue)'], ['igposts', 'igpost', 'Konten Instagram', 'Menunggu approval'], ['events', 'event', 'Balasan Auto Reply', 'Draf balasan/DM yang menunggu persetujuan'], ['opps', 'opp', 'Peluang Engage', 'Balasan ke post publik, dikirim satu per satu dengan batas harian']];
-  let d; let result = null;
+  let d; let result = null; let fbrand = params().get('brand') || '';
   const load = async () => { d = await api('GET', '/api/approvals'); paint(); };
   const itemHtml = (type, x) => {
     const key = `${type}:${x.id}`;
@@ -1318,15 +1322,19 @@ VIEWS.approvals = async (v) => {
     if (type === 'post' || type === 'igpost') main = `<div style="white-space:pre-wrap">${esc((x.text || '').slice(0, 280))}</div><div class="small ${noSched ? 'err' : 'muted'}">${x.media_urls?.length ? `${x.media_urls.length} media · ` : ''}${x.scheduled_at ? `Jadwal ${wib(x.scheduled_at)}` : 'Belum dijadwalkan'}${type === 'igpost' ? ` · ${esc(x.kind)}` : ''}</div>${visHtml}`;
     if (type === 'event') main = `<div class="small muted">${PLAT[x.platform]} · ${AR_KIND[x.kind]} dari @${esc(x.author_username || '-')} · ${esc(igTime(x.received_at))}${x.simulated ? ' · simulasi' : ''}</div><div class="quote">${esc(x.text.slice(0, 240))}</div>${x.draft ? `<div class="quote me"><span class="small muted">Balasan:</span> ${esc(x.draft.slice(0, 300))}</div>` : ''}${x.dm_text ? `<div class="small muted">+ DM: “${esc(x.dm_text.slice(0, 140))}”</div>` : ''}${x.note ? `<div class="small ${risky ? 'err' : 'muted'}">${esc(x.note)}</div>` : ''}`;
     if (type === 'opp') main = `<div class="small muted">Post @${esc(x.username || '-')} · kata kunci “${esc(x.keyword)}” ${x.permalink ? `· <a href="${esc(x.permalink)}" target="_blank" rel="noopener">buka</a>` : ''}</div><div class="quote">${esc(x.text.slice(0, 240))}</div><div class="quote me"><span class="small muted">Balasan:</span> ${esc(x.draft || '')}</div>`;
-    return `<label class="ap-item ${risky ? 'risky' : ''}"><input type="checkbox" class="ap-c" data-key="${key}" data-safe="${risky || noSched || vis?.missing ? 0 : 1}"><span class="stack" style="gap:6px">${x.brand_id ? `<span class="row">${tagOf(x.brand_id)}${risky ? '<span class="badge s-failed">Perlu ditinjau</span>' : ''}${noSched ? '<span class="badge">Tanpa jadwal</span>' : ''}${vis?.missing ? '<span class="badge s-failed">Butuh gambar</span>' : ''}</span>` : ''}${main}</span></label>`;
+    return `<label class="ap-item ${risky ? 'risky' : ''}" style="border-left:4px solid ${(bmap[x.brand_id] || {}).color || 'transparent'}"><input type="checkbox" class="ap-c" data-key="${key}" data-safe="${risky || noSched || vis?.missing ? 0 : 1}"><span class="stack" style="gap:6px">${x.brand_id ? `<span class="row">${tagOf(x.brand_id)}${risky ? '<span class="badge s-failed">Perlu ditinjau</span>' : ''}${noSched ? '<span class="badge">Tanpa jadwal</span>' : ''}${vis?.missing ? '<span class="badge s-failed">Butuh gambar</span>' : ''}</span>` : ''}${main}</span></label>`;
   };
   const paint = () => {
     const total = Object.values(d.counts).reduce((a, b) => a + b, 0);
-    v.innerHTML = `<div class="page-head"><h1>Pusat Persetujuan</h1><p class="muted">Satu tempat untuk menyetujui atau menolak banyak item sekaligus: post Threads, konten Instagram, balasan Auto Reply, dan peluang engage. Centang item, lalu setujui atau tolak terpilih.</p></div>
+    const all = { posts: d.posts, igposts: d.igposts, events: d.events, opps: d.opps };
+    const per = {}; Object.values(all).forEach((arr) => arr.forEach((x) => { per[x.brand_id] = (per[x.brand_id] || 0) + 1; }));
+    const show = (arr) => (fbrand ? arr.filter((x) => x.brand_id === fbrand) : arr);
+    v.innerHTML = `<div class="page-head"><h1>Antrean &amp; Persetujuan</h1>${qTabs('persetujuan')}<p class="muted">Satu tempat untuk menyetujui atau menolak banyak item sekaligus: post Threads, konten Instagram, balasan Auto Reply, dan peluang engage. Centang item, lalu setujui atau tolak terpilih.</p></div>
     ${result ? `<div class="card stack"><b>Hasil terakhir: ${result.ok} berhasil, ${result.failed} gagal</b>${result.results.filter((r) => !r.ok).map((r) => `<div class="small err">${esc(r.type)} ${esc(r.id.slice(0, 8))}: ${esc(r.msg)}</div>`).join('')}</div>` : ''}
+    ${total ? `<div class="chips"><a class="chip" href="#/queue?tab=persetujuan" ${!fbrand ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>Semua brand (${total})</a>${brands.map((b) => `<a class="chip" href="#/queue?tab=persetujuan&brand=${b.id}" ${fbrand === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))} (${per[b.id] || 0})</a>`).join('')}</div>` : ''}
     ${total ? `<div class="ap-bar card"><div class="row"><button class="btn small" type="button" data-s="safe">Pilih yang aman</button><button class="btn small" type="button" data-s="all">Pilih semua</button><button class="btn small" type="button" data-s="none">Kosongkan</button><span class="muted small" id="apn">0 dipilih</span></div>
       <div class="row"><label class="small">Jadwalkan yang belum bertanggal ke <input type="datetime-local" id="apwhen" style="width:auto"></label><label class="small">jarak <input type="number" id="apgap" value="60" min="0" max="10080" style="width:80px"> menit</label><button class="btn primary" type="button" id="apok" disabled>Setujui terpilih</button><button class="btn" type="button" id="apno" disabled>Tolak terpilih</button></div></div>` : '<div class="card muted">Tidak ada yang menunggu persetujuan. 🎉</div>'}
-    ${SEC.map(([k, type, title, hint]) => (d[k].length ? `<section class="psec stack"><div class="psec-h"><h2><label class="row" style="gap:8px"><input type="checkbox" data-sec="${type}"> ${title} <span class="badge">${d[k].length}</span></label></h2><span class="small muted">${hint}</span></div>${d[k].map((x) => itemHtml(type, x)).join('')}</section>` : '')).join('')}
+    ${SEC.map(([k, type, title, hint]) => (show(d[k]).length ? `<section class="psec stack"><div class="psec-h"><h2><label class="row" style="gap:8px"><input type="checkbox" data-sec="${type}"> ${title} <span class="badge">${show(d[k]).length}</span></label></h2><span class="small muted">${hint}</span></div>${show(d[k]).map((x) => itemHtml(type, x)).join('')}</section>` : '')).join('')}
     ${!d.can_posts ? '<div class="small muted">Post Threads dan konten Instagram hanya tampil untuk peran manager ke atas.</div>' : ''}`;
     sync();
   };
