@@ -321,12 +321,12 @@ export async function oppReply(brand, { username, text, keyword, knowledge, maxC
   } else out = await viaClaude();
   return parseJson(out);
 }
-export async function aiReply(brand, { platform, kind, username, text, postText, knowledge, storeFacts, maxChars }) {
+export async function aiReply(brand, { platform, kind, username, text, postText, thread, knowledge, storeFacts, maxChars }) {
   const where = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' }[platform] || platform;
   const kindLabel = { reply: 'reply pada post kami', mention: 'post yang me-mention kami', comment: 'komentar pada post kami', dm: 'pesan langsung (DM)' }[kind] || kind;
   const system = `${REPLY_RULES}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}${storeFacts ? `\n\n${storeFacts}` : ''}`;
   const user = `Platform: ${where}. Jenis: ${kindLabel}. Maksimal ${maxChars} karakter.
-${postText ? `Konteks post kami: """${String(postText).slice(0, 600)}"""\n` : ''}Dari @${String(username || 'anonim').slice(0, 60)}:
+${postText ? `Konteks post kami: """${String(postText).slice(0, 600)}"""\n` : ''}${thread ? `Utas sebelumnya (urut waktu; baca seluruhnya. Pesan audiens di bawah mungkin hanya jawaban singkat atas pilihan/pertanyaan kami di utas ini, jadi pahami maksudnya dari utas, bukan dari pesan itu saja):\n<utas>\n${String(thread).slice(0, 1800)}\n</utas>\n` : ''}Dari @${String(username || 'anonim').slice(0, 60)}:
 <pesan_audiens>
 ${String(text).slice(0, 1200)}
 </pesan_audiens>`;
