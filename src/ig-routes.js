@@ -31,7 +31,7 @@ export function validateIgPost(b, { partial = false, allowEmpty = false } = {}) 
         if (kind === 'story' && m.length !== 1) return 'Story harus tepat satu foto atau video.';
         if (kind === 'feed' && m.length === 1 && I.isVideoUrl(m[0])) return 'Video tunggal dipublikasikan sebagai Reels. Ubah jenis konten ke Reels.';
         const bad = m.find((u) => !I.isVideoUrl(u) && !isJpeg(u));
-        if (bad) return 'Instagram hanya menerima foto JPEG (.jpg). Konversi PNG/WEBP/GIF ke JPG dulu.';
+        if (bad) return 'Instagram hanya menerima foto JPG/PNG (PNG otomatis dikonversi). WEBP/GIF belum didukung, simpan ulang sebagai JPG atau PNG.';
       }
     }
   }
@@ -191,6 +191,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
     const media = Array.isArray(b.media_urls) ? b.media_urls : [];
     if (media.length < 1 || media.length > 10) return bad(res, 'Pilih 1-10 media (satu slide per media).');
     const sl = slotOf({ start: b.scheduled_at, interval_minutes: b.interval_minutes ?? 5 }); if (sl.error || !b.scheduled_at) return bad(res, sl.error || 'Tentukan jadwal tayang slide pertama.');
+    try { media.splice(0, media.length, ...M.jpgUrls(media)); } catch (e) { return bad(res, e.message, e.status || 400); }
     for (const u of media) { const err = validateIgPost({ kind: 'story', media_urls: [u] }); if (err) return bad(res, err); }
     const status = b.submit ? 'pending_approval' : 'draft'; const ids = [];
     media.forEach((u, i) => {
@@ -205,6 +206,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
   api.post('/ig/posts', need('editor'), gate('claude_create'), claudeCap, (req, res) => {
     const b = req.body || {};
     if (!brandOr404(b.brand_id)) return bad(res, 'Brand tidak ditemukan.', 404);
+    try { if (Array.isArray(b.media_urls)) b.media_urls = M.jpgUrls(b.media_urls); } catch (e) { return bad(res, e.message, e.status || 400); }
     const err = validateIgPost({ ...b, kind: b.kind || 'feed' }, { allowEmpty: true });
     if (err) return bad(res, err);
     const id = uid();
@@ -220,6 +222,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
     if (['published', 'publishing'].includes(p.status)) return bad(res, 'Konten yang sudah terbit tidak bisa diedit.');
     if (req.user.role === 'editor' && p.created_by !== req.user.id) return bad(res, 'Editor hanya bisa mengedit konten buatannya sendiri.', 403);
     const b = req.body || {};
+    try { if (Array.isArray(b.media_urls)) b.media_urls = M.jpgUrls(b.media_urls); } catch (e) { return bad(res, e.message, e.status || 400); }
     const merged = { kind: b.kind ?? p.kind, caption: b.caption ?? p.caption, media_urls: b.media_urls ?? JSON.parse(p.media_urls), scheduled_at: b.scheduled_at };
     const err = validateIgPost(merged, { allowEmpty: ['draft', 'failed'].includes(p.status) });
     if (err) return bad(res, err);

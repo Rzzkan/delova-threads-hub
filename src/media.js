@@ -9,6 +9,8 @@ import dns from 'node:dns';
 import https from 'node:https';
 import http from 'node:http';
 import net from 'node:net';
+import { PNG } from 'pngjs';
+import jpeg from 'jpeg-js';
 import { all, get, run, now, db } from './db.js';
 
 export const MEDIA_DIR = path.resolve(process.env.DATA_DIR || 'data', 'media');
@@ -47,6 +49,39 @@ export function sniff(buf) {
   if (buf.length >= 12 && buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
   if (buf.length >= 12 && buf.subarray(4, 8).toString('latin1') === 'ftyp') return buf.subarray(8, 12).toString('latin1').startsWith('qt') ? 'video/quicktime' : 'video/mp4';
   return null;
+}
+
+/** PNG -> JPG (Instagram hanya menerima JPEG). Transparansi diratakan di atas putih. Baris media diganti. */
+export function pngToJpg(row) {
+  if (!row || row.mime !== 'image/png') return row;
+  const src = path.join(MEDIA_DIR, row.name);
+  let png;
+  try { png = PNG.sync.read(fs.readFileSync(src)); } catch { throw Object.assign(new Error('PNG tidak bisa dibaca. Coba simpan ulang sebagai JPG.'), { status: 415 }); }
+  if (png.width * png.height > 40e6) throw Object.assign(new Error('Resolusi PNG terlalu besar (maks 40 megapiksel).'), { status: 413 });
+  const d = png.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3];
+    if (a < 255) { d[i] = (d[i] * a + 255 * (255 - a)) / 255 | 0; d[i + 1] = (d[i + 1] * a + 255 * (255 - a)) / 255 | 0; d[i + 2] = (d[i + 2] * a + 255 * (255 - a)) / 255 | 0; d[i + 3] = 255; }
+  }
+  const out = jpeg.encode({ data: d, width: png.width, height: png.height }, 92).data;
+  const name = `${randomBytes(16).toString('hex')}.jpg`;
+  fs.writeFileSync(path.join(MEDIA_DIR, name), out);
+  const orig = row.original_name ? String(row.original_name).replace(/\.png$/i, '.jpg') : null;
+  run('UPDATE media SET name=?, mime=?, bytes=?, original_name=? WHERE name=?', name, 'image/jpeg', out.length, orig, row.name);
+  fs.rmSync(src, { force: true });
+  return get('SELECT * FROM media WHERE name=?', name);
+}
+
+/** Ganti URL PNG milik kita menjadi JPG hasil konversi (untuk Instagram). URL lain dibiarkan. */
+export function jpgUrls(urls) {
+  return (urls || []).map((u) => {
+    const m = typeof u === 'string' && /\/media\/([a-f0-9]{32}\.png)(\?.*)?$/.exec(u);
+    if (!m) return u;
+    const row = get('SELECT * FROM media WHERE name=?', m[1]);
+    if (!row) return u;
+    const j = pngToJpg(row);
+    return u.replace(m[1], j.name);
+  });
 }
 
 export const totalBytes = () => get('SELECT COALESCE(SUM(bytes),0) AS n FROM media').n;

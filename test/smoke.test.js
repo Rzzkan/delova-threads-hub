@@ -192,3 +192,19 @@ test('Instagram Story: daftarkan slot tanggal & jam saja (tanpa foto), foto meny
   assert.equal((await api('PUT', `/api/ig/posts/${r.body[0].id}`, { media_urls: ['https://example.com/s.jpg'] })).status, 200);
   assert.equal((await api('POST', `/api/ig/posts/${r.body[0].id}/submit`)).body.status, 'pending_approval');
 });
+
+test('Upload PNG diterima; untuk Instagram otomatis jadi JPG (transparansi diratakan putih)', async () => {
+  const { PNG } = await import('pngjs');
+  const png = new PNG({ width: 4, height: 4 }); png.data.fill(0); // transparan penuh
+  const buf = PNG.sync.write(png);
+  const up = async (q) => { const r = await fetch(base + '/api/media' + q, { method: 'POST', headers: { 'content-type': 'image/png', 'x-requested-with': 'hub', cookie, 'x-filename': 'a.png' }, body: buf }); return { status: r.status, body: await r.json() }; };
+  const plain = await up('?brand=kids');
+  assert.equal(plain.status, 201); assert.match(plain.body.name, /\.png$/, 'Threads tetap menerima PNG apa adanya');
+  const j = await up('?as=jpg&brand=kids');
+  assert.equal(j.status, 201); assert.match(j.body.name, /\.jpg$/); assert.equal(j.body.mime, 'image/jpeg');
+  const get1 = await fetch(`${base}/media/${j.body.name}`); const out = Buffer.from(await get1.arrayBuffer());
+  assert.deepEqual([...out.subarray(0, 3)], [0xff, 0xd8, 0xff]);
+  // PNG yang sudah terlanjur diunggah juga dikonversi saat dipasang ke konten Instagram
+  const c = await api('POST', '/api/ig/posts', { brand_id: 'kids', kind: 'feed', caption: 'x', media_urls: [plain.body.url.replace('http://localhost', 'https://localhost')] });
+  assert.equal(c.status, 201); assert.match(c.body.media_urls[0], /\.jpg$/);
+});

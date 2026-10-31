@@ -476,7 +476,7 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
   const [allRows, lib] = await Promise.all([api('GET', `/api/ig/posts?brand=${bid}`), can('editor') ? api('GET', '/api/media?limit=40').catch(() => []) : []]);
   const rows = allRows.filter((p) => (SM ? p.kind === 'story' : p.kind !== 'story'));
   const cntBy = (st) => rows.filter((p) => p.status === st).length;
-  const libOk = lib.filter((m) => m.free && (m.mime === 'image/jpeg' || m.mime.startsWith('video/')));
+  const libOk = lib.filter((m) => m.free && (m.mime === 'image/jpeg' || m.mime === 'image/png' || m.mime.startsWith('video/')));
   let editing = null;
   const isVid = (u) => /\.(mp4|mov)(\?|$)/i.test(u);
   body.innerHTML = `${can('editor') ? `<div class="row between"><b>${rows.length} ${SM ? 'slide Story' : 'konten'} · ${esc(cur.name)}</b><span class="row">${SM ? '<button class="btn" id="slotb" type="button">Daftarkan slot jadwal</button>' : ''}<button class="btn primary" id="newc" type="button">${SM ? 'Buat Story' : 'Buat konten'}</button></span></div>
@@ -490,8 +490,8 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
     <div id="storyhint" class="banner hidden"><b>Story:</b> caption tidak ditampilkan Instagram di Story, jadi taruh teks langsung di gambar (rasio 9:16 terbaik). Pilih beberapa media untuk membuat <b>rangkaian Story</b>: tiap media jadi satu slide yang tayang berurutan.<label class="row" style="margin-top:8px"><input type="checkbox" id="series"> Pecah jadi rangkaian Story, jarak antar slide <input type="number" id="gap" value="5" min="1" max="1440" style="width:80px;flex:none"> menit</label></div>
     <label>Caption <textarea id="cap" style="min-height:110px" placeholder="Tulis caption. Maks 2200 karakter dan 30 hashtag."></textarea></label>
     <div class="counter" id="ccnt">0/2200 · 0/30 hashtag</div>
-    <div class="stack" style="gap:8px"><span class="lbl">Foto / video <span class="muted small">(Instagram hanya menerima foto JPG; video MP4/MOV. Boleh dikosongkan untuk draft; wajib ada sebelum diajukan atau dijadwalkan)</span></span>
-      <div id="idrop" class="dropzone" tabindex="0"><input id="ifile" type="file" multiple accept="image/jpeg,video/mp4,video/quicktime" hidden /><b>Klik atau seret file ke sini</b><span class="small muted">Disimpan sementara, dihapus 24 jam setelah terbit</span></div>
+    <div class="stack" style="gap:8px"><span class="lbl">Foto / video <span class="muted small">(foto JPG atau PNG (PNG otomatis jadi JPG); video MP4/MOV. Boleh dikosongkan untuk draft; wajib ada sebelum diajukan atau dijadwalkan)</span></span>
+      <div id="idrop" class="dropzone" tabindex="0"><input id="ifile" type="file" multiple accept="image/jpeg,image/png,video/mp4,video/quicktime" hidden /><b>Klik atau seret file ke sini</b><span class="small muted">Disimpan sementara, dihapus 24 jam setelah terbit</span></div>
       ${libOk.length ? `<div class="small muted">Atau pilih dari Foto Sementara:</div><div class="thumbs lib">${libOk.slice(0, 12).map((m) => `<button type="button" class="thumb pick-lib" data-url="${esc(m.url)}" title="${esc(m.original_name || m.name)}">${m.mime.startsWith('video/') ? `<video src="${esc(m.url)}" muted preload="metadata"></video>` : `<img src="${esc(m.url)}" alt="" loading="lazy" />`}</button>`).join('')}</div>` : ''}
       <div id="ithumbs" class="thumbs"></div>
       <details><summary class="small muted">Tempel URL sendiri (HTTPS publik, satu per baris)</summary><textarea id="imedia" style="min-height:64px"></textarea></details></div>
@@ -525,12 +525,12 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
   // Upload foto langsung ke slot (tanpa membuka form)
   body.addEventListener('click', (e) => {
     const ub = e.target.closest('[data-upl]'); if (!ub) return;
-    const id = ub.closest('tr').dataset.id; const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/jpeg,video/mp4,video/quicktime';
+    const id = ub.closest('tr').dataset.id; const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/jpeg,image/png,video/mp4,video/quicktime';
     inp.onchange = () => busy(ub, async () => {
       const f = inp.files[0]; if (!f) return;
-      const r = await fetch(`/api/media?brand=${bid}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
+      const r = await fetch(`/api/media?as=jpg&brand=${bid}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
       const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Gagal mengunggah.');
-      if (!/\.(jpg|mp4|mov)$/.test(j.name)) throw new Error('Instagram hanya menerima JPG, MP4, atau MOV.');
+      if (!/\.(jpg|mp4|mov)$/.test(j.name)) throw new Error('Instagram hanya menerima JPG/PNG, MP4, atau MOV.');
       await api('PUT', `/api/ig/posts/${id}`, { media_urls: [j.url] }); toast('Foto terpasang. Sekarang ajukan atau setujui slot ini.'); route();
     });
     inp.click();
@@ -543,10 +543,10 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
   const send = async (files) => {
     const box = $c('#idrop'); box.classList.add('busy');
     for (const f of files) {
-      const r = await fetch(`/api/media?brand=${bid}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
+      const r = await fetch(`/api/media?as=jpg&brand=${bid}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { toast(`${f.name}: ${j.error || 'gagal diunggah'}`, true); continue; }
-      if (!/\.(jpg|mp4|mov)$/.test(j.name)) { toast(`${f.name}: Instagram hanya menerima JPG, MP4, atau MOV.`, true); continue; }
+      if (!/\.(jpg|mp4|mov)$/.test(j.name)) { toast(`${f.name}: Instagram hanya menerima JPG/PNG, MP4, atau MOV.`, true); continue; }
       $c('#imedia').value = [...lines(), j.url].join('\n'); paint();
     }
     box.classList.remove('busy'); $c('#ifile').value = '';

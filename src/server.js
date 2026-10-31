@@ -887,7 +887,8 @@ export function createApp() {
   // Unggah mentah (body = isi file). Nama asli di header x-filename, akun di ?brand=
   api.post('/media', humanOnly, need('editor'), async (req, res) => {
     const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    const row = await M.saveUpload(req, { mime, originalName: decodeURIComponent(String(req.headers['x-filename'] || '')), brandId: String(req.query.brand || '') || null, userId: req.user.id });
+    let row = await M.saveUpload(req, { mime, originalName: decodeURIComponent(String(req.headers['x-filename'] || '')), brandId: String(req.query.brand || '') || null, userId: req.user.id });
+    if (req.query.as === 'jpg') row = M.pngToJpg(row);
     A(req, 'media.uploaded', { name: row.name, bytes: row.bytes });
     res.status(201).json({ name: row.name, url: M.urlFor(baseUrl(), row.name), mime: row.mime, bytes: row.bytes, expires: 'Dihapus otomatis 24 jam setelah post terbit.' });
   });
