@@ -155,7 +155,7 @@ const ROUTES = [
   ['dashboard', 'Dashboard', 'viewer', 'Menu'], ['compose', 'Tulis Post', 'editor', 'Menu'], ['media', 'Foto Sementara', 'viewer', 'Menu'], ['queue', 'Antrean & Approval', 'viewer', 'Menu'], ['approvals', 'Pusat Persetujuan', 'editor', 'Menu'],
   ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['whatsapp', 'WhatsApp', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['katalog', 'Katalog Meta', 'manager', 'Riset & Kolaborasi'], ['embed', 'Embed Post', 'editor', 'Riset & Kolaborasi'], ['peluang', 'Peluang Engage', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
-  ['brands', 'Brand & Akun', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
+  ['brands', 'Pengetahuan Brand', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
   ['akun', 'Akun Terhubung', 'manager', 'Pengaturan'], ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
 ];
 const VIEWS = {};
@@ -644,7 +644,7 @@ IGV.akun = async ({ st, body }) => {
 };
 
 /* ---------- Auto Reply & Webhook ---------- */
-const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['keyword', 'Aturan keyword', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['pengetahuan', 'Pengetahuan brand', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
+const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 /** Tombol "Saran AI": model LLM terpilih + aturan brand + Pengetahuan brand + data produk delova.id. Hanya mengisi kotak balasan; manusia yang mengirim. */
 const aiBtn = () => (health.ai && can('editor') ? '<button type="button" class="btn small" data-ai title="Dibuat dengan model AI terpilih, mengikuti brand voice dan Pengetahuan brand">✨ Saran AI</button>' : '');
@@ -668,7 +668,9 @@ const AR_KIND = { reply: 'Reply', mention: 'Mention', comment: 'Komentar', dm: '
 const PLAT = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' };
 
 VIEWS.autoreply = async (v) => {
-  const q = params(); const cfg = await api('GET', '/api/auto/config');
+  const q = params();
+  if (['keyword', 'aturan', 'pengetahuan'].includes(q.get('tab'))) { location.replace(`#/brands?${q.toString()}`); return; } // pindah ke Pengetahuan Brand
+  const cfg = await api('GET', '/api/auto/config');
   const tab = AR_TABS.some((t) => t[0] === q.get('tab')) ? q.get('tab') : 'inbox';
   const nav = (t) => `#/autoreply?tab=${t}`;
   const open = (cfg.stats.pending || 0) + (cfg.stats.failed || 0);
@@ -723,7 +725,7 @@ ARV.aturan = async ({ cfg, body }) => {
       <label>Mode<select name="mode" ${can('manager') ? '' : 'disabled'}><option value="draft" ${r.mode === 'draft' ? 'selected' : ''}>Draft: tinjau dulu (disarankan)</option><option value="auto" ${r.mode === 'auto' ? 'selected' : ''} ${can('admin') || r.mode === 'auto' ? '' : 'disabled'}>Auto: kirim sendiri bila aman ${can('admin') ? '' : '(admin)'}</option></select></label>
       <div class="chips">${(p === 'threads' ? ['reply', 'mention'] : p === 'whatsapp' ? ['dm'] : ['comment', 'mention', 'dm']).map((k) => `<label class="chip"><input type="checkbox" name="k_${k}" ${r.kinds.includes(k) ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> ${AR_KIND[k]}</label>`).join('')}</div>
       <label>Maks balasan otomatis per jam<input type="number" name="hourly_cap" min="1" max="200" value="${r.hourly_cap}" ${can('manager') ? '' : 'disabled'}></label>
-      <div class="small muted">Pengetahuan: <a href="#/autoreply?tab=pengetahuan&b=${b.id}"><b>${r.knowledge ? r.knowledge.split('\n').filter((x) => x.startsWith('- ')).length : 0} butir aktif</b></a> untuk platform ini (kelola di tab Pengetahuan brand).</div>
+      <div class="small muted">Pengetahuan: <a href="#/brands?tab=pengetahuan&b=${b.id}"><b>${r.knowledge ? r.knowledge.split('\n').filter((x) => x.startsWith('- ')).length : 0} butir aktif</b></a> untuk platform ini (kelola di tab Pengetahuan brand).</div>
       ${can('manager') ? `<div class="row"><button class="btn primary small">Simpan</button>${p === 'instagram' && ok ? '<button type="button" class="btn small" data-sub="1">Daftarkan webhook akun ini</button>' : ''}</div>` : ''}</form>`; }).join('')).join('')}</div>
   ${can('manager') ? `<form id="tf" class="card stack"><h3>Uji coba (mode simulasi)</h3><p class="small muted">Menyuntik event palsu lewat jalur yang sama dengan webhook asli, tanpa mengirim apa pun ke Threads/Instagram. Hanya tersedia saat mode simulasi.</p>
     <div class="grid g4"><label>Brand<select name="brand_id">${cfg.brands.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></label>
@@ -751,7 +753,7 @@ ARV.pengetahuan = async ({ cfg, body, q }) => {
   const nowIso = new Date().toISOString();
   const expired = (e) => e.expires_at && e.expires_at < nowIso;
   const shown = d.items.filter((e) => (fc === 'all' || e.category === fc) && (fp === 'all' || !e.platforms.length || e.platforms.includes(fp)) && (fs === 'all' || (fs === 'on' ? e.active && !expired(e) : !e.active || expired(e))));
-  const nav = (o) => { const n = { b: bid, c: fc, p: fp, s: fs, ...o }; return `#/autoreply?tab=pengetahuan&b=${n.b}&c=${n.c}&p=${n.p}&s=${n.s}`; };
+  const nav = (o) => { const n = { b: bid, c: fc, p: fp, s: fs, ...o }; return `#/brands?tab=pengetahuan&b=${n.b}&c=${n.c}&p=${n.p}&s=${n.s}`; };
   const catOpts = (sel) => Object.entries(d.categories).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(v)}</option>`).join('');
   const platBoxes = (sel = []) => d.platforms.map((p) => `<label class="chip"><input type="checkbox" name="pl_${p}" ${sel.includes(p) ? 'checked' : ''}> ${PLAT[p]}</label>`).join('');
   const pickPl = (el) => d.platforms.filter((p) => el.elements[`pl_${p}`]?.checked);
@@ -833,7 +835,7 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
   <div class="card stack"><h3>Langkah pemasangan</h3><ol class="small" style="padding-left:18px;display:grid;gap:6px">
     <li><b>Threads:</b> Meta for Developers → aplikasi Threads → <i>Webhooks</i> → objek <b>Threads</b> → isi Callback URL &amp; Verify token di atas → <i>Verify and save</i> → subscribe ke field <code>replies</code> dan <code>mentions</code>. Izin <code>threads_read_replies</code>, <code>threads_manage_replies</code>, dan <code>threads_manage_mentions</code> harus aktif (Advanced Access untuk akun non-tester).</li>
     <li><b>Instagram:</b> aplikasi Instagram → <i>API setup with Instagram login</i> → <i>Configure webhooks</i> → isi Callback URL &amp; Verify token → subscribe ke <code>comments</code>, <code>messages</code>, <code>mentions</code>. Lalu di tab <i>Aturan per akun</i> klik <i>Daftarkan webhook akun ini</i> untuk tiap brand.</li>
-    <li>Pastikan <b>App Secret</b> aplikasi sudah diisi (menu Brand &amp; Akun untuk Threads, menu Instagram → Akun untuk Instagram). Permintaan tanpa tanda tangan HMAC yang cocok ditolak.</li>
+    <li>Pastikan <b>App Secret</b> aplikasi sudah diisi (Pengaturan → Akun Terhubung untuk Threads maupun Instagram). Permintaan tanpa tanda tangan HMAC yang cocok ditolak.</li>
     <li>Isi daftar <b>Pengetahuan brand</b> tiap brand, nyalakan saklar utama, aktifkan aturan dengan mode <b>Draft</b>, lalu pantau Kotak masuk beberapa hari sebelum mempertimbangkan mode Auto.</li></ol>
     <p class="small muted">Webhook Threads dan Instagram memakai tanda tangan <code>X-Hub-Signature-256</code>. Event dicatat 30 hari lalu dibersihkan otomatis (kecuali yang masih menunggu).</p></div>`;
   for (const w of cfg.webhooks) { const el = $('#u_' + w.platform, body); if (el) el.value = w.url; }
@@ -1446,9 +1448,20 @@ const checkPerm = (btn, id, brand) => busy(btn, async () => {
   $('[data-pnote]', box).innerHTML = bad_.length ? `Ditolak/gagal:<br>${bad_.map(esc).join('<br>')}` : 'Semua izin yang bisa diuji berhasil dipakai (✓ hijau).';
   toast(bad_.length ? `${bad_.length} izin bermasalah, lihat detail.` : 'Cek izin selesai.', bad_.length > 0);
 });
+const BR_TABS = [['profil', 'Profil & brand voice'], ['keyword', 'Aturan keyword'], ['aturan', 'Aturan per akun'], ['pengetahuan', 'Pengetahuan brand']];
 VIEWS.brands = async (v) => {
+  const q = params(); const tab = BR_TABS.some((t) => t[0] === q.get('tab')) ? q.get('tab') : 'profil';
+  v.innerHTML = `<div class="page-head"><h1>Pengetahuan Brand</h1><p class="muted">Semua yang Claude ketahui tentang brand: profil &amp; brand voice, aturan balasan keyword, aturan auto reply per akun, dan daftar pengetahuan (fakta) yang jadi sumber jawaban. Inbox &amp; webhook ada di menu Auto Reply.</p></div>
+  <div class="tabs">${BR_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="#/brands?tab=${t[0]}">${t[1]}</a>`).join('')}</div><div id="brbody" class="stack" style="margin-top:14px"></div>`;
+  const body = $('#brbody', v);
+  try {
+    if (tab === 'profil') await brandsProfile(body);
+    else { const cfg = await api('GET', '/api/auto/config'); await ARV[tab]({ cfg, body, q }); }
+  } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+};
+async function brandsProfile(v) {
   brands = await api('GET', '/api/brands');
-  v.innerHTML = `<h1>Brand &amp; Akun</h1><p class="muted">Profil dan brand voice tiap brand, dipakai Claude (di dashboard maupun via MCP) setiap menulis untuk akun tersebut. Koneksi akun Threads dan Instagram ada di Pengaturan → Akun Terhubung.</p>
+  v.innerHTML = `<p class="muted">Profil dan brand voice tiap brand, dipakai Claude (di dashboard maupun via MCP) setiap menulis untuk akun tersebut. Koneksi akun Threads dan Instagram ada di Pengaturan → Akun Terhubung.</p>
   <div class="grid g2">${brands.map((b) => `<form class="card stack bcard" style="--c:${b.color}" data-id="${b.id}">
     <div class="row between"><h2>${esc(b.name)}</h2><span class="row">${b.connected ? `<span class="badge s-published">Threads @${esc(b.username || '')}</span>` : '<span class="badge">Threads belum terhubung</span>'}${can('manager') ? '<a class="btn small" href="#/akun">Kelola koneksi</a>' : ''}</span></div>
     <label>Deskripsi<input name="description" value="${esc(b.description)}" ${can('manager') ? '' : 'disabled'}></label>
@@ -1463,7 +1476,7 @@ VIEWS.brands = async (v) => {
   v.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('form').dataset.id;
     if (x === 'hist') return busy(e.target, () => showHistory(id));
   };
-};
+}
 
 /* ---------- Akun Terhubung (Pengaturan): koneksi Threads dan Instagram dipisah ---------- */
 const AKUN_TABS = [['threads', 'Threads'], ['instagram', 'Instagram']];
@@ -1629,7 +1642,7 @@ VIEWS.meta = async (v) => {
     <li>Di pengaturan use case Threads, salin <b>Threads App ID</b> dan <b>Threads App Secret</b> (bukan App ID Facebook utama).</li>
     <li>Isi <b>Redirect Callback URLs</b> (juga Uninstall dan Delete callback bila diminta) dengan alamat di atas.</li>
     <li>Tambahkan tiap akun Threads sebagai <b>Threads Tester</b> selama aplikasi belum Live, lalu terima undangannya di pengaturan akun Threads masing-masing.</li>
-    <li>Kembali ke sini, simpan, ubah mode ke <b>Live</b>, lalu buka menu <b>Brand &amp; Akun</b> dan klik <b>Hubungkan ke Threads</b> untuk tiap akun.</li></ol>
+    <li>Kembali ke sini, simpan, ubah mode ke <b>Live</b>, lalu buka <b>Pengaturan → Akun Terhubung</b> dan klik <b>Hubungkan ke Threads</b> untuk tiap akun.</li></ol>
     <p class="small muted">Izin yang diminta: ${m.scopes.map((x) => `<code>${esc(x)}</code>`).join(', ')}.</p></div>`;
   v.onsubmit = (e) => {
     e.preventDefault(); const f = e.target;
