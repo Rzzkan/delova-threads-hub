@@ -128,10 +128,12 @@ export function mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 }) {
   /* ---------------- Pusat persetujuan massal ---------------- */
   // Kebutuhan gambar/ilustrasi: Instagram selalu wajib; Threads opsional, tetapi teks bisa menandai butuh foto/ilustrasi.
   const HINT = /\[(?:foto|gambar|visual|ilustrasi|video|image|photo)[^\]]*\]|\((?:foto|gambar|visual|ilustrasi)\s*:[^)]*\)|\b(?:ilustrasi|foto produk|lampirkan (?:foto|gambar)|tambahkan (?:foto|gambar)|sertakan (?:foto|gambar))\b/i;
+  const PRODUCT = /\b(?:dress|kebaya|batik|gamis|outfit|ootd|koleksi|produk|link bio|ready stok|preorder|promo|diskon|flash sale|hijab|scarf|pashmina|tunik|abaya|set(?:elan)?|motif|bahan|ukuran|harga)\b/i;
   const visualOf = (igKind, text, urls) => {
     const have = urls.length; const hint = String(text || '').match(HINT)?.[0] || null;
-    const need = igKind ? 'wajib' : hint ? 'disarankan' : 'opsional';
-    return { need, have, hint, missing: have === 0 && need !== 'opsional' };
+    const prod = !igKind && !hint ? String(text || '').match(PRODUCT)?.[0] || null : null;
+    const need = igKind ? 'wajib' : hint || prod ? 'disarankan' : 'opsional';
+    return { need, have, hint, product: prod, urls: urls.slice(0, 4), missing: have === 0 && need !== 'opsional' };
   };
   api.get('/approvals', need('editor'), (req, res) => {
     const m = RANK[req.user.role] >= RANK.manager;

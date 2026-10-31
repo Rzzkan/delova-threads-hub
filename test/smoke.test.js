@@ -156,3 +156,12 @@ test('Instagram: Claude (token) bisa buat & ajukan draft; setujui/publish tetap 
   assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/publish-now`, {}, h)).status, 403);
   cookie = saved;
 });
+
+test('persetujuan: post Threads yang membahas produk tanpa gambar diberi info "disarankan pakai gambar"', async () => {
+  const c = await api('POST', '/api/posts', { brand_id: 'kids', text: 'Hitam atau Putih, Moms? Satu dress, dua cerita. DRESS BELLE ada di link bio.' });
+  assert.equal(c.status, 201);
+  await api('POST', `/api/posts/${c.body.id}/submit`);
+  const d = (await api('GET', '/api/approvals')).body;
+  const x = d.posts.find((p) => p.id === c.body.id);
+  assert.equal(x.visual.need, 'disarankan'); assert.equal(x.visual.missing, true); assert.match(x.visual.product, /dress|link bio/i);
+});
