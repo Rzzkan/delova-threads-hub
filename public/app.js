@@ -243,7 +243,7 @@ VIEWS.compose = async (v) => {
     <div class="card stack"><h2>Asisten Claude</h2>
       ${health.ai ? `<label>Brief / topik<textarea id="brief" style="min-height:80px" placeholder="mis. Kebaya brokat warna sage baru restock, cocok untuk kondangan siang"></textarea></label>
       <div class="row"><select id="n" style="width:auto"><option>5</option><option>7</option><option>10</option></select> opsi
-      <button class="btn primary" id="gen">Minta ide dari Claude</button></div>
+      <button class="btn primary" id="gen">Minta ide dari AI</button></div>
       <div class="row"><input id="instr" placeholder="Instruksi perbaikan (opsional), mis. lebih singkat & lebih lucu" /><button class="btn" id="imp">Perbaiki teks di kiri</button></div>
       <div id="vars" class="stack"></div>` : '<p class="muted">Aktifkan dengan mengisi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>. Sementara itu Anda tetap bisa menulis manual, atau minta Claude lewat MCP (menu Hubungkan Claude).</p>'}
     </div></div>`;
@@ -309,7 +309,7 @@ VIEWS.compose = async (v) => {
     $('#vars').addEventListener('click', (e) => { const i = e.target.dataset.use; if (i !== undefined) { text.value = last[i].text; if (last[i].topic_tag) $('#tag').value = last[i].topic_tag; upd(); toast('Teks dipakai. Silakan edit bila perlu.'); } });
     $('#gen').onclick = (e) => busy(e.target, async () => {
       e.target.textContent = 'Claude sedang menulis…';
-      try { show((await api('POST', '/api/ai/generate', { brand_id: $('[name=brand]').value, brief: $('#brief').value, count: $('#n').value })).variants); } finally { e.target.textContent = 'Minta ide dari Claude'; }
+      try { show((await api('POST', '/api/ai/generate', { brand_id: $('[name=brand]').value, brief: $('#brief').value, count: $('#n').value })).variants); } finally { e.target.textContent = 'Minta ide dari AI'; }
     });
     $('#imp').onclick = (e) => busy(e.target, async () => show((await api('POST', '/api/ai/improve', { brand_id: $('[name=brand]').value, text: text.value, instruction: $('#instr').value })).variants));
   }
@@ -648,7 +648,7 @@ IGV.akun = async ({ st, body }) => {
 const AR_TABS = [['threads', 'Threads', 'viewer'], ['instagram', 'Instagram', 'viewer'], ['whatsapp', 'WhatsApp', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 /** Tombol "Saran AI": model LLM terpilih + aturan brand + Pengetahuan brand + data produk delova.id. Hanya mengisi kotak balasan; manusia yang mengirim. */
-const aiBtn = () => (health.ai && can('editor') ? '<button type="button" class="btn small" data-ai title="Dibuat dengan model AI terpilih, mengikuti brand voice dan Pengetahuan brand">✨ Saran AI</button>' : '');
+const aiBtn = () => (health.ai && can('editor') ? '<button type="button" class="btn small" data-ai title="Dibuat dengan model AI terpilih, mengikuti brand voice dan Pengetahuan brand">✨ Dibantu AI</button>' : '');
 function wireAi(btn, ctx, ta, setErr, auto = false) {
   if (!btn) return;
   const run = () => busy(btn, async () => {
@@ -701,7 +701,7 @@ ARV.inbox = async ({ cfg, body, q, platform }) => {
       ${act ? `<label class="lbl">Balasan <span class="muted small">(edit bila perlu)</span><textarea class="dtxt" style="min-height:70px" placeholder="${e.draft ? '' : 'Tulis balasan manual…'}">${esc(e.draft || '')}</textarea></label>` : e.reply_text ? `<div class="quote me"><span class="small muted">Balasan terkirim:</span><br>${esc(e.reply_text)}</div>` : e.draft ? `<div class="small muted">Draf: ${esc(e.draft)}</div>` : ''}
       ${e.dm_text ? `<div class="small muted">Juga dikirim lewat DM${e.dm_status ? ` (${esc(e.dm_status)})` : ''}: “${esc(e.dm_text)}”</div>` : ''}
       ${e.used_data ? `<div class="small muted">Data produk dipakai: ${esc(e.used_data)}</div>` : ''}${e.note || e.error ? `<div class="small ${e.status === 'failed' ? 'err' : 'muted'}">${esc(e.error || e.note)}</div>` : ''}
-      <div class="row">${act && can('editor') ? '<button class="btn primary small" data-a="approve" type="button">Kirim balasan</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped', 'rejected'].includes(e.status) && cfg.ai ? '<button class="btn small" data-a="redraft" type="button">Draf ulang dengan Claude</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped'].includes(e.status) ? '<button class="btn small" data-a="reject" type="button">Tolak</button>' : ''}${e.permalink ? `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(e.permalink)}">Buka</a>` : ''}</div></div>`; }).join('')
+      <div class="row">${act && can('editor') ? '<button class="btn primary small" data-a="approve" type="button">Kirim balasan</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped', 'rejected'].includes(e.status) && cfg.ai ? '<button class="btn small" data-a="redraft" type="button">Draf ulang dengan AI</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped'].includes(e.status) ? '<button class="btn small" data-a="reject" type="button">Tolak</button>' : ''}${e.permalink ? `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(e.permalink)}">Buka</a>` : ''}</div></div>`; }).join('')
     : `<div class="card muted">Belum ada event ${PLAT[pf]} di sini. Setelah webhook terpasang, ${pf === 'threads' ? 'reply/mention' : pf === 'instagram' ? 'komentar/mention/DM' : 'pesan masuk'} baru muncul otomatis. Mode simulasi: pakai kotak uji di Pengetahuan Brand → Aturan per akun.</div>`}`;
   $('#fb').onchange = (e) => { location.hash = link('brand', e.target.value); };
   body.onclick = (e) => {
@@ -1013,7 +1013,7 @@ VIEWS.plan = async (v) => {
   <div class="card stack"><div class="grid g2"><label>Akun ${brandPick(brands[0].id)}</label><label>Jumlah hari<select id="days"><option>5</option><option selected>7</option><option>10</option><option>14</option></select></label></div>
   <label>Tujuan minggu ini<input id="goal" placeholder="mis. naikkan traffic ke Shopee untuk koleksi lebaran" /></label>
   <label>Info promo yang boleh disebut (opsional)<input id="promo" placeholder="mis. gratis ongkir min. belanja 200rb s/d Minggu" /></label>
-  <div><button class="btn primary" id="go" ${health.ai ? '' : 'disabled'}>Susun rencana dengan Claude</button> ${health.ai ? '' : '<span class="muted small">Butuh ANTHROPIC_API_KEY.</span>'}</div></div><div id="out" class="stack" style="margin-top:14px"></div>`;
+  <div><button class="btn primary" id="go" ${health.ai ? '' : 'disabled'}>Susun rencana dengan AI</button> ${health.ai ? '' : '<span class="muted small">Butuh ANTHROPIC_API_KEY.</span>'}</div></div><div id="out" class="stack" style="margin-top:14px"></div>`;
   $('#go').onclick = (e) => busy(e.target, async () => {
     e.target.textContent = 'Claude sedang menyusun…';
     try {
@@ -1032,30 +1032,27 @@ VIEWS.plan = async (v) => {
         }
         toast(`${n} draft tersimpan.`); location.hash = `#/queue?brand=${brand}&status=draft`;
       });
-    } finally { e.target.textContent = 'Susun rencana dengan Claude'; }
+    } finally { e.target.textContent = 'Susun rencana dengan AI'; }
   });
 };
 
 /* ---------- Inbox ---------- */
 VIEWS.inbox = async (v) => {
-  v.innerHTML = `<h1>Inbox Reply</h1><p class="muted">Reply terbaru pada 5 post terakhir tiap akun. Claude menyiapkan balasan, Anda yang mengirim.</p>
+  v.innerHTML = `<h1>Inbox Reply</h1><p class="muted">Reply terbaru pada 5 post terakhir tiap akun. AI menyiapkan balasan lewat tombol “Dibantu AI”, Anda yang mengirim.</p>
   <div class="row">${brandPick(brands[0].id)}<button class="btn primary" id="load">Muat reply</button></div><div id="out" class="stack" style="margin-top:14px"></div>`;
   $('#load').onclick = (e) => busy(e.target, async () => {
     const id = $('[name=brand]').value;
     const items = await api('GET', `/api/brands/${id}/replies`);
     $('#out').innerHTML = items.map((x, i) => `<div class="card stack" data-i="${i}"><div class="small muted">Pada post: “${esc(x.post_text.slice(0, 90))}…”</div>
       <div><b>@${esc(x.reply.username)}</b> ${x.reply.hide_status === 'HIDDEN' ? '<span class="badge">disembunyikan</span>' : ''}<p style="margin:.3em 0">${esc(x.reply.text)}</p></div>
-      <div class="row">${health.ai ? '<button class="btn small" data-a="sug">Saran balasan Claude</button>' : ''}${can('manager') ? '<button class="btn small" data-a="hide">Sembunyikan</button>' : ''}</div>
+      <div class="row">${health.ai ? '<button class="btn small" data-ai>✨ Dibantu AI</button>' : ''}${can('manager') ? '<button class="btn small" data-a="hide">Sembunyikan</button>' : ''}</div>
       <div class="opts stack"></div><div class="row"><textarea style="min-height:56px" class="rt" placeholder="Tulis balasan…"></textarea>${can('manager') ? '<button class="btn small primary" data-a="send">Kirim</button>' : ''}</div></div>`).join('') || '<p class="muted">Belum ada reply.</p>';
+    $$('#out [data-i]').forEach((card) => { const x = items[card.dataset.i]; wireAi($('[data-ai]', card), { brand_id: id, platform: 'threads', kind: 'reply', username: x.reply.username, text: x.reply.text, post_text: x.post_text }, $('.rt', card)); });
     $('#out').onclick = async (ev) => {
-      const a = ev.target.dataset.a; const card = ev.target.closest('[data-i]'); if (!card && !ev.target.dataset.o) return;
+      const a = ev.target.dataset.a; const card = ev.target.closest('[data-i]'); if (!card && !ev.target.dataset.o) return; if (ev.target.hasAttribute('data-ai')) return;
       if (ev.target.dataset.o) { $('.rt', ev.target.closest('[data-i]')).value = ev.target.textContent; return; }
       const x = items[card.dataset.i];
       await busy(ev.target, async () => {
-        if (a === 'sug') {
-          const r = await api('POST', '/api/ai/reply-suggestions', { brand_id: id, post_text: x.post_text, replies: [x.reply], count: 5 });
-          $('.opts', card).innerHTML = (r.suggestions[0]?.options || []).map((o) => `<button class="btn small" style="text-align:left" data-o="1">${esc(o)}</button>`).join('');
-        }
         if (a === 'hide') { await api('POST', `/api/brands/${id}/replies/${x.reply.id}/hide`, { hide: true }); toast('Disembunyikan.'); }
         if (a === 'send') { const t = $('.rt', card).value.trim(); if (!t) throw new Error('Tulis balasan dulu.'); if (!(await ui.confirm({ title: 'Kirim balasan?', message: 'Balasan tampil publik atas nama brand.', quote: t, quoteLabel: 'Balasan Anda', ok: 'Kirim balasan' }))) return; await api('POST', `/api/brands/${id}/replies/${x.reply.id}/reply`, { text: t }); toast('Balasan terkirim.'); $('.rt', card).value = ''; }
       });
@@ -1224,7 +1221,7 @@ VIEWS.trends = async (v) => {
   <form class="card stack" id="tf"><div class="grid g2"><label>Kata kunci (pisahkan koma, maks 6)<input name="kw" placeholder="kebaya, batik modern, outfit lebaran" required></label>
   <label>Periode<select name="days"><option value="3">3 hari</option><option value="7" selected>7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select></label></div>
   <div class="grid g2"><label>Akun Threads untuk mencari${brandPick(brands[0].id, 'brand')}</label><div><span class="small muted">Akun Instagram yang dianalisis</span><div class="chips" style="margin-top:6px">${brands.map((b) => `<label class="chip"><input type="checkbox" name="igb" value="${b.id}" checked> <i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}</label>`).join('')}</div></div></div>
-  <div class="row"><button class="btn primary" type="submit">Cari tren</button>${can('manager') && health.ai ? '<button type="button" class="btn" id="tai" disabled>Analisis Claude</button>' : ''}</div></form><div id="tout" class="stack" style="margin-top:14px"></div>`;
+  <div class="row"><button class="btn primary" type="submit">Cari tren</button>${can('manager') && health.ai ? '<button type="button" class="btn" id="tai" disabled>Analisis AI</button>' : ''}</div></form><div id="tout" class="stack" style="margin-top:14px"></div>`;
   const render = (d) => {
     const th = d.threads; const ig = d.instagram;
     const mx = (a, k) => Math.max(1, ...a.map((x) => x[k]));
@@ -1368,7 +1365,7 @@ VIEWS.peluang = async (v) => {
   v.innerHTML = `<div class="page-head"><h1>Peluang Engage</h1><p class="muted">Cari post publik di Threads dari kata kunci, lalu balas dengan tulus. Claude menyiapkan draf yang bernilai (bukan jualan, tanpa link); <b>setiap balasan dikirim hanya setelah Anda setujui</b>, dengan batas harian agar akun aman dari penilaian spam.</p></div>
   <form class="card stack" id="osf"><div class="grid g2"><label>Akun pengirim${brandPick(bid, 'brand')}</label><label>Kata kunci <span class="muted small">(koma, maks 5)</span><input name="kw" placeholder="cari kebaya lebaran, rekomendasi batik, outfit kondangan" required></label></div>
   <div class="row"><button class="btn primary" type="submit">Cari peluang</button><span class="small muted" id="opq"></span></div></form>
-  <div class="row" style="margin-top:12px"><button class="btn small" type="button" id="oall">Pilih semua</button><button class="btn small" type="button" id="odraft">Buat draf terpilih (Claude)</button><button class="btn small primary" type="button" id="osend">Kirim terpilih</button><button class="btn small" type="button" id="oskip">Lewati terpilih</button></div>
+  <div class="row" style="margin-top:12px"><button class="btn small" type="button" id="oall">Pilih semua</button><button class="btn small" type="button" id="odraft">Buat draf terpilih (AI)</button><button class="btn small primary" type="button" id="osend">Kirim terpilih</button><button class="btn small" type="button" id="oskip">Lewati terpilih</button></div>
   <div id="opl" class="stack" style="margin-top:12px"></div>`;
   $('[name=brand]', v).onchange = (e) => { location.hash = `#/peluang?brand=${e.target.value}`; };
   $('#osf').onsubmit = (e) => { e.preventDefault(); busy($('button[type=submit]', v), async () => { const r = await api('POST', '/api/opps/scan', { brand_id: bid, keywords: e.target.elements.kw.value }); toast(`${r.added} peluang baru (${r.skipped} disaring).`); await load(); }); };
@@ -1409,7 +1406,7 @@ VIEWS.insights = async (v) => {
   const tv = $('#inbody', v); await renderThreadsInsights(tv);
 };
 async function renderThreadsInsights(v) {
-  v.innerHTML = `<h1>Insight Threads</h1><div class="row">${brandPick(brands[0].id)}<select id="days" style="width:auto"><option value="7">7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select><button class="btn primary" id="load">Tampilkan</button>${can('manager') && health.ai ? '<button class="btn" id="an">Analisis Claude</button>' : ''}</div><div id="out" class="stack" style="margin-top:14px"></div>`;
+  v.innerHTML = `<h1>Insight Threads</h1><div class="row">${brandPick(brands[0].id)}<select id="days" style="width:auto"><option value="7">7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select><button class="btn primary" id="load">Tampilkan</button>${can('manager') && health.ai ? '<button class="btn" id="an">Analisis AI</button>' : ''}</div><div id="out" class="stack" style="margin-top:14px"></div>`;
   const q = () => ({ id: $('[name=brand]').value, days: $('#days').value });
   $('#load').onclick = (e) => busy(e.target, async () => {
     const { id, days } = q(); const d = await api('GET', `/api/brands/${id}/insights?days=${days}`); const a = d.account;
@@ -1714,7 +1711,7 @@ VIEWS.research = async (v) => {
   <div class="card stack" style="margin-top:14px"><h3>Riset tersimpan</h3>
     ${saves.map((r) => `<div class="row between" data-sid="${r.id}"><span><b>${esc(r.query)}</b> <span class="small muted">${r.result.length} post · ${wib(r.created_at)}</span></span><span class="row"><button type="button" class="btn small" data-a="open">Buka</button>${can('editor') ? '<button type="button" class="btn small danger" data-a="del">Hapus</button>' : ''}</span></div>`).join('') || '<span class="muted">Belum ada riset yang disimpan.</span>'}</div>`;
   const show = () => {
-    $('#res').innerHTML = `<div class="row between"><b>${last.posts.length} post untuk "${esc(last.q)}"</b><span class="row">${can('editor') && last.posts.length ? '<button type="button" class="btn small" data-a="save">Simpan hasil</button>' : ''}${can('editor') && health.ai && last.posts.length ? '<button type="button" class="btn small primary" data-a="ai">Analisis dengan Claude</button>' : ''}</span></div>
+    $('#res').innerHTML = `<div class="row between"><b>${last.posts.length} post untuk "${esc(last.q)}"</b><span class="row">${can('editor') && last.posts.length ? '<button type="button" class="btn small" data-a="save">Simpan hasil</button>' : ''}${can('editor') && health.ai && last.posts.length ? '<button type="button" class="btn small primary" data-a="ai">Analisis dengan AI</button>' : ''}</span></div>
       ${last.posts.map(postCard).join('') || '<div class="card muted">Tidak ada hasil. Coba kata kunci lain atau perluas rentang waktu.</div>'}<div id="ai"></div>`;
   };
   $('#sf').onsubmit = (e) => {
