@@ -547,12 +547,18 @@ function igActions(p) {
 }
 
 /* ---- Komentar ---- */
+/** Bagian "Diterima lewat webhook": apa yang sudah masuk ke Hub, terlepas dari daftar API Instagram. */
+const wbEvents = (evs, kindLabel) => `<div class="card stack"><div class="row between"><b>Diterima lewat webhook (${evs.length})</b><a class="btn small" href="#/autoreply?tab=inbox&f=all">Buka Kotak masuk Auto Reply</a></div>
+  <p class="small muted">${kindLabel} yang dikirim Meta ke Hub secara real-time. Balasan &amp; persetujuan ada di Auto Reply → Kotak masuk.</p>
+  ${evs.length ? evs.map((e) => `<div class="pitem" style="border-top:1px solid var(--line,#e5e7eb);padding:8px 0"><div class="row between"><span><b>${e.author_username ? `@${esc(e.author_username)}` : `ID ${esc(e.author_id || '-')}`}</b> <span class="small muted">${esc(igTime(e.received_at))} · ${esc(e.kind)}</span></span><span class="badge">${esc(AR_STATUS[e.status] || e.status)}</span></div><div style="white-space:pre-wrap">${esc(e.text)}</div>${e.draft ? `<div class="small muted">Draf: ${esc(e.draft)}</div>` : ''}${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ''}</div>`).join('') : '<div class="small muted">Belum ada yang diterima lewat webhook. Cek Auto Reply → Webhook &amp; setup → Log penerimaan webhook untuk melihat apakah Meta mengirim sesuatu.</div>'}</div>`;
 IGV.komentar = async ({ bid, body }) => {
-  const groups = await api('GET', `/api/ig/${bid}/comments`);
+  const [d, evs] = await Promise.all([api('GET', `/api/ig/${bid}/comments?diag=1`), api('GET', `/api/ig/${bid}/webhook-events?kind=comment`).catch(() => [])]);
+  const groups = d.groups;
   const one = (c, sub = false) => `<div class="cmt ${sub ? 'sub' : ''}" data-cid="${esc(c.id)}"><div class="row between"><span><b>@${esc(c.username || '-')}</b> <span class="small muted">${esc(igTime(c.timestamp))}</span>${c.hidden ? ' <span class="badge">Disembunyikan</span>' : ''}</span>
     ${!sub ? `<span class="row"><button type="button" class="btn small" data-c="reply">Balas</button><button type="button" class="btn small" data-c="${c.hidden ? 'unhide' : 'hide'}">${c.hidden ? 'Tampilkan' : 'Sembunyikan'}</button></span>` : ''}</div>
     <div style="white-space:pre-wrap">${esc(c.text)}</div>${(c.replies || []).map((r) => one(r, true)).join('')}</div>`;
-  body.innerHTML = groups.length ? groups.map((g) => `<div class="card stack"><div class="row between"><b class="trunc" style="max-width:70%">${esc(g.media.caption || '(tanpa caption)')}</b><a class="btn small" target="_blank" rel="noopener" href="${esc(g.media.permalink)}">Buka post</a></div>${g.comments.map((c) => one(c)).join('')}</div>`).join('') : '<div class="card muted">Belum ada komentar pada post terbaru.</div>';
+  body.innerHTML = groups.length ? groups.map((g) => `<div class="card stack"><div class="row between"><b class="trunc" style="max-width:70%">${esc(g.media.caption || '(tanpa caption)')}</b><a class="btn small" target="_blank" rel="noopener" href="${esc(g.media.permalink)}">Buka post</a></div>${g.comments.map((c) => one(c)).join('')}</div>`).join('') : `<div class="card stack"><b>Belum ada komentar dari daftar API Instagram.</b><span class="small muted">${d.checked} post terbaru diperiksa.${d.errors.length ? ` <span class="err">Galat dari Instagram: ${esc(d.errors.join(' | '))}</span>` : ' API tidak mengembalikan komentar. Bila aplikasi Meta masih mode Development, API hanya menampilkan komentar dari akun yang punya role di aplikasi; komentar yang masuk lewat webhook tetap muncul di bawah.'}</span></div>`;
+  body.insertAdjacentHTML('beforeend', wbEvents(evs, 'Komentar &amp; mention'));
   body.onclick = (e) => {
     const a = e.target.dataset.c; if (!a) return; const el = e.target.closest('[data-cid]'); const id = el.dataset.cid;
     busy(e.target, async () => {
@@ -568,10 +574,10 @@ IGV.komentar = async ({ bid, body }) => {
 
 /* ---- DM ---- */
 IGV.dm = async ({ bid, body }) => {
-  const convs = await api('GET', `/api/ig/${bid}/conversations`);
+  const [convs, evs] = await Promise.all([api('GET', `/api/ig/${bid}/conversations`), api('GET', `/api/ig/${bid}/webhook-events?kind=dm`).catch(() => [])]);
   body.innerHTML = `<div class="dmgrid"><div class="card dmlist">${convs.map((c) => `<button type="button" class="dmitem" data-conv="${esc(c.id)}"><b>@${esc(c.participant.username || c.participant.id)}</b><span class="small muted trunc">${esc(c.last_message)}</span><span class="small muted">${esc(igTime(c.updated_time))}${c.can_reply ? '' : ' · jendela 24 jam habis'}</span></button>`).join('') || '<span class="muted">Belum ada percakapan.</span>'}</div>
     <div class="card dmthread" id="thread"><span class="muted">Pilih percakapan di kiri.</span></div></div>
-    <p class="small muted">Instagram hanya mengizinkan membalas dalam 24 jam sejak pesan terakhir pelanggan. Pesan tampil atas nama brand.</p>`;
+    <p class="small muted">Instagram hanya mengizinkan membalas dalam 24 jam sejak pesan terakhir pelanggan. Pesan tampil atas nama brand.</p>${wbEvents(evs, 'DM')}`;
   const open = async (id) => {
     const c = convs.find((x) => x.id === id); $$('.dmitem', body).forEach((b) => b.classList.toggle('on', b.dataset.conv === id));
     const th = $('#thread'); th.innerHTML = '<span class="muted">Memuat…</span>';

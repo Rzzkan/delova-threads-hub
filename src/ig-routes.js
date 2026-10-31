@@ -250,10 +250,20 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
   // Komentar dari beberapa post terbaru sekaligus (default 6), dikelompokkan per post.
   api.get('/ig/:brand/comments', need('editor'), ah(async (req, res) => {
     const ctx = acct(req, res); if (!ctx) return;
-    const media = (await I.listMedia(ctx.acc, ctx.brand, Math.min(Number(req.query.media) || 6, 12))).filter((m) => (m.comments_count ?? 1) > 0);
-    const out = await Promise.all(media.map(async (m) => ({ media: { id: m.id, caption: (m.caption || '').slice(0, 120), permalink: m.permalink, timestamp: m.timestamp }, comments: await I.listComments(ctx.acc, ctx.brand, m.id).catch(() => []) })));
-    res.json(out.filter((x) => x.comments.length));
+    // Tidak menyaring lewat comments_count: Instagram kadang melaporkan 0 padahal ada komentar (mis. mode Development).
+    const media = await I.listMedia(ctx.acc, ctx.brand, Math.min(Number(req.query.media) || 6, 12));
+    const errors = [];
+    const out = await Promise.all(media.map(async (m) => ({ media: { id: m.id, caption: (m.caption || '').slice(0, 120), permalink: m.permalink, timestamp: m.timestamp }, comments: await I.listComments(ctx.acc, ctx.brand, m.id).catch((e) => { errors.push(String(e.message).slice(0, 200)); return []; }) })));
+    const groups = out.filter((x) => x.comments.length);
+    if (req.query.diag) return res.json({ groups, checked: media.length, errors: [...new Set(errors)] });
+    res.json(groups);
   }));
+  // Komentar/mention/DM yang diterima lewat webhook (tersimpan di Hub), terlepas dari apa yang dikembalikan API daftar.
+  api.get('/ig/:brand/webhook-events', need('editor'), (req, res) => {
+    const b = brandOr404(req.params.brand); if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
+    const kinds = req.query.kind === 'dm' ? ['dm'] : ['comment', 'mention'];
+    res.json(all(`SELECT id,kind,author_username,author_id,text,status,note,draft,received_at FROM auto_events WHERE brand_id=? AND platform='instagram' AND kind IN (${kinds.map(() => '?').join(',')}) ORDER BY received_at DESC LIMIT 40`, b.id, ...kinds));
+  });
   api.post('/ig/:brand/comments/:id/reply', need('editor'), humanOnly, ah(async (req, res) => {
     const ctx = acct(req, res); if (!ctx) return;
     const text = String(req.body?.text || '').trim();
