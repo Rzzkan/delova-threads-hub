@@ -19,7 +19,7 @@ const ctx = () => ({
 const PRIVACY = {
   id: (c) => ({
     title: 'Kebijakan Privasi',
-    intro: `Terakhir diperbarui: ${UPDATED}. Delova Social Hub ("Hub") adalah alat internal milik Delova Wardrobe (termasuk Delova Kids, Delova Scarf, dan Delova Daily) untuk mengelola akun Threads dan Instagram milik kami sendiri oleh tim pemasaran. Hub bukan layanan publik: hanya anggota tim yang diundang admin yang dapat masuk. Kebijakan ini menjelaskan data apa yang kami proses dan bagaimana kami melindunginya.`,
+    intro: `Terakhir diperbarui: ${UPDATED}. Social Hub ("Hub") adalah alat internal milik Delova Wardrobe (termasuk Delova Kids, Delova Scarf, dan Delova Daily) untuk mengelola akun Threads dan Instagram milik kami sendiri oleh tim pemasaran. Hub bukan layanan publik: hanya anggota tim yang diundang admin yang dapat masuk. Kebijakan ini menjelaskan data apa yang kami proses dan bagaimana kami melindunginya.`,
     sections: [
       ['1. Data yang kami proses', `<ul>
         <li><b>Dari Threads/Meta, setelah akun kami mengizinkan:</b> ID dan username Threads, token akses, konten post yang kami terbitkan lewat Hub, balasan (reply) pada post tersebut (username dan isi balasan yang bersifat publik), serta metrik insight (tayangan, suka, balasan, repost, kutipan, jumlah pengikut).</li>
@@ -43,7 +43,7 @@ const PRIVACY = {
   }),
   en: (c) => ({
     title: 'Privacy Policy',
-    intro: `Last updated: ${UPDATED_EN}. Delova Social Hub ("the Hub") is an internal tool of Delova Wardrobe (including Delova Kids, Delova Scarf and Delova Daily) used by our marketing team to manage our own Threads and Instagram accounts. It is not a public service: only team members invited by an admin can sign in. This policy explains what data we process and how we protect it.`,
+    intro: `Last updated: ${UPDATED_EN}. Social Hub ("the Hub") is an internal tool of Delova Wardrobe (including Delova Kids, Delova Scarf and Delova Daily) used by our marketing team to manage our own Threads and Instagram accounts. It is not a public service: only team members invited by an admin can sign in. This policy explains what data we process and how we protect it.`,
     sections: [
       ['1. Data we process', `<ul>
         <li><b>From Threads/Meta, after our accounts authorize the app:</b> Threads user ID and username, access token, content we publish through the Hub, replies to those posts (public usernames and reply text), and insight metrics (views, likes, replies, reposts, quotes, follower count).</li>
@@ -70,7 +70,7 @@ const PRIVACY = {
 const TERMS = {
   id: (c) => ({
     title: 'Ketentuan Layanan',
-    intro: `Terakhir diperbarui: ${UPDATED}. Ketentuan ini mengatur penggunaan Delova Social Hub ("Hub"), alat internal Delova Wardrobe untuk mengelola akun Threads dan Instagram milik kami. Dengan masuk atau menggunakan Hub, Anda menyetujui ketentuan ini.`,
+    intro: `Terakhir diperbarui: ${UPDATED}. Ketentuan ini mengatur penggunaan Social Hub ("Hub"), alat internal Delova Wardrobe untuk mengelola akun Threads dan Instagram milik kami. Dengan masuk atau menggunakan Hub, Anda menyetujui ketentuan ini.`,
     sections: [
       ['1. Pengguna yang berwenang', `Hub hanya untuk anggota tim yang diundang oleh admin. Akses tidak boleh dibagikan atau dialihkan kepada pihak lain.`],
       ['2. Akun dan keamanan', `Anda bertanggung jawab menjaga kerahasiaan kata sandi dan token API Anda serta semua aktivitas yang dilakukan dengan akun Anda. Laporkan segera bila ada akses yang mencurigakan. Admin dapat menonaktifkan akun atau memutus sesi kapan saja.`],
@@ -87,7 +87,7 @@ const TERMS = {
   }),
   en: (c) => ({
     title: 'Terms of Service',
-    intro: `Last updated: ${UPDATED_EN}. These terms govern the use of Delova Social Hub ("the Hub"), an internal Delova Wardrobe tool for managing our Threads and Instagram accounts. By signing in or using the Hub you agree to these terms.`,
+    intro: `Last updated: ${UPDATED_EN}. These terms govern the use of Social Hub ("the Hub"), an internal Delova Wardrobe tool for managing our Threads and Instagram accounts. By signing in or using the Hub you agree to these terms.`,
     sections: [
       ['1. Authorized users', `The Hub is only for team members invited by an admin. Access must not be shared or transferred.`],
       ['2. Accounts and security', `You are responsible for keeping your password and API tokens confidential and for all activity under your account. Report suspicious access immediately. Admins may deactivate accounts or end sessions at any time.`],
@@ -107,9 +107,9 @@ const TERMS = {
 const DELETION = {
   id: (c) => ({
     title: 'Penghapusan Data',
-    intro: `Terakhir diperbarui: ${UPDATED}. Halaman ini menjelaskan cara memutus akses Delova Social Hub ke akun Threads atau Instagram Anda dan meminta penghapusan data.`,
+    intro: `Terakhir diperbarui: ${UPDATED}. Halaman ini menjelaskan cara memutus akses Social Hub ke akun Threads atau Instagram Anda dan meminta penghapusan data.`,
     sections: [
-      ['Opsi 1: Cabut akses dari Threads atau Instagram', `Threads: buka aplikasi atau situs Threads → <b>Settings → Account → Website permissions</b>. Instagram: buka <b>Settings → Website permissions</b> (Apps and websites). Pilih aplikasi Delova Social Hub, lalu hapus/cabut aksesnya. Setelah itu token kami tidak lagi berlaku.`],
+      ['Opsi 1: Cabut akses dari Threads atau Instagram', `Threads: buka aplikasi atau situs Threads → <b>Settings → Account → Website permissions</b>. Instagram: buka <b>Settings → Website permissions</b> (Apps and websites). Pilih aplikasi Social Hub, lalu hapus/cabut aksesnya. Setelah itu token kami tidak lagi berlaku.`],
       ['Opsi 2: Putuskan dari Hub (admin)', `Admin membuka menu <b>Brand &amp; Akun</b>, memilih akun yang dimaksud, lalu menekan <b>Putuskan</b> (untuk Instagram: menu <b>Instagram → Akun → Putuskan</b>). Token akses, ID, dan username akun itu langsung dihapus dari database.`],
       ['Opsi 3: Minta penghapusan lewat email', `Kirim email ke <a href="mailto:${esc(c.mail)}">${esc(c.mail)}</a> dengan subjek "Hapus data Threads/Instagram", sebutkan username Anda. Kami memproses permintaan secepatnya, paling lambat 30 hari. Data yang dihapus meliputi token, identitas akun, draf, post, serta komentar/DM dan draf balasan yang tersimpan di Hub. Salinan cadangan terhapus otomatis dalam sekitar 14 hari. Konten yang sudah terbit di Threads atau Instagram tetap berada di sana dan dikelola di sana.`],
       ['Opsi 4: Username Anda tercatat sebagai mention, komentar, DM, atau kandidat kolaborasi', `Jika Anda bukan pengguna Hub tetapi username Anda tercatat (misalnya karena berkomentar, mengirim DM, menyebut akun kami, atau masuk daftar calon kolaborasi), kirim email ke <a href="mailto:${esc(c.mail)}">${esc(c.mail)}</a> dengan subjek "Hapus data username" dan sebutkan username Anda. Kami menghapus catatan terkait dalam waktu paling lama 30 hari.`],
@@ -117,9 +117,9 @@ const DELETION = {
   }),
   en: (c) => ({
     title: 'Data Deletion',
-    intro: `Last updated: ${UPDATED_EN}. This page explains how to disconnect Delova Social Hub from your Threads or Instagram account and request deletion of your data.`,
+    intro: `Last updated: ${UPDATED_EN}. This page explains how to disconnect Social Hub from your Threads or Instagram account and request deletion of your data.`,
     sections: [
-      ['Option 1: Revoke access in Threads or Instagram', `Threads: open Threads → <b>Settings → Account → Website permissions</b>. Instagram: open <b>Settings → Website permissions</b> (Apps and websites). Select Delova Social Hub and remove its access. Our token then stops working.`],
+      ['Option 1: Revoke access in Threads or Instagram', `Threads: open Threads → <b>Settings → Account → Website permissions</b>. Instagram: open <b>Settings → Website permissions</b> (Apps and websites). Select Social Hub and remove its access. Our token then stops working.`],
       ['Option 2: Disconnect in the Hub (admin)', `An admin opens <b>Brand &amp; Akun</b>, selects the account and clicks <b>Putuskan</b> (Disconnect); for Instagram use <b>Instagram → Akun → Putuskan</b>. The access token, ID and username for that account are deleted from the database immediately.`],
       ['Option 3: Request deletion by email', `Email <a href="mailto:${esc(c.mail)}">${esc(c.mail)}</a> with the subject "Delete Threads/Instagram data" and include your username. We process requests as soon as possible and within 30 days. Deleted data includes the token, account identity, drafts, posts, and the comments/DMs and draft replies stored in the Hub. Backup copies expire automatically within about 14 days. Content already published on Threads or Instagram remains there and is managed there.`],
       ['Option 4: Your username is recorded as a mention, comment, DM or collaboration candidate', `If you are not a Hub user but your username is recorded (for example because you commented, sent a DM, mentioned our accounts or appear on a potential collaborator list), email <a href="mailto:${esc(c.mail)}">${esc(c.mail)}</a> with the subject "Delete username data" and include your username. We delete related records within 30 days.`],
@@ -144,8 +144,8 @@ const page = (kind, def) => {
   const id = def.id(c), en = def.en(c);
   const block = (d, lang, id_) => `<section id="${id_}" lang="${lang}"><h1>${d.title}</h1><p>${d.intro}</p>${d.sections.map(([h, b]) => `<h2>${h}</h2><p>${b.startsWith('<ul>') ? '' : b}</p>${b.startsWith('<ul>') ? b : ''}`).join('')}</section>`;
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${id.title} · Delova Social Hub</title><meta name="robots" content="index,follow"><style>${CSS}</style></head><body><main>
-<header><span class="logo">D</span><b>Delova Social Hub</b></header>
+<title>${id.title} · Social Hub</title><meta name="robots" content="index,follow"><style>${CSS}</style></head><body><main>
+<header><span class="logo">D</span><b>Social Hub</b></header>
 <nav><a href="/privacy">Kebijakan Privasi / Privacy</a><a href="/terms">Ketentuan / Terms</a><a href="/data-deletion">Penghapusan Data / Data Deletion</a></nav>
 <a class="lang" href="#id">Bahasa Indonesia</a> <a class="lang" href="#en">English</a>
 ${block(id, 'id', 'id')}${block(en, 'en', 'en')}

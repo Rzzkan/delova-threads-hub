@@ -1,7 +1,7 @@
 {
   "name": "delova-threads-hub",
   "version": "1.0.0",
-  "description": "Dashboard tim marketing Delova untuk mengelola 4 akun Threads (Wardrobe, Kids, Scarf, Daily) dengan integrasi Claude + MCP",
+  "description": "Social Hub: dashboard tim marketing Delova untuk mengelola akun Threads dan Instagram (Wardrobe, Kids, Scarf, Daily) dengan integrasi Claude + MCP",
   "type": "module",
   "private": true,
   "engines": {

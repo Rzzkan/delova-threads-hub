@@ -992,7 +992,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   bootstrapAdmin();
   const port = Number(process.env.PORT) || 3000;
   const srv = createApp().listen(port, () => {
-    console.log(`Delova Social Hub berjalan di http://localhost:${port}`);
+    console.log(`Social Hub berjalan di http://localhost:${port}`);
     console.log(`Mode Threads: ${T.isDryRun() ? 'SIMULASI (tidak memposting ke Threads asli)' : 'LIVE'} | AI: ${AI.replyAiEnabled() ? AI.replyAiLabel() : 'nonaktif (isi ANTHROPIC_API_KEY atau atur model di menu Auto Reply)'}`);
   });
   const stopScheduler = startScheduler();

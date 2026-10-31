@@ -1,4 +1,4 @@
-# Delova Threads Hub: satu container, data di volume Docker "hub-data".
+# Social Hub: satu container, data di volume Docker "hub-data".
 # Dirancang menumpang di VPS yang sudah menjalankan delova.id dan wh.delova.id:
 #  - TIDAK memakai port 80/443 (itu milik reverse proxy yang sudah ada)
 #  - hanya membuka 127.0.0.1:3100 (tidak terjangkau dari internet)

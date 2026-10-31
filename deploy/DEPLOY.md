@@ -115,7 +115,7 @@ chmod 600 .env
 ```bash
 docker compose up -d --build
 docker compose ps                       # status harus "healthy" setelah ±30 detik
-docker compose logs --tail 30 hub       # lihat "Delova Threads Hub berjalan..."
+docker compose logs --tail 30 hub       # lihat "Social Hub berjalan..."
 curl -s http://127.0.0.1:3100/api/health
 ```
 

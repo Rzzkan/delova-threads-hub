@@ -49,7 +49,7 @@ async function getCode(challenge, { allow = true } = {}) {
   const q = form({ response_type: 'code', client_id: clientId, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: 'S256', state: 'xyz', resource: `${base}/mcp` });
   const authUrl = `/oauth/authorize?${q}`;
   const a = await http('GET', authUrl, { json: false });
-  assert.match(a.text, /Masuk ke Delova Social Hub/);
+  assert.match(a.text, /Masuk ke Social Hub/);
   const bad = await http('POST', '/oauth/login', { body: form({ back: authUrl, email: 'admin@test.local', password: 'salah' }), headers: { 'content-type': 'application/x-www-form-urlencoded' }, json: false });
   assert.equal(bad.status, 401);
   const l = await http('POST', '/oauth/login', { body: form({ back: authUrl, email: 'admin@test.local', password: 'password-123' }), headers: { 'content-type': 'application/x-www-form-urlencoded' }, json: false });

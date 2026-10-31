@@ -1292,7 +1292,7 @@ VIEWS.claude = async (v) => {
 
   <div class="card stack" style="margin-top:14px"><h2>A) Konektor di claude.ai (disarankan, bisa dari web &amp; HP)</h2>
     <ol><li>Pastikan Hub ini online dengan <b>HTTPS</b> dan <code>APP_BASE_URL</code> di <code>.env</code> sama dengan alamatnya.</li>
-    <li>Di claude.ai buka <b>Settings → Connectors → Add custom connector</b>. Nama: <i>Delova Threads</i>. URL:</li></ol>
+    <li>Di claude.ai buka <b>Settings → Connectors → Add custom connector</b>. Nama: <i>Social Hub</i>. URL:</li></ol>
     <pre>${esc(url)}/mcp</pre>
     <ol start="3"><li>Klik <b>Connect</b>, masuk dengan akun Hub Anda, lalu <b>Izinkan</b>. Selesai; tiap anggota tim connect dengan akunnya sendiri sehingga peran dan jejak audit per orang.</li></ol>
     <p class="small muted">Pada paket Team/Enterprise, penambahan konektor kustom bisa dibatasi untuk Owner organisasi; cek pengaturan Connectors Anda. Jika URL masih <code>localhost</code>, konektor tidak bisa menjangkaunya: gunakan domain/tunnel HTTPS.</p></div>
