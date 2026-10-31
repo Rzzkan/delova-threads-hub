@@ -946,7 +946,7 @@ export function createApp() {
     res.sendFile(req.params.name, { root: M.MEDIA_DIR, dotfiles: 'deny', headers: { 'Content-Type': m.mime } });
   });
 
-  mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, brandOr404, baseUrl });
+  mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, gate, claudeCap, brandOr404, baseUrl });
   mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, gate });
   mountPesan(api, { need, ah, bad });
   mountTrends(api, { need, ah, bad, A });

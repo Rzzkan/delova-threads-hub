@@ -306,6 +306,44 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
     wrap(({ id }) => call('POST', `/api/posts/${id}/submit`)),
   );
 
+  server.registerTool(
+    'list_ig_posts',
+    { title: 'Daftar konten Instagram', description: 'Daftar draft/jadwal/terbit Instagram (feed, reels, story) per brand.', inputSchema: { brand: z.string().optional().describe(brandIds), status: z.string().optional().describe('draft | pending_approval | scheduled | published | failed'), limit: z.number().int().min(1).max(100).optional() } },
+    wrap(({ brand, status, limit }) => call('GET', `/api/ig/posts?${new URLSearchParams({ ...(brand ? { brand } : {}), ...(status ? { status } : {}), limit: String(limit || 30) })}`)),
+  );
+
+  server.registerTool(
+    'create_ig_post',
+    {
+      title: 'Buat draft / ajukan konten Instagram',
+      description: 'Buat draft Instagram untuk satu brand: kind feed (1-10 foto JPG, 2+ = carousel), reels (tepat 1 video MP4/MOV), atau story (1 media). Caption maks 2200 karakter, maks 30 hashtag. submit=true mengirim ke antrean approval manajer; selain itu tersimpan sebagai draft. TIDAK pernah langsung terbit. media_urls = URL HTTPS publik; foto dari luar: panggil upload_media dulu. scheduled_at = usulan jadwal ISO 8601 zona WIB.',
+      inputSchema: {
+        brand: z.string().describe(brandIds),
+        kind: z.enum(['feed', 'reels', 'story']).optional().describe('Default feed'),
+        caption: z.string().max(2200).optional(),
+        media_urls: z.array(z.string().url()).min(1).max(10),
+        scheduled_at: z.string().optional(),
+        submit: z.boolean().optional(),
+      },
+    },
+    wrap(async ({ brand, kind, caption, media_urls, scheduled_at, submit }) => {
+      const p = await call('POST', '/api/ig/posts', { brand_id: brand, kind: kind || 'feed', caption: caption || '', media_urls, scheduled_at });
+      return submit ? call('POST', `/api/ig/posts/${p.id}/submit`) : p;
+    }),
+  );
+
+  server.registerTool(
+    'update_ig_post',
+    { title: 'Edit konten Instagram', description: 'Ubah caption/jadwal/media konten Instagram yang masih draft atau menunggu approval.', inputSchema: { id: z.string(), caption: z.string().max(2200).optional(), kind: z.enum(['feed', 'reels', 'story']).optional(), media_urls: z.array(z.string().url()).max(10).optional(), scheduled_at: z.string().nullable().optional() } },
+    wrap(({ id, ...body }) => call('PUT', `/api/ig/posts/${id}`, body)),
+  );
+
+  server.registerTool(
+    'submit_ig_post',
+    { title: 'Ajukan approval Instagram', description: 'Kirim draft Instagram ke antrean approval manajer.', inputSchema: { id: z.string() } },
+    wrap(({ id }) => call('POST', `/api/ig/posts/${id}/submit`)),
+  );
+
   /* ---------- Aksi manajer (tetap dibatasi kebijakan admin) ---------- */
   if (isManager) {
     server.registerTool(
@@ -389,6 +427,36 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
         needConfirm(user_confirmed);
         return call('POST', `/api/posts/${id}/publish-now`);
       }),
+    );
+
+    server.registerTool(
+      'approve_ig_post',
+      {
+        title: 'Setujui & jadwalkan Instagram',
+        description: 'Setujui konten Instagram dan jadwalkan tayang. HANYA setelah user menyetujui eksplisit brand, caption, media, dan jadwalnya di percakapan ini. Hanya jalan jika admin mengaktifkan "Setujui & jadwalkan" di Kontrol Claude; jika ditolak server, jangan mencoba cara lain.',
+        inputSchema: { id: z.string(), scheduled_at: z.string().optional().describe('ISO 8601; kosong = pakai jadwal yang sudah ada'), user_confirmed: CONFIRM },
+      },
+      wrap(({ id, scheduled_at, user_confirmed }) => { needConfirm(user_confirmed); return call('POST', `/api/ig/posts/${id}/approve`, { scheduled_at }); }),
+    );
+
+    server.registerTool(
+      'reject_ig_post',
+      {
+        title: 'Kembalikan Instagram ke draft',
+        description: 'Kembalikan konten Instagram (menunggu approval / terjadwal) ke draft dengan catatan revisi.',
+        inputSchema: { id: z.string(), note: z.string().max(300).optional(), user_confirmed: CONFIRM },
+      },
+      wrap(({ id, note, user_confirmed }) => { needConfirm(user_confirmed); return call('POST', `/api/ig/posts/${id}/reject`, { note }); }),
+    );
+
+    server.registerTool(
+      'publish_ig_post_now',
+      {
+        title: 'Publish Instagram sekarang',
+        description: 'Terbitkan konten Instagram SEKARANG (tidak bisa ditarik dari dashboard). Hanya setelah user menyetujui eksplisit brand + isi final. Default DIMATIKAN admin; jika ditolak server, jangan mencoba cara lain.',
+        inputSchema: { id: z.string(), user_confirmed: CONFIRM },
+      },
+      wrap(({ id, user_confirmed }) => { needConfirm(user_confirmed); return call('POST', `/api/ig/posts/${id}/publish-now`); }),
     );
 
     server.registerTool(

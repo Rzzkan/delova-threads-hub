@@ -34,7 +34,7 @@ export function validateIgPost(b, { partial = false } = {}) {
   return null;
 }
 
-export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, brandOr404, baseUrl }) {
+export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, gate, claudeCap, brandOr404, baseUrl }) {
   const acct = (req, res) => {
     const b = brandOr404(req.params.brand);
     if (!b) { bad(res, 'Brand tidak ditemukan.', 404); return null; }
@@ -180,7 +180,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
     A(req, 'ig.story.series', { brand: b.brand_id, count: ids.length });
     res.status(201).json(ids.map((id) => parse(get('SELECT * FROM ig_posts WHERE id=?', id))));
   });
-  api.post('/ig/posts', need('editor'), humanOnly, (req, res) => {
+  api.post('/ig/posts', need('editor'), gate('claude_create'), claudeCap, (req, res) => {
     const b = req.body || {};
     if (!brandOr404(b.brand_id)) return bad(res, 'Brand tidak ditemukan.', 404);
     const err = validateIgPost({ ...b, kind: b.kind || 'feed' });
@@ -193,7 +193,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
     res.status(201).json(parse(get('SELECT * FROM ig_posts WHERE id=?', id)));
   });
   const load = (req, res) => { const p = get('SELECT * FROM ig_posts WHERE id=?', req.params.id); if (!p) bad(res, 'Konten tidak ditemukan.', 404); return p; };
-  api.put('/ig/posts/:id', need('editor'), humanOnly, (req, res) => {
+  api.put('/ig/posts/:id', need('editor'), gate('claude_create'), (req, res) => {
     const p = load(req, res); if (!p) return;
     if (['published', 'publishing'].includes(p.status)) return bad(res, 'Konten yang sudah terbit tidak bisa diedit.');
     if (req.user.role === 'editor' && p.created_by !== req.user.id) return bad(res, 'Editor hanya bisa mengedit konten buatannya sendiri.', 403);
@@ -216,14 +216,14 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
     A(req, 'ig.post.deleted', { id: p.id });
     res.json({ ok: true });
   });
-  api.post('/ig/posts/:id/submit', need('editor'), humanOnly, (req, res) => {
+  api.post('/ig/posts/:id/submit', need('editor'), gate('claude_create'), (req, res) => {
     const p = load(req, res); if (!p) return;
     if (!['draft', 'failed'].includes(p.status)) return bad(res, `Konten berstatus ${p.status}, tidak bisa diajukan.`);
     run("UPDATE ig_posts SET status='pending_approval', review_note=NULL, error=NULL, updated_at=? WHERE id=?", now(), p.id);
     A(req, 'ig.post.submitted', { id: p.id });
     res.json(parse(get('SELECT * FROM ig_posts WHERE id=?', p.id)));
   });
-  api.post('/ig/posts/:id/approve', need('manager'), humanOnly, (req, res) => {
+  api.post('/ig/posts/:id/approve', need('manager'), gate('claude_approve'), (req, res) => {
     const p = load(req, res); if (!p) return;
     if (!['pending_approval', 'draft', 'failed'].includes(p.status)) return bad(res, `Konten berstatus ${p.status}.`);
     const when = req.body?.scheduled_at || p.scheduled_at;
@@ -232,13 +232,13 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
     A(req, 'ig.post.approved', { id: p.id, scheduled_at: when });
     res.json(parse(get('SELECT * FROM ig_posts WHERE id=?', p.id)));
   });
-  api.post('/ig/posts/:id/reject', need('manager'), humanOnly, (req, res) => {
+  api.post('/ig/posts/:id/reject', need('manager'), gate('claude_approve'), (req, res) => {
     const p = load(req, res); if (!p) return;
     if (!['pending_approval', 'scheduled'].includes(p.status)) return bad(res, `Konten berstatus ${p.status}.`);
     run("UPDATE ig_posts SET status='draft', review_note=?, updated_at=? WHERE id=?", String(req.body?.note || '').slice(0, 300) || null, now(), p.id);
     res.json(parse(get('SELECT * FROM ig_posts WHERE id=?', p.id)));
   });
-  api.post('/ig/posts/:id/publish-now', need('manager'), humanOnly, ah(async (req, res) => {
+  api.post('/ig/posts/:id/publish-now', need('manager'), gate('claude_publish'), ah(async (req, res) => {
     const p = load(req, res); if (!p) return;
     const out = await I.publishIgPost(p.id, { allowFrom: ['draft', 'pending_approval', 'scheduled', 'failed'], userId: req.user.id });
     run('UPDATE ig_posts SET approved_by=COALESCE(approved_by,?) WHERE id=?', req.user.id, p.id);

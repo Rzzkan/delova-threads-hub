@@ -145,3 +145,14 @@ test('endpoint HTTP /mcp menolak tanpa Bearer token', async () => {
   const r = await fetch(base + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json', cookie } , body: '{}' });
   assert.ok([401, 403].includes(r.status));
 });
+
+test('Instagram: Claude (token) bisa buat & ajukan draft; setujui/publish tetap butuh manajer + saklar admin', async () => {
+  const h = { authorization: `Bearer ${editorToken}`, cookie: '' };
+  const saved = cookie; cookie = '';
+  const c = await api('POST', '/api/ig/posts', { brand_id: 'kids', kind: 'feed', caption: 'Outfit lebaran 😊', media_urls: ['https://example.com/a.jpg'] }, h);
+  assert.equal(c.status, 201);
+  assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/submit`, {}, h)).body.status, 'pending_approval');
+  assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/approve`, { scheduled_at: new Date(Date.now() + 3600e3).toISOString() }, h)).status, 403);
+  assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/publish-now`, {}, h)).status, 403);
+  cookie = saved;
+});
