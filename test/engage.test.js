@@ -149,3 +149,18 @@ test('persetujuan: info kebutuhan gambar, IG tanpa media tidak bisa disetujui', 
   assert.equal(r.json.ok, 0); assert.match(r.json.results[0].msg, /gambar\/video/);
   assert.equal(get('SELECT status FROM ig_posts WHERE id=?', a).status, 'pending_approval');
 });
+
+test('pengetahuan brand: tambah fakta tanpa duplikat, batas, gate Kontrol Claude, ganti total', async () => {
+  const add = (facts, extra = {}) => call(mgr, 'POST', '/api/auto/knowledge/kids/add', { facts, ...extra });
+  const r = await add(['Retur maksimal 7 hari sejak barang diterima', 'Pengiriman dari Yogyakarta']);
+  assert.equal(r.status, 200); assert.equal(r.json.results.length, 3); assert.ok(r.json.results.every((x) => x.added === 2));
+  const dup = await add(['retur maksimal 7 hari sejak barang diterima!', 'Gratis ongkir min. belanja 300 ribu'], { platforms: ['instagram'] });
+  assert.deepEqual([dup.json.results[0].added, dup.json.results[0].skipped], [1, 1]);
+  const g = (await call(mgr, 'GET', '/api/auto/knowledge/kids')).json;
+  assert.match(g.platforms.instagram.knowledge, /- Gratis ongkir/); assert.ok(!/Gratis ongkir/.test(g.platforms.threads.knowledge));
+  assert.equal((await add(['x'])).status, 400); assert.equal((await add([])).status, 400);
+  assert.equal((await call(ed, 'POST', '/api/auto/knowledge/kids/add', { facts: ['Fakta contoh editor'] })).status, 403);
+  const put = await call(mgr, 'PUT', '/api/auto/knowledge/kids', { knowledge: '- Satu\n- Dua', platforms: ['threads'] });
+  assert.equal(put.status, 200); assert.equal((await call(mgr, 'GET', '/api/auto/knowledge/kids')).json.platforms.threads.knowledge, '- Satu\n- Dua');
+  assert.equal((await call(mgr, 'PUT', '/api/auto/knowledge/kids', { knowledge: 'x'.repeat(6001) })).status, 400);
+});

@@ -175,6 +175,7 @@ const SETTING_DEFAULTS = {
   claude_approve: '0',   // boleh menyetujui/menjadwalkan/mengembalikan post
   claude_publish: '0',   // boleh publish langsung
   claude_reply: '0',     // boleh membalas / menyembunyikan reply
+  claude_knowledge: '1', // boleh menambah/mengubah Pengetahuan brand Auto Reply (sumber fakta balasan)
   claude_brand: '0',     // boleh mengubah profil brand (voice, pillar, hashtag, dos/donts, deskripsi)
   claude_daily_cap: '30', // maks draft baru dari Claude per 24 jam
   threads_mode: 'auto',  // auto = ikut THREADS_DRY_RUN di .env | live | sim
@@ -400,6 +401,7 @@ export const policy = () => ({
   can_publish: getSetting('claude_publish') === '1',
   can_reply: getSetting('claude_reply') === '1',
   can_edit_brand: getSetting('claude_brand') === '1',
+  can_edit_knowledge: getSetting('claude_knowledge') === '1',
   daily_create_cap: Number(getSetting('claude_daily_cap')),
 });
 

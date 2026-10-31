@@ -697,7 +697,7 @@ ARV.aturan = async ({ cfg, body }) => {
       <label>Mode<select name="mode" ${can('manager') ? '' : 'disabled'}><option value="draft" ${r.mode === 'draft' ? 'selected' : ''}>Draft: tinjau dulu (disarankan)</option><option value="auto" ${r.mode === 'auto' ? 'selected' : ''} ${can('admin') || r.mode === 'auto' ? '' : 'disabled'}>Auto: kirim sendiri bila aman ${can('admin') ? '' : '(admin)'}</option></select></label>
       <div class="chips">${(p === 'threads' ? ['reply', 'mention'] : p === 'whatsapp' ? ['dm'] : ['comment', 'mention', 'dm']).map((k) => `<label class="chip"><input type="checkbox" name="k_${k}" ${r.kinds.includes(k) ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> ${AR_KIND[k]}</label>`).join('')}</div>
       <label>Maks balasan otomatis per jam<input type="number" name="hourly_cap" min="1" max="200" value="${r.hourly_cap}" ${can('manager') ? '' : 'disabled'}></label>
-      <label>Pengetahuan brand <span class="muted small">(satu-satunya sumber fakta untuk Claude)</span><textarea name="knowledge" style="min-height:140px" maxlength="6000" placeholder="Contoh:&#10;- Order resmi lewat Shopee: https://shopee.co.id/delovawardrobe&#10;- Ukuran kebaya S-XXL, size chart ada di deskripsi produk&#10;- Pengiriman dari Yogyakarta, resi dikirim maks 2 hari kerja&#10;- Kerja sama/reseller: arahkan ke DM" ${can('manager') ? '' : 'disabled'}>${esc(r.knowledge)}</textarea></label>
+      <label>Pengetahuan brand <span class="muted small">(satu-satunya sumber fakta untuk Claude)</span><span class="small muted" style="display:block;font-weight:400">Bisa diisi lewat Claude, mis. “tambahkan ke pengetahuan brand Wardrobe: retur maksimal 7 hari”. Fakta baru ditambahkan tanpa menghapus isi ini.</span><textarea name="knowledge" style="min-height:140px" maxlength="6000" placeholder="Contoh:&#10;- Order resmi lewat Shopee: https://shopee.co.id/delovawardrobe&#10;- Ukuran kebaya S-XXL, size chart ada di deskripsi produk&#10;- Pengiriman dari Yogyakarta, resi dikirim maks 2 hari kerja&#10;- Kerja sama/reseller: arahkan ke DM" ${can('manager') ? '' : 'disabled'}>${esc(r.knowledge)}</textarea></label>
       ${can('manager') ? `<div class="row"><button class="btn primary small">Simpan</button>${p === 'instagram' && ok ? '<button type="button" class="btn small" data-sub="1">Daftarkan webhook akun ini</button>' : ''}</div>` : ''}</form>`; }).join('')).join('')}</div>
   ${can('manager') ? `<form id="tf" class="card stack"><h3>Uji coba (mode simulasi)</h3><p class="small muted">Menyuntik event palsu lewat jalur yang sama dengan webhook asli, tanpa mengirim apa pun ke Threads/Instagram. Hanya tersedia saat mode simulasi.</p>
     <div class="grid g4"><label>Brand<select name="brand_id">${cfg.brands.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></label>
@@ -1411,6 +1411,7 @@ VIEWS.claude = async (v) => {
       <div class="row between"><span>Publish langsung</span>${yn(pol.can_publish)}</div>
       <div class="row between"><span>Membalas / menyembunyikan komentar</span>${yn(pol.can_reply)}</div>
       <div class="row between"><span>Mengubah profil brand (voice, pillar, dll)</span>${yn(pol.can_edit_brand)}</div>
+      <div class="row between"><span>Mengisi Pengetahuan brand Auto Reply</span>${yn(pol.can_edit_knowledge)}</div>
       <p class="small muted">Setiap aksi tulis tetap mengikuti peran akun yang Anda pakai (${esc(me.role)}). Admin mengubah izin di menu Kontrol Claude.</p></div>
     <div class="card stack"><h2>Contoh perintah</h2><ul>
       <li>“Ada apa hari ini?” (ringkasan antrean &amp; jadwal)</li>
@@ -1446,6 +1447,7 @@ VIEWS.control = async (v) => {
     ${sw('can_publish', 'Publish langsung ke Threads', 'Risiko tertinggi: post langsung tayang. Disarankan tetap mati.', p.can_publish)}
     ${sw('can_reply', 'Balas &amp; sembunyikan komentar', 'Balasan tampil publik atas nama brand.', p.can_reply)}
     ${sw('can_edit_brand', 'Ubah profil brand (voice, pillar, hashtag, dos/donts)', 'Claude boleh mengubah isi profil brand setelah konfirmasi user di percakapan. Memengaruhi semua tulisan berikutnya; setiap perubahan tersimpan di riwayat dan bisa dipulihkan. Nama brand &amp; kredensial tidak bisa diubah Claude.', p.can_edit_brand)}
+    ${sw('can_edit_knowledge', 'Isi Pengetahuan brand Auto Reply', 'Claude boleh menambah fakta (kebijakan, ongkir, ukuran, FAQ) ke Pengetahuan brand setelah konfirmasi user. Isi ini jadi sumber fakta balasan otomatis, jadi pantau hasilnya di Auto Reply. Perubahan tercatat di log audit.', pol.can_edit_knowledge)}
     <label>Batas draft baru dari Claude per 24 jam<input type="number" name="daily_create_cap" min="0" max="500" value="${p.daily_create_cap}" style="max-width:140px"></label>
     <div><button class="btn primary">Simpan kontrol</button></div>
   </form>
@@ -1457,7 +1459,7 @@ VIEWS.control = async (v) => {
   $('#pf').onsubmit = (e) => {
     e.preventDefault(); const f = e.target; const g = (n) => f.elements[n].checked;
     busy($('button', f), async () => {
-      await api('PUT', '/api/settings/claude', { claude_enabled: g('claude_enabled'), can_create: g('can_create'), can_approve: g('can_approve'), can_publish: g('can_publish'), can_reply: g('can_reply'), can_edit_brand: g('can_edit_brand'), daily_create_cap: f.elements.daily_create_cap.value });
+      await api('PUT', '/api/settings/claude', { claude_enabled: g('claude_enabled'), can_create: g('can_create'), can_approve: g('can_approve'), can_publish: g('can_publish'), can_reply: g('can_reply'), can_edit_brand: g('can_edit_brand'), can_edit_knowledge: g('can_edit_knowledge'), daily_create_cap: f.elements.daily_create_cap.value });
       toast('Kontrol Claude disimpan.'); route();
     });
   };

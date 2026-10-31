@@ -129,7 +129,7 @@ export function createApp() {
 
   const A = (req, action, detail) => audit(req.user.id, action, { ...(detail || {}), via: req.via });
   const humanOnly = (req, res, next) => (req.via === 'cookie' ? next() : bad(res, 'Aksi ini hanya bisa dilakukan manusia lewat dashboard.', 403));
-  const GATE_LABEL = { claude_create: 'Buat & edit draft', claude_approve: 'Setujui & jadwalkan', claude_publish: 'Publish langsung', claude_reply: 'Balas komentar', claude_brand: 'Ubah profil brand (voice, pillar, dll)' };
+  const GATE_LABEL = { claude_create: 'Buat & edit draft', claude_approve: 'Setujui & jadwalkan', claude_publish: 'Publish langsung', claude_reply: 'Balas komentar', claude_brand: 'Ubah profil brand (voice, pillar, dll)', claude_knowledge: 'Isi Pengetahuan brand Auto Reply' };
   const gate = (key) => (req, res, next) =>
     req.via === 'cookie' || getSetting(key) === '1' ? next() : bad(res, `Dimatikan oleh admin: "${GATE_LABEL[key]}" (dashboard → Kontrol Claude). Minta manajer melakukannya di dashboard.`, 403);
   const claudeCap = (req, res, next) => {
@@ -842,7 +842,7 @@ export function createApp() {
   api.get('/settings/claude', humanOnly, need('admin'), (req, res) => res.json(policy()));
   api.put('/settings/claude', humanOnly, need('admin'), (req, res) => {
     const b = req.body || {};
-    const map = { claude_enabled: 'claude_enabled', can_create: 'claude_create', can_approve: 'claude_approve', can_publish: 'claude_publish', can_reply: 'claude_reply', can_edit_brand: 'claude_brand' };
+    const map = { claude_enabled: 'claude_enabled', can_create: 'claude_create', can_approve: 'claude_approve', can_publish: 'claude_publish', can_reply: 'claude_reply', can_edit_brand: 'claude_brand', can_edit_knowledge: 'claude_knowledge' };
     for (const [k, key] of Object.entries(map)) if (b[k] !== undefined) setSetting(key, b[k] ? '1' : '0');
     if (b.daily_create_cap !== undefined) setSetting('claude_daily_cap', String(Math.max(0, Math.min(500, parseInt(b.daily_create_cap, 10) || 0))));
     A(req, 'settings.claude_updated', policy());
@@ -935,7 +935,7 @@ export function createApp() {
   });
 
   mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, brandOr404, baseUrl });
-  mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404 });
+  mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, gate });
   mountPesan(api, { need, ah, bad });
   mountTrends(api, { need, ah, bad, A });
   mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 });
