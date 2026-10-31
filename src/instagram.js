@@ -96,6 +96,7 @@ async function waitFinished(id, token, tries = 40) {
 }
 
 export async function publish(acc, brand, post) {
+  if (!JSON.parse(post.media_urls || '[]').length) throw new Error('Belum ada foto/video. Tambahkan media dulu di Hub.');
   if (isDryRun()) {
     const id = `igdry_${Date.now()}`;
     return { mediaId: id, permalink: `https://www.instagram.com/p/${id}/`, dryRun: true };

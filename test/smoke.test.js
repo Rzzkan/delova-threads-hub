@@ -165,3 +165,18 @@ test('persetujuan: post Threads yang membahas produk tanpa gambar diberi info "d
   const x = d.posts.find((p) => p.id === c.body.id);
   assert.equal(x.visual.need, 'disarankan'); assert.equal(x.visual.missing, true); assert.match(x.visual.product, /dress|link bio/i);
 });
+
+test('Instagram: draft boleh tanpa foto/video; ajukan, setujui, dan publish butuh media', async () => {
+  const c = await api('POST', '/api/ig/posts', { brand_id: 'kids', kind: 'feed', caption: 'Draft tanpa gambar' });
+  assert.equal(c.status, 201); assert.deepEqual(c.body.media_urls, []);
+  const s = await api('POST', '/api/ig/posts', { brand_id: 'kids', kind: 'story' });
+  assert.equal(s.status, 201);
+  assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/submit`)).status, 400);
+  assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/approve`, { scheduled_at: new Date(Date.now() + 3600e3).toISOString() })).status, 400);
+  assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/publish-now`)).status, 400);
+  const bad = await api('POST', '/api/ig/posts', { brand_id: 'kids', kind: 'feed', media_urls: ['http://example.com/a.jpg'] });
+  assert.equal(bad.status, 400, 'URL non-HTTPS tetap ditolak');
+  const u = await api('PUT', `/api/ig/posts/${c.body.id}`, { media_urls: ['https://example.com/a.jpg'] });
+  assert.equal(u.status, 200);
+  assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/submit`)).body.status, 'pending_approval');
+});

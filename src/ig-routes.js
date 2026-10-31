@@ -8,9 +8,11 @@ import { all, get, run, now, uid, getSetting, setSetting, audit } from './db.js'
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
 const parse = (p) => (p ? { ...p, media_urls: JSON.parse(p.media_urls || '[]') } : null);
 const KINDS = ['feed', 'reels', 'story'];
+const NO_MEDIA = 'Konten ini belum punya foto/video. Tambahkan dulu di threads.delova.id → Instagram (Konten & Jadwal atau Story), lalu coba lagi.';
+const hasMedia = (p) => { try { return JSON.parse(p.media_urls || '[]').length > 0; } catch { return false; } };
 const isJpeg = (u) => /\.jpe?g(\?|$)/i.test(u);
 
-export function validateIgPost(b, { partial = false } = {}) {
+export function validateIgPost(b, { partial = false, allowEmpty = false } = {}) {
   if (!partial || b.kind !== undefined) if (!KINDS.includes(b.kind || 'feed')) return 'Jenis konten harus feed, reels, atau story.';
   if (!partial || b.caption !== undefined) {
     const c = String(b.caption ?? '');
@@ -22,13 +24,15 @@ export function validateIgPost(b, { partial = false } = {}) {
     const kind = b.kind || 'feed';
     if (!Array.isArray(m) || m.some((u) => typeof u !== 'string' || !/^https:\/\//i.test(u))) return 'URL media harus HTTPS dan bisa diakses publik.';
     if (!partial || b.media_urls !== undefined) {
-      if (!m.length) return 'Instagram butuh minimal satu foto atau video.';
-      if (m.length > 10) return 'Maksimal 10 media per carousel.';
-      if (kind === 'reels' && (m.length !== 1 || !I.isVideoUrl(m[0]))) return 'Reels harus tepat satu video (MP4/MOV).';
-      if (kind === 'story' && m.length !== 1) return 'Story harus tepat satu foto atau video.';
-      if (kind === 'feed' && m.length === 1 && I.isVideoUrl(m[0])) return 'Video tunggal dipublikasikan sebagai Reels. Ubah jenis konten ke Reels.';
-      const bad = m.find((u) => !I.isVideoUrl(u) && !isJpeg(u));
-      if (bad) return 'Instagram hanya menerima foto JPEG (.jpg). Konversi PNG/WEBP/GIF ke JPG dulu.';
+      if (!m.length) { if (!allowEmpty) return 'Instagram butuh minimal satu foto atau video.'; }
+      else {
+        if (m.length > 10) return 'Maksimal 10 media per carousel.';
+        if (kind === 'reels' && (m.length !== 1 || !I.isVideoUrl(m[0]))) return 'Reels harus tepat satu video (MP4/MOV).';
+        if (kind === 'story' && m.length !== 1) return 'Story harus tepat satu foto atau video.';
+        if (kind === 'feed' && m.length === 1 && I.isVideoUrl(m[0])) return 'Video tunggal dipublikasikan sebagai Reels. Ubah jenis konten ke Reels.';
+        const bad = m.find((u) => !I.isVideoUrl(u) && !isJpeg(u));
+        if (bad) return 'Instagram hanya menerima foto JPEG (.jpg). Konversi PNG/WEBP/GIF ke JPG dulu.';
+      }
     }
   }
   if (b.scheduled_at && Number.isNaN(Date.parse(b.scheduled_at))) return 'Format scheduled_at tidak valid (ISO 8601).';
@@ -148,6 +152,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
       if (!p) { skipped.push({ id, reason: 'Konten tidak ditemukan.' }); continue; }
       if (action === 'submit') {
         if (!['draft', 'failed'].includes(p.status)) { skipped.push({ id, reason: `Berstatus ${p.status}.` }); continue; }
+        if (!hasMedia(p)) { skipped.push({ id, reason: 'Belum ada foto/video.' }); continue; }
         run("UPDATE ig_posts SET status='pending_approval', review_note=NULL, error=NULL, updated_at=? WHERE id=?", now(), id); A(req, 'ig.post.submitted', { id, bulk: true }); done.push(id); continue;
       }
       if (action === 'reject') {
@@ -155,6 +160,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
         run("UPDATE ig_posts SET status='draft', review_note=?, updated_at=? WHERE id=?", String(b.note || '').slice(0, 300) || null, now(), id); A(req, 'ig.post.rejected', { id, bulk: true }); done.push(id); continue;
       }
       if (!['pending_approval', 'draft', 'failed'].includes(p.status)) { skipped.push({ id, reason: `Berstatus ${p.status}.` }); continue; }
+      if (!hasMedia(p)) { skipped.push({ id, reason: 'Belum ada foto/video.' }); continue; }
       let when = p.scheduled_at;
       if (!when) { if (slot === null) { skipped.push({ id, reason: 'Belum punya jadwal.' }); continue; } when = new Date(slot).toISOString(); slot += step; }
       else if (Date.parse(when) < Date.now() - 60_000 && !b.allow_past) { skipped.push({ id, reason: 'Jadwalnya sudah lewat (akan langsung tayang).' }); continue; }
@@ -184,12 +190,12 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
   api.post('/ig/posts', need('editor'), gate('claude_create'), claudeCap, (req, res) => {
     const b = req.body || {};
     if (!brandOr404(b.brand_id)) return bad(res, 'Brand tidak ditemukan.', 404);
-    const err = validateIgPost({ ...b, kind: b.kind || 'feed' });
+    const err = validateIgPost({ ...b, kind: b.kind || 'feed' }, { allowEmpty: true });
     if (err) return bad(res, err);
     const id = uid();
     run(`INSERT INTO ig_posts(id,brand_id,kind,caption,media_urls,status,scheduled_at,created_by,created_at,updated_at) VALUES (?,?,?,?,?,'draft',?,?,?,?)`,
-      id, b.brand_id, b.kind || 'feed', String(b.caption || '').trim(), JSON.stringify(b.media_urls), b.scheduled_at ? new Date(b.scheduled_at).toISOString() : null, req.user.id, now(), now());
-    M.linkMedia(id, b.media_urls);
+      id, b.brand_id, b.kind || 'feed', String(b.caption || '').trim(), JSON.stringify(b.media_urls || []), b.scheduled_at ? new Date(b.scheduled_at).toISOString() : null, req.user.id, now(), now());
+    M.linkMedia(id, b.media_urls || []);
     A(req, 'ig.post.created', { id, brand: b.brand_id });
     res.status(201).json(parse(get('SELECT * FROM ig_posts WHERE id=?', id)));
   });
@@ -200,7 +206,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
     if (req.user.role === 'editor' && p.created_by !== req.user.id) return bad(res, 'Editor hanya bisa mengedit konten buatannya sendiri.', 403);
     const b = req.body || {};
     const merged = { kind: b.kind ?? p.kind, caption: b.caption ?? p.caption, media_urls: b.media_urls ?? JSON.parse(p.media_urls), scheduled_at: b.scheduled_at };
-    const err = validateIgPost(merged);
+    const err = validateIgPost(merged, { allowEmpty: ['draft', 'failed'].includes(p.status) });
     if (err) return bad(res, err);
     const contentChanged = ['kind', 'caption', 'media_urls'].some((k) => b[k] !== undefined);
     const status = ['pending_approval', 'scheduled'].includes(p.status) && contentChanged && RANK[req.user.role] < RANK.manager ? 'draft' : p.status === 'failed' ? 'draft' : p.status;
@@ -220,6 +226,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
   api.post('/ig/posts/:id/submit', need('editor'), gate('claude_create'), (req, res) => {
     const p = load(req, res); if (!p) return;
     if (!['draft', 'failed'].includes(p.status)) return bad(res, `Konten berstatus ${p.status}, tidak bisa diajukan.`);
+    if (!hasMedia(p)) return bad(res, NO_MEDIA);
     run("UPDATE ig_posts SET status='pending_approval', review_note=NULL, error=NULL, updated_at=? WHERE id=?", now(), p.id);
     A(req, 'ig.post.submitted', { id: p.id });
     res.json(parse(get('SELECT * FROM ig_posts WHERE id=?', p.id)));
@@ -227,6 +234,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
   api.post('/ig/posts/:id/approve', need('manager'), gate('claude_approve'), (req, res) => {
     const p = load(req, res); if (!p) return;
     if (!['pending_approval', 'draft', 'failed'].includes(p.status)) return bad(res, `Konten berstatus ${p.status}.`);
+    if (!hasMedia(p)) return bad(res, NO_MEDIA);
     const when = req.body?.scheduled_at || p.scheduled_at;
     if (!when || Number.isNaN(Date.parse(when))) return bad(res, 'Tentukan jadwal tayang dulu.');
     run("UPDATE ig_posts SET status='scheduled', scheduled_at=?, approved_by=?, error=NULL, updated_at=? WHERE id=?", new Date(when).toISOString(), req.user.id, now(), p.id);
@@ -241,6 +249,7 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
   });
   api.post('/ig/posts/:id/publish-now', need('manager'), gate('claude_publish'), ah(async (req, res) => {
     const p = load(req, res); if (!p) return;
+    if (!hasMedia(p)) return bad(res, NO_MEDIA);
     const out = await I.publishIgPost(p.id, { allowFrom: ['draft', 'pending_approval', 'scheduled', 'failed'], userId: req.user.id });
     run('UPDATE ig_posts SET approved_by=COALESCE(approved_by,?) WHERE id=?', req.user.id, p.id);
     A(req, 'ig.post.publish_now', { id: p.id, brand: p.brand_id });

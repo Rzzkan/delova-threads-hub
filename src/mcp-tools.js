@@ -316,18 +316,18 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
     'create_ig_post',
     {
       title: 'Buat draft / ajukan konten Instagram',
-      description: 'Buat draft Instagram untuk satu brand: kind feed (1-10 foto JPG, 2+ = carousel), reels (tepat 1 video MP4/MOV), atau story (1 media). Caption maks 2200 karakter, maks 30 hashtag. submit=true mengirim ke antrean approval manajer; selain itu tersimpan sebagai draft. TIDAK pernah langsung terbit. media_urls = URL HTTPS publik; foto dari luar: panggil upload_media dulu. scheduled_at = usulan jadwal ISO 8601 zona WIB.',
+      description: 'Buat draft Instagram untuk satu brand: kind feed (1-10 foto JPG, 2+ = carousel), reels (tepat 1 video MP4/MOV), atau story (1 media). Caption maks 2200 karakter, maks 30 hashtag. submit=true mengirim ke antrean approval manajer; selain itu tersimpan sebagai draft. TIDAK pernah langsung terbit. Tanpa media_urls tersimpan sebagai draft tanpa gambar (foto/video ditambahkan manual di web Hub sebelum diajukan); submit=true butuh media. media_urls = URL HTTPS publik; foto dari luar: panggil upload_media dulu. scheduled_at = usulan jadwal ISO 8601 zona WIB.',
       inputSchema: {
         brand: z.string().describe(brandIds),
         kind: z.enum(['feed', 'reels', 'story']).optional().describe('Default feed'),
         caption: z.string().max(2200).optional(),
-        media_urls: z.array(z.string().url()).min(1).max(10),
+        media_urls: z.array(z.string().url()).max(10).optional().describe('Boleh dikosongkan untuk draft; foto/video ditambahkan manual di threads.delova.id. Wajib ada sebelum diajukan (submit=true)'),
         scheduled_at: z.string().optional(),
         submit: z.boolean().optional(),
       },
     },
     wrap(async ({ brand, kind, caption, media_urls, scheduled_at, submit }) => {
-      const p = await call('POST', '/api/ig/posts', { brand_id: brand, kind: kind || 'feed', caption: caption || '', media_urls, scheduled_at });
+      const p = await call('POST', '/api/ig/posts', { brand_id: brand, kind: kind || 'feed', caption: caption || '', media_urls: media_urls || [], scheduled_at });
       return submit ? call('POST', `/api/ig/posts/${p.id}/submit`) : p;
     }),
   );

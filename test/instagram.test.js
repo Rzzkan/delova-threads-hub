@@ -63,7 +63,7 @@ test('ig: status, kredensial hanya admin & rahasia tak pernah dikembalikan', asy
 test('ig: validasi konten (feed/reels/story, JPEG, hashtag, panjang)', async () => {
   const j = await upJpg();
   const v = (b) => A('POST', '/api/ig/posts', { brand_id: 'wardrobe', ...b });
-  assert.equal((await v({ caption: 'x', media_urls: [] })).status, 400); // butuh media
+  assert.equal((await v({ caption: 'x', media_urls: [] })).status, 201); // draft tanpa media boleh; media wajib saat ajukan/setujui/publish
   assert.match((await v({ caption: 'x', media_urls: ['https://x.test/a.png'] })).json.error, /JPEG/);
   assert.match((await v({ kind: 'reels', media_urls: [j.url] })).json.error, /Reels/);
   assert.match((await v({ kind: 'story', media_urls: [j.url, j.url] })).json.error, /Story/);
