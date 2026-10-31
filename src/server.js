@@ -578,9 +578,13 @@ export function createApp() {
       }),
     };
   }));
-  api.post('/ai/analyze', ...aiRoute('manager', async (brand, b, req) => {
+  api.post('/ai/analyze', ...aiRoute('viewer', async (brand, b, req) => {
     if (!brand.token_enc && !T.isDryRun(brand)) { const e = new Error('Akun belum terhubung ke Threads.'); e.status = 400; throw e; }
-    return { analysis: await AI.analyze(brand, await brandInsights(brand, Number(b.days) || 7)) };
+    if (!AI.replyAiEnabled()) { const e = new Error('Model AI belum dikonfigurasi (Pengaturan → Webhook & Setup).'); e.status = 409; throw e; }
+    const days = [7, 14, 30].includes(Number(b.days)) ? Number(b.days) : 7;
+    const d = await brandInsights(brand, days);
+    const analysis = await AI.analyzeCached(`th:${brand.id}:${days}`, b.fresh === true, () => AI.analyzeInsights(brand, { platform: 'threads', days, account: d.account, metricKeys: ['views', 'likes', 'replies', 'reposts', 'followers_count'], items: d.posts.map((p, i) => ({ i: i + 1, label: 'Post', when: p.published_at, metrics: p.metrics, text: p.text })) }));
+    return { analysis: { ...analysis, content_notes: analysis.content_notes.map((n) => ({ id: d.posts[Number(n.i) - 1]?.id, note: n.note })).filter((n) => n.id) } };
   }));
 
   // ----- Riset post publik (threads_keyword_search)

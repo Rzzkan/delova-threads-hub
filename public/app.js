@@ -644,26 +644,53 @@ IGV.dm = async ({ bid, body }) => {
 };
 
 /* ---- Insight ---- */
+
+/* ---- Analisis AI otomatis untuk halaman Insight ---- */
+const VERDICT = { naik: ['📈 Naik', 's-published'], turun: ['📉 Turun', 's-failed'], stabil: ['➖ Stabil', ''], belum_cukup_data: ['ℹ️ Data belum cukup', ''] };
+function aiAnalysisHtml(a, fresh) {
+  const ul = (l) => `<ul>${(l || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  const vd = VERDICT[a.verdict] || VERDICT.belum_cukup_data;
+  return `<div class="card stack"><div class="row between"><h3>Analisis AI <span class="badge ${vd[1]}">${vd[0]}</span></h3><span class="row"><span class="small muted">${a.cached_at ? `Dianalisis ${esc(igTime(a.cached_at))}` : ''}</span><button type="button" class="btn small" data-ai-refresh>Analisis ulang</button></span></div>
+    <p>${esc(a.summary)}</p>
+    <div class="grid g2"><div><b>Yang berjalan baik</b>${ul(a.whats_working)}<b>Yang perlu diperbaiki</b>${ul(a.whats_not)}</div><div><b>Tindakan minggu depan</b>${ul(a.next_actions)}<b>Ide konten</b>${ul(a.post_ideas)}</div></div></div>`;
+}
+/** Muat analisis otomatis ke `holder`; `apply(a)` mengisi catatan per angka/konten setelah tersedia. */
+async function loadAiAnalysis(holder, call, apply) {
+  if (!health.ai) { holder.innerHTML = '<div class="banner">Analisis AI belum aktif: pilih model (mis. Kenari) di Pengaturan → Webhook &amp; Setup.</div>'; return; }
+  const run = async (fresh) => {
+    holder.innerHTML = '<div class="card"><span class="muted">✨ AI sedang menganalisis data insight…</span></div>';
+    try {
+      const { analysis } = await call(fresh);
+      holder.innerHTML = aiAnalysisHtml(analysis); apply(analysis);
+      const rb = $('[data-ai-refresh]', holder); if (rb) rb.onclick = (e) => busy(e.target, () => run(true));
+    } catch (e) { holder.innerHTML = `<div class="banner err">Analisis AI gagal: ${esc(e.message)} <button type="button" class="btn small" data-ai-retry>Coba lagi</button></div>`; const rt = $('[data-ai-retry]', holder); if (rt) rt.onclick = () => run(false); }
+  };
+  return run(false);
+}
+
 IGV.insight = async ({ bid, body, hash }) => {
   const days = Number(params().get('days')) || 7;
   const [acc, media] = await Promise.all([api('GET', `/api/ig/${bid}/insights?days=${days}`), api('GET', `/api/ig/${bid}/media-insights`)]);
   const K = [['followers', 'Followers', acc.followers], ['reach', 'Jangkauan', acc.metrics.reach], ['views', 'Tayangan', acc.metrics.views], ['accounts_engaged', 'Akun berinteraksi', acc.metrics.accounts_engaged], ['total_interactions', 'Interaksi', acc.metrics.total_interactions], ['likes', 'Suka', acc.metrics.likes], ['comments', 'Komentar', acc.metrics.comments], ['shares', 'Dibagikan', acc.metrics.shares], ['saves', 'Disimpan', acc.metrics.saves]];
   body.innerHTML = `<div class="row between"><b>Ringkasan akun</b><select id="days" style="width:auto">${[7, 14, 30].map((d) => `<option value="${d}" ${d === days ? 'selected' : ''}>${d} hari terakhir</option>`).join('')}</select></div>
-  <div class="stats">${K.map(([k, l, val]) => `<div class="card kpi2"><span class="small muted">${l}</span><b>${num(val)}</b></div>`).join('')}</div>
+  <div id="aib"></div>
+  <div class="stats">${K.map(([k, l, val]) => `<div class="card kpi2"><span class="small muted">${l}</span><b>${num(val)}</b><div class="small ai-note" data-k="${k}" style="margin-top:4px;color:var(--muted,#667);text-transform:none;letter-spacing:0;font-weight:400;line-height:1.35"></div></div>`).join('')}</div>
   <div class="card stack"><div class="row between"><b>Insight per konten</b><button type="button" class="btn small" id="fresh">Segarkan</button></div>
     <div class="grid g4"><label>Cari caption / hashtag<input id="qs" placeholder="mis. kebaya, #batikmodern"></label>
     <label>Jenis<select id="qt"><option value="">Semua</option><option value="IMAGE">Foto</option><option value="VIDEO">Video / Reels</option><option value="CAROUSEL_ALBUM">Carousel</option></select></label>
     <label>Urutkan<select id="qo"><option value="timestamp">Terbaru</option><option value="reach">Jangkauan</option><option value="views">Tayangan</option><option value="likes">Suka</option><option value="comments">Komentar</option><option value="saved">Disimpan</option><option value="er">Engagement rate</option></select></label>
     <div class="small muted" id="qc" style="align-self:end"></div></div>
-    <div style="overflow-x:auto"><table><thead><tr><th>Konten</th><th>Terbit</th><th>Jangkauan</th><th>Tayangan</th><th>Suka</th><th>Komentar</th><th>Dibagikan</th><th>Disimpan</th><th>ER</th></tr></thead><tbody id="qrows"></tbody></table></div></div>`;
+    <div style="overflow-x:auto"><table><thead><tr><th>Konten</th><th>Terbit</th><th>Jangkauan</th><th>Tayangan</th><th>Suka</th><th>Komentar</th><th>Dibagikan</th><th>Disimpan</th><th>ER</th><th>Catatan AI</th></tr></thead><tbody id="qrows"></tbody></table></div></div>`;
   const er = (m) => (m.insights.reach ? ((m.insights.total_interactions ?? 0) / m.insights.reach) * 100 : null);
+  const notes = {};
   const draw = () => {
     const qs = $('#qs').value.trim().toLowerCase(); const qt = $('#qt').value; const qo = $('#qo').value;
     const rows = media.filter((m) => (!qt || m.media_type === qt) && (!qs || (m.caption || '').toLowerCase().includes(qs))).sort((a, b) => qo === 'timestamp' ? Date.parse(b.timestamp) - Date.parse(a.timestamp) : (qo === 'er' ? (er(b) ?? -1) - (er(a) ?? -1) : (b.insights[qo] ?? -1) - (a.insights[qo] ?? -1)));
     $('#qc').textContent = `${rows.length} dari ${media.length} konten`;
-    $('#qrows').innerHTML = rows.map((m) => `<tr><td style="max-width:340px"><a href="${esc(m.permalink)}" target="_blank" rel="noopener">${esc((m.caption || '(tanpa caption)').slice(0, 90))}</a> <span class="badge">${esc(({ IMAGE: 'Foto', VIDEO: 'Video', CAROUSEL_ALBUM: 'Carousel' })[m.media_type] || m.media_type)}</span></td><td class="small">${esc(igTime(m.timestamp))}</td>${['reach', 'views', 'likes', 'comments', 'shares', 'saved'].map((k) => `<td>${num(m.insights[k])}</td>`).join('')}<td>${er(m) === null ? '–' : `${er(m).toFixed(1)}%`}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Tidak ada konten yang cocok.</td></tr>';
+    $('#qrows').innerHTML = rows.map((m) => `<tr><td style="max-width:340px"><a href="${esc(m.permalink)}" target="_blank" rel="noopener">${esc((m.caption || '(tanpa caption)').slice(0, 90))}</a> <span class="badge">${esc(({ IMAGE: 'Foto', VIDEO: 'Video', CAROUSEL_ALBUM: 'Carousel' })[m.media_type] || m.media_type)}</span></td><td class="small">${esc(igTime(m.timestamp))}</td>${['reach', 'views', 'likes', 'comments', 'shares', 'saved'].map((k) => `<td>${num(m.insights[k])}</td>`).join('')}<td>${er(m) === null ? '–' : `${er(m).toFixed(1)}%`}</td><td class="small" style="min-width:200px;max-width:320px">${esc(notes[m.id] || '')}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">Tidak ada konten yang cocok.</td></tr>';
   };
   ['qs', 'qt', 'qo'].forEach((i) => $(`#${i}`).addEventListener('input', draw)); draw();
+  loadAiAnalysis($('#aib', body), (fresh) => api('POST', `/api/ig/${bid}/analysis`, { days, fresh }), (a) => { $$('.ai-note', body).forEach((el) => { el.textContent = a.metric_notes?.[el.dataset.k] || ''; }); (a.content_notes || []).forEach((n) => { notes[n.id] = n.note; }); draw(); });
   $('#days').onchange = (e) => { location.hash = `${hash || `#/instagram?tab=insight&brand=${bid}`}&days=${e.target.value}`; };
   $('#fresh').onclick = (e) => busy(e.target, async () => { await api('GET', `/api/ig/${bid}/media-insights?fresh=1`); toast('Insight disegarkan.'); route(); });
 };
@@ -1463,20 +1490,14 @@ VIEWS.insights = async (v) => {
   const tv = $('#inbody', v); await renderThreadsInsights(tv);
 };
 async function renderThreadsInsights(v) {
-  v.innerHTML = `<h1>Insight Threads</h1><div class="row">${brandPick(brands[0].id)}<select id="days" style="width:auto"><option value="7">7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select><button class="btn primary" id="load">Tampilkan</button>${can('manager') && health.ai ? '<button class="btn" id="an">Analisis AI</button>' : ''}</div><div id="out" class="stack" style="margin-top:14px"></div>`;
+  v.innerHTML = `<h1>Insight Threads</h1><div class="row">${brandPick(brands[0].id)}<select id="days" style="width:auto"><option value="7">7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select><button class="btn primary" id="load">Tampilkan</button></div><div id="out" class="stack" style="margin-top:14px"></div>`;
   const q = () => ({ id: $('[name=brand]').value, days: $('#days').value });
   $('#load').onclick = (e) => busy(e.target, async () => {
     const { id, days } = q(); const d = await api('GET', `/api/brands/${id}/insights?days=${days}`); const a = d.account;
-    const kpi = [['Views', a.views], ['Like', a.likes], ['Reply', a.replies], ['Repost', a.reposts], ['Followers', a.followers_count]];
-    $('#out').innerHTML = `<div class="grid g4">${kpi.map(([k, n]) => `<div class="card"><div class="muted small">${k}</div><h1>${n == null ? '-' : Number(n).toLocaleString('id-ID')}</h1></div>`).join('')}</div>
-      <div class="card"><h3>Post terbit terakhir</h3><table><thead><tr><th>Post</th><th>Views</th><th>Like</th><th>Reply</th><th>Repost</th></tr></thead><tbody>${d.posts.map((p) => `<tr><td>${esc(p.text.slice(0, 100))}</td><td>${p.metrics.views ?? '-'}</td><td>${p.metrics.likes ?? 0}</td><td>${p.metrics.replies ?? 0}</td><td>${p.metrics.reposts ?? 0}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Belum ada post terbit.</td></tr>'}</tbody></table></div><div id="ana"></div>`;
-  });
-  const an = $('#an');
-  if (an) an.onclick = (e) => busy(e.target, async () => {
-    const { id, days } = q(); if (!$('#ana')) await $('#load').onclick({ target: $('#load') });
-    const { analysis: a } = await api('POST', '/api/ai/analyze', { brand_id: id, days });
-    const ul = (l) => `<ul>${(l || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
-    $('#ana').innerHTML = `<div class="card"><h3>Analisis Claude</h3><p>${esc(a.summary)}</p><div class="grid g2"><div><b>Yang jalan</b>${ul(a.whats_working)}<b>Yang belum</b>${ul(a.whats_not)}</div><div><b>Tindakan minggu depan</b>${ul(a.next_actions)}<b>Ide post</b>${ul(a.post_ideas)}</div></div></div>`;
+    const kpi = [['views', 'Views', a.views], ['likes', 'Like', a.likes], ['replies', 'Reply', a.replies], ['reposts', 'Repost', a.reposts], ['followers_count', 'Followers', a.followers_count]];
+    $('#out').innerHTML = `<div id="ana"></div><div class="grid g4">${kpi.map(([k, l, n]) => `<div class="card"><div class="muted small">${l}</div><h1>${n == null ? '-' : Number(n).toLocaleString('id-ID')}</h1><div class="small ai-note" data-k="${k}" style="color:var(--muted,#667)"></div></div>`).join('')}</div>
+      <div class="card"><h3>Post terbit terakhir</h3><table><thead><tr><th>Post</th><th>Views</th><th>Like</th><th>Reply</th><th>Repost</th><th>Catatan AI</th></tr></thead><tbody>${d.posts.map((p) => `<tr><td>${esc(p.text.slice(0, 100))}</td><td>${p.metrics.views ?? '-'}</td><td>${p.metrics.likes ?? 0}</td><td>${p.metrics.replies ?? 0}</td><td>${p.metrics.reposts ?? 0}</td><td class="small" data-pn="${p.id}" style="min-width:200px;max-width:320px"></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada post terbit.</td></tr>'}</tbody></table></div>`;
+    loadAiAnalysis($('#ana'), (fresh) => api('POST', '/api/ai/analyze', { brand_id: id, days: Number(days), fresh }), (an) => { $$('#out .ai-note').forEach((el) => { el.textContent = an.metric_notes?.[el.dataset.k] || ''; }); (an.content_notes || []).forEach((n) => { const c = $(`[data-pn="${n.id}"]`); if (c) c.textContent = n.note; }); });
   });
   $('#load').click();
 }

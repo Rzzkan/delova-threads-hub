@@ -2,6 +2,7 @@
 import * as I from './instagram.js';
 import * as C from './crypto.js';
 import * as M from './media.js';
+import * as AI from './claude.js';
 import { all, get, run, now, uid, getSetting, setSetting, audit } from './db.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
@@ -308,15 +309,30 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
     res.json(await I.accountInsights(ctx.acc, ctx.brand, days));
   }));
   const cache = new Map(); // brand|limit -> {t, data}; insight per post cukup disegarkan tiap 10 menit
-  api.get('/ig/:brand/media-insights', ah(async (req, res) => {
-    const ctx = acct(req, res); if (!ctx) return;
-    const limit = Math.min(Number(req.query.limit) || 24, 40);
+  const mediaData = async (ctx, limit, fresh = false) => {
     const key = `${ctx.brand.id}|${limit}`; const hit = cache.get(key);
-    if (hit && Date.now() - hit.t < 10 * 60_000 && req.query.fresh !== '1') return res.json(hit.data);
+    if (hit && Date.now() - hit.t < 10 * 60_000 && !fresh) return hit.data;
     const media = await I.listMedia(ctx.acc, ctx.brand, limit);
     const data = [];
     for (let i = 0; i < media.length; i += 6) data.push(...await Promise.all(media.slice(i, i + 6).map(async (m) => ({ ...m, insights: await I.mediaInsights(ctx.acc, ctx.brand, m.id) }))));
     cache.set(key, { t: Date.now(), data });
-    res.json(data);
+    return data;
+  };
+  api.get('/ig/:brand/media-insights', ah(async (req, res) => {
+    const ctx = acct(req, res); if (!ctx) return;
+    res.json(await mediaData(ctx, Math.min(Number(req.query.limit) || 24, 40), req.query.fresh === '1'));
+  }));
+  // Analisis AI otomatis untuk halaman Insight (cache 6 jam; fresh=true untuk analisis ulang)
+  api.post('/ig/:brand/analysis', humanOnly, need('viewer'), ah(async (req, res) => {
+    const ctx = acct(req, res); if (!ctx) return;
+    if (!AI.replyAiEnabled()) return bad(res, 'Model AI belum dikonfigurasi (Pengaturan → Webhook & Setup).', 409);
+    const days = [7, 14, 30].includes(Number(req.body?.days)) ? Number(req.body.days) : 7;
+    const account = await I.accountInsights(ctx.acc, ctx.brand, days);
+    const media = (await mediaData(ctx, 24)).slice(0, 20);
+    const TYPE = { IMAGE: 'Foto', VIDEO: 'Video/Reels', CAROUSEL_ALBUM: 'Carousel' };
+    const items = media.map((m, i) => ({ i: i + 1, label: TYPE[m.media_type] || m.media_type, when: m.timestamp, metrics: m.insights, text: m.caption, er: m.insights?.reach ? ((m.insights.total_interactions ?? 0) / m.insights.reach) * 100 : null }));
+    const analysis = await AI.analyzeCached(`ig:${ctx.brand.id}:${days}`, req.body?.fresh === true, () => AI.analyzeInsights(ctx.brand, { platform: 'instagram', days, account, items, metricKeys: ['followers', 'reach', 'views', 'accounts_engaged', 'total_interactions', 'likes', 'comments', 'shares', 'saves'] }));
+    A(req, 'ai.used', { brand: ctx.brand.id, route: 'ig.analysis' });
+    res.json({ analysis: { ...analysis, content_notes: analysis.content_notes.map((n) => ({ id: media[Number(n.i) - 1]?.id, note: n.note })).filter((n) => n.id) } });
   }));
 }

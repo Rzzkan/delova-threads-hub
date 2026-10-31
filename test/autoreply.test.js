@@ -433,3 +433,21 @@ test('Saran AI membaca utas DM sebelumnya (jawaban singkat dipahami dari konteks
   assert.equal(r.status, 200);
   assert.match(seen.thread, /masih ready ukuran M/); assert.match(seen.thread, /Mau dikirim ke mana/);
 });
+
+test('Insight: analisis AI otomatis (Instagram & Threads), cache, catatan per konten dipetakan ke id', async () => {
+  await A('PUT', '/api/auto/llm', { provider: 'openai', base_url: 'https://kenari.id/v1', model: 'llama-3-3-70b-instruct:free', api_key: 'sk-x-123' });
+  let n = 0;
+  mockLlm(async (url, opts) => { n += 1; const body = JSON.parse(opts.body); const prompt = JSON.stringify(body.messages);
+    assert.match(prompt, /Instagram|Threads/); assert.match(prompt, /jangan mengarang perbandingan/);
+    return okJson(JSON.stringify({ summary: 'Jangkauan sehat.', verdict: 'stabil', metric_notes: { reach: 'Jangkauan cukup.' }, whats_working: ['a'], whats_not: ['b'], content_notes: [{ i: 1, note: 'Foto produk kuat.' }], next_actions: ['1', '2', '3', '4', '5'], post_ideas: ['1', '2', '3', '4', '5'] })); });
+  const r = await A('POST', `/api/ig/${brand.id}/analysis`, { days: 7 });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.analysis.verdict, 'stabil'); assert.equal(r.json.analysis.metric_notes.reach, 'Jangkauan cukup.');
+  assert.ok(r.json.analysis.content_notes[0].id, 'catatan konten dipetakan ke id media');
+  const before = n; const r2 = await A('POST', `/api/ig/${brand.id}/analysis`, { days: 7 });
+  assert.equal(n, before, 'hasil cache tidak memanggil model lagi'); assert.ok(r2.json.analysis.cached_at);
+  await A('POST', `/api/ig/${brand.id}/analysis`, { days: 7, fresh: true }); assert.equal(n, before + 1);
+  const t = await A('POST', '/api/ai/analyze', { brand_id: brand.id, days: 7 });
+  assert.equal(t.status, 200, JSON.stringify(t.json)); assert.equal(t.json.analysis.summary, 'Jangkauan sehat.');
+  globalThis.fetch = realFetch;
+});

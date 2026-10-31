@@ -129,18 +129,36 @@ Format: [{"day": 1, "time": "HH:MM (WIB, jam aktif audiens)", "pillar": "...", "
   return fit(parseJson(out));
 }
 
-export async function analyze(brand, { account, posts }) {
-  const rows = posts
-    .map((p) => `- [${p.metrics.views ?? 0} views, ${p.metrics.likes ?? 0} like, ${p.metrics.replies ?? 0} reply, ${p.metrics.reposts ?? 0} repost] ${p.text.slice(0, 160).replace(/\n/g, ' ')}`)
-    .join('\n');
+const analysisCache = new Map();
+/** Analisis insight dengan cache 6 jam per kunci (hemat token; tombol "Analisis ulang" memakai fresh). */
+export async function analyzeCached(key, fresh, fn) {
+  const hit = analysisCache.get(key);
+  if (hit && !fresh && Date.now() - hit.t < 6 * 3600e3) return { ...hit.v, cached_at: new Date(hit.t).toISOString() };
+  const v = await fn(); analysisCache.set(key, { t: Date.now(), v });
+  return { ...v, cached_at: new Date().toISOString() };
+}
+
+/** Analisis insight untuk Threads/Instagram: ringkasan, arti tiap angka, catatan per konten, tindakan. Berdasar angka yang diberikan saja. */
+export async function analyzeInsights(brand, { platform, days, account, items, metricKeys }) {
+  const where = platform === 'instagram' ? 'Instagram' : 'Threads';
+  const rows = items.map((it) => `[${it.i}] ${it.label || ''} · ${it.when || ''} · ${Object.entries(it.metrics || {}).map(([k, v]) => `${k}=${v ?? 0}`).join(', ')}${it.er != null ? `, ER=${it.er.toFixed(1)}%` : ''} · "${String(it.text || '').replace(/\s+/g, ' ').slice(0, 140)}"`).join('\n');
   const out = await ask(
     brand,
-    `Data akun (periode terakhir): ${JSON.stringify(account)}
-Performa post:
-${rows || '(belum ada post terbit)'}
-Berikan analisis singkat dan tindakan. Format: {"summary": "2-3 kalimat", "whats_working": ["..."], "whats_not": ["..."], "next_actions": ["minimal 5 tindakan konkret minggu depan"], "post_ideas": ["minimal 5 ide post baru"]}`,
+    `Analisis insight ${where} akun brand ini untuk periode ${days} hari terakhir.
+Data akun: ${JSON.stringify(account)}
+Konten (nomor di dalam kurung dipakai di content_notes):
+${rows || '(belum ada konten terbit)'}
+Aturan: tulis Bahasa Indonesia yang praktis untuk tim sosmed non-teknis. Dasarkan HANYA pada angka di atas; jangan mengarang perbandingan dengan periode sebelumnya atau patokan pasar yang tidak ada di data. ER = interaksi / jangkauan. Jelaskan arti tiap angka dalam satu kalimat (apa artinya untuk bisnis, bukan sekadar mengulang angka) dan beri saran bila perlu. Bila data terlalu sedikit atau nol, katakan belum cukup data dan jangan menyimpulkan berlebihan.
+Format JSON: {"summary": "2-3 kalimat inti", "verdict": "naik|turun|stabil|belum_cukup_data", "metric_notes": {${metricKeys.map((k) => `"${k}": "1 kalimat arti angka ini"`).join(', ')}}, "whats_working": ["..."], "whats_not": ["..."], "content_notes": [{"i": 1, "note": "1 kalimat: kenapa konten ini bagus/kurang dan apa yang bisa ditiru/diperbaiki"}], "next_actions": ["minimal 5 tindakan konkret minggu depan"], "post_ideas": ["minimal 5 ide konten baru"]}
+content_notes wajib mencakup setiap konten yang ada di daftar.`,
+    4500,
   );
-  return parseJson(out);
+  const r = parseJson(out);
+  return { summary: r.summary || '', verdict: r.verdict || 'belum_cukup_data', metric_notes: r.metric_notes || {}, whats_working: r.whats_working || [], whats_not: r.whats_not || [], content_notes: Array.isArray(r.content_notes) ? r.content_notes : [], next_actions: r.next_actions || [], post_ideas: r.post_ideas || [] };
+}
+
+export async function analyze(brand, { account, posts }) {
+  return analyzeInsights(brand, { platform: 'threads', days: 7, account, metricKeys: ['views', 'likes', 'replies', 'reposts', 'followers_count'], items: posts.map((p, i) => ({ i: i + 1, label: 'Post', when: p.published_at, metrics: p.metrics, text: p.text })) });
 }
 
 /** Ringkas hasil riset post publik menjadi tema, celah konten, dan ide post untuk brand. */
