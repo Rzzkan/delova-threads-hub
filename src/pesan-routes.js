@@ -28,7 +28,7 @@ export function mountPesan(api, { need, ah, bad }) {
     for (const m of media) {
       for (const c of await I.listComments(acc || {}, b, m.id).catch(() => [])) {
         const mine = (c.replies || []).some((r) => String(r.username || '').toLowerCase() === String(acc?.username || b.username || 'delova').toLowerCase());
-        out.push({ ext_id: c.id, kind: 'comment', author: c.username, text: c.text, at: iso(c.timestamp), permalink: m.permalink || null, post: (m.caption || '').slice(0, 100), hidden: !!c.hidden, answered: mine, source: 'live' });
+        out.push({ ext_id: c.id, kind: 'comment', author: c.username, text: c.text, at: iso(c.timestamp), permalink: m.permalink || null, post: (m.caption || '').slice(0, 200), media_id: m.id, hidden: !!c.hidden, answered: mine, source: 'live' });
       }
     }
     return { items: out };
@@ -39,7 +39,7 @@ export function mountPesan(api, { need, ah, bad }) {
     const out = [];
     for (const p of posts) {
       for (const r of await T.listReplies(b, p.threads_media_id).catch(() => [])) {
-        out.push({ ext_id: r.id, kind: 'reply', author: r.username, text: r.text, at: iso(r.timestamp), permalink: null, post: (p.text || '').slice(0, 100), hidden: r.hide_status === 'HIDDEN', source: 'live' });
+        out.push({ ext_id: r.id, kind: 'reply', author: r.username, text: r.text, at: iso(r.timestamp), permalink: null, post: (p.text || '').slice(0, 200), media_id: p.threads_media_id, hidden: r.hide_status === 'HIDDEN', source: 'live' });
       }
     }
     return { items: out };

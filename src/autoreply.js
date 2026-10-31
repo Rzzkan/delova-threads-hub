@@ -234,7 +234,7 @@ export async function composeReply(brand, { platform, kind, username, text, post
   const reply = String(d.reply || '').trim();
   const warning = reply ? unsafeReason(reply, `${rule.knowledge}\n${storeFacts}`, limit) : null;
   const sensitive = SENSITIVE.test(text || '');
-  return { reply, action: d.action, category: String(d.category || ''), confidence: Number(d.confidence) || 0, reason: String(d.reason || '').slice(0, 300), warning, sensitive, used, model: d.model || null, max: limit };
+  return { reply, searched: d.searched || '', search_error: d.search_error || '', action: d.action, category: String(d.category || ''), confidence: Number(d.confidence) || 0, reason: String(d.reason || '').slice(0, 300), warning, sensitive, used, model: d.model || null, max: limit };
 }
 
 export async function processEvent(id) {
@@ -282,6 +282,10 @@ export async function processEvent(id) {
 
     let human = action === 'escalate' || SENSITIVE.test(ev.text) || !SAFE_CATEGORIES.includes(f.category) || !(Number(d.confidence) >= MIN_CONFIDENCE);
     let why = human ? (SENSITIVE.test(ev.text) ? 'Memuat kata sensitif (komplain/refund/kerja sama).' : reason || 'Perlu ditinjau manusia.') : '';
+    if (d.searched) { // jawaban memakai hasil web: sumber luar, tinjau dulu kecuali admin mengizinkan otomatis
+      set(id, { used_data: `${(get('SELECT used_data FROM auto_events WHERE id=?', id)?.used_data || '').trim()} Web: "${d.searched}"`.trim().slice(0, 400) });
+      if (getSetting('web_search_auto') !== '1') { human = true; why = `Dijawab memakai hasil pencarian web ("${d.searched}"): periksa sebelum kirim.`; }
+    }
     const bad = unsafeReason(draft, `${rule.knowledge}\n${storeFacts}`, limit);
     if (bad) { human = true; why = bad; }
     // Jalur langsung: fakta produk dari API delova.id (harga/stok/detail) dibalas tanpa approval, meski mode Draft.

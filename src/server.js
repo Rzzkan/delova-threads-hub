@@ -556,7 +556,7 @@ export function createApp() {
   api.post('/ai/compose-reply', ...aiRoute('editor', async (brand, b) => {
     if (!AI.replyAiEnabled()) { const e = new Error('Model AI belum dikonfigurasi (Pengaturan → Webhook & Setup).'); e.status = 409; throw e; }
     if (!String(b.text || '').trim()) { const e = new Error('Teks pesan wajib diisi.'); e.status = 400; throw e; }
-    return composeReply(brand, { platform: b.platform, kind: b.kind, username: String(b.username || '').slice(0, 60), text: String(b.text).slice(0, 1200), postText: String(b.post_text || '').slice(0, 600) });
+    return composeReply(brand, { platform: b.platform, kind: b.kind, username: String(b.username || '').slice(0, 60), text: String(b.text).slice(0, 1200), postText: String(b.post_text || '').slice(0, 600), ref: { ext_id: b.ext_id, media_id: b.media_id, conv_id: b.conv_id, event_id: b.event_id } });
   }));
   api.post('/ai/reply-suggestions', ...aiRoute('manager', async (brand, b) => {
     const rs = (b.replies || []).slice(0, 10); const c = Store.storeConfig();

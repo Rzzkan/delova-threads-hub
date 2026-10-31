@@ -41,7 +41,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
     const brands = all('SELECT id,name,color,username FROM brands ORDER BY sort');
     res.json({
       enabled: A_.enabled(), ai: AI.replyAiEnabled(), model: AI.replyAiLabel(),
-      llm: (() => { const c = AI.llmConfig(); return { provider: c.provider, base_url: c.baseUrl, model: c.model, has_key: !!c.key, fallback: c.fallback, claude_ready: AI.aiEnabled() }; })(),
+      llm: (() => { const c = AI.llmConfig(); return { provider: c.provider, base_url: c.baseUrl, model: c.model, has_key: !!c.key, fallback: c.fallback, claude_ready: AI.aiEnabled(), web_search: getSetting('web_search') === '1', web_search_auto: getSetting('web_search_auto') === '1', web_search_cap: Number(getSetting('web_search_cap')) || 30, web_search_used: AI.webSearchUsed(), web_search_ready: AI.webSearchReady(c) }; })(),
       webhooks: PLATFORMS.map((p) => ({ platform: p, url: A_.webhookUrl(p), has_secret: p === 'instagram' ? !!(I.creds().appSecret || T.creds().appSecret) : !!T.creds().appSecret })),
       verify_token: admin ? A_.verifyToken() : undefined,
       store: (() => { const c = Store.storeConfig(); return { base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_direct: c.useDirect, use_posts: c.usePosts }; })(),
@@ -71,6 +71,9 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
     if (f.base_url !== undefined) setSetting('llm_base_url', String(f.base_url).trim().replace(/\/+$/, ''));
     if (f.model !== undefined) setSetting('llm_model', String(f.model).trim().slice(0, 120));
     if (f.fallback !== undefined) setSetting('llm_fallback', f.fallback ? '1' : '0');
+    if (f.web_search !== undefined) setSetting('web_search', f.web_search ? '1' : '0');
+    if (f.web_search_auto !== undefined) setSetting('web_search_auto', f.web_search_auto ? '1' : '0');
+    if (f.web_search_cap !== undefined) setSetting('web_search_cap', String(Math.min(500, Math.max(0, Math.floor(Number(f.web_search_cap)) || 0))));
     if (f.clear_key) setSetting('llm_key_enc', '');
     else if (typeof f.api_key === 'string' && f.api_key.trim()) setSetting('llm_key_enc', C.encrypt(f.api_key.trim()));
     A(req, 'auto.llm', { provider: f.provider, model: f.model }); // kunci tidak pernah dicatat

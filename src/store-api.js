@@ -65,7 +65,7 @@ export async function testStore() {
 }
 
 /* ---- pencarian produk dari teks bebas ---- */
-const STOP = new Set(('yang dan di ke dari untuk dengan atau ini itu ada adalah apa apakah bisa dong deh nih sih kak kakak min admin mba mbak mas bang gan sis halo hai hi selamat pagi siang sore malam terima kasih makasih thanks tolong mohon minta boleh mau ingin pengen pingin beli pesan order checkout ready stok stock tersedia kosong habis restock harga berapa brp murah mahal diskon promo ukuran size warna model jenis tipe seri varian cod ongkir kirim pengiriman gratis dm chat wa whatsapp link tautan produk barang item kok ya yaa yah nggak ngga gak enggak tidak tak belum sudah udah masih lagi juga saja aja banget sangat sekali lebih paling kalau kalo jika agar supaya karena biar buat bagi pada dalam oleh saya aku kami kita anda kamu dia mereka nya lah kah pun cuma hanya semua beberapa banyak sedikit cantik bagus keren suka mantap').split(/\s+/));
+const STOP = new Set(('yang dan di ke dari untuk dengan atau ini itu ada adalah apa apakah bisa dong deh nih sih kak kakak min admin mba mbak mas bang gan sis halo hai hi selamat pagi siang sore malam terima kasih makasih thanks tolong mohon minta boleh mau ingin pengen pingin beli pesan order checkout ready stok stock tersedia kosong habis restock harga berapa brp murah mahal diskon promo ukuran size warna model jenis tipe seri varian cod ongkir kirim pengiriman gratis dm chat wa whatsapp link tautan produk barang item kok ya yaa yah nggak ngga gak enggak tidak tak belum sudah udah masih lagi juga saja aja banget sangat sekali lebih paling kalau kalo jika agar supaya karena biar buat bagi pada dalam oleh saya aku kami kita anda kamu dia mereka nya lah kah pun cuma hanya semua beberapa banyak sedikit cantik bagus keren suka mantap shopee shopeee tokopedia tokped tiktok lazada instagram ig threads toko online marketplace store website web situs katalog etalase sedia ready? tersedia? deskripsi detail spesifikasi info informasi').split(/\s+/));
 export function keywords(text, max = 5) {
   const t = String(text || '').toLowerCase().replace(/https?:\/\/\S+/g, ' ').replace(/@\w+/g, ' ').replace(/#/g, ' ').replace(/[^\p{L}\p{N}\s-]/gu, ' ');
   const out = [];
@@ -110,6 +110,15 @@ export async function productFacts(brandId, texts, { detail = 2, featured = fals
       }
     };
     if (kws.length) { await run(scope); if (!found.size && scope) await run(''); }
+    if (!found.size && texts.length > 1) { // fallback: nama produk dari postingan/caption
+      const pk = [...new Set(texts.slice(1).flatMap((t) => keywords(t)))].filter((w) => !kws.slice(0, 4).includes(w)).slice(0, 4);
+      for (const kw of pk) for (const b of scope ? [scope, ''] : ['']) {
+        const r = await storeGet('/products', { q: kw, brand: b, limit: 6 });
+        for (const p of r.data || []) { const e = found.get(p.id) || { p, hits: 0 }; e.hits += 1; found.set(p.id, e); }
+        if (found.size) break;
+      }
+      if (found.size) kws.push(...pk);
+    }
     let lastSync = null;
     if (!found.size && featured) {
       const r = await storeGet('/products', { brand: scope, in_stock: 'true', sort: 'terlaris', limit: 5 });

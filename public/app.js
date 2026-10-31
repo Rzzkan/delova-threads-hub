@@ -654,7 +654,7 @@ function wireAi(btn, ctx, ta, setErr, auto = false) {
   const run = () => busy(btn, async () => {
     const c = typeof ctx === 'function' ? ctx() : ctx; if (setErr) setErr('');
     if (!c.text) { toast('Tidak ada pesan pelanggan untuk dibalas.', true); return; }
-    const r = await api('POST', '/api/ai/compose-reply', { brand_id: c.brand_id, platform: c.platform, kind: c.kind, username: c.username, text: c.text, post_text: c.post_text });
+    const r = await api('POST', '/api/ai/compose-reply', { brand_id: c.brand_id, platform: c.platform, kind: c.kind, username: c.username, text: c.text, post_text: c.post_text, ext_id: c.ext_id, media_id: c.media_id, conv_id: c.conv_id, event_id: c.event_id });
     if (!r.reply) { toast(r.reason || 'Model memilih tidak membalas pesan ini.', true); return; }
     if (auto && ta.value.trim()) return; // pengguna sudah mengetik sendiri: jangan ditimpa
     ta.value = r.reply; ta.dispatchEvent(new Event('input')); ta.focus();
@@ -826,7 +826,11 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
     <label>Nama model <span class="muted small">(ketik, atau muat daftar dari penyedia)</span><span class="row" style="flex-wrap:nowrap"><input name="model" list="llmmodels" value="${esc(cfg.llm.model)}" placeholder="mis. qwen3-7-plus" autocomplete="off" style="flex:1"><button type="button" class="btn small" id="llmload">Muat daftar model</button></span><datalist id="llmmodels"></datalist></label>
     <div id="llmlist" class="small muted" style="grid-column:1/-1"></div>
     <label>API key<input name="api_key" type="password" autocomplete="new-password" placeholder="${cfg.llm.has_key ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel API key'}"></label>
-    <label class="row" style="align-self:end"><input type="checkbox" name="fallback" ${cfg.llm.fallback ? 'checked' : ''}> Jika gagal, coba Claude (bila API key Claude ada)</label></div>
+    <label class="row" style="align-self:end"><input type="checkbox" name="fallback" ${cfg.llm.fallback ? 'checked' : ''}> Jika gagal, coba Claude (bila API key Claude ada)</label>
+    <div class="stack" style="grid-column:1/-1;gap:6px"><b class="small">Pertanyaan di luar topik brand (mis. rekomendasi film)</b>
+    <label class="row"><input type="checkbox" name="web_search" ${cfg.llm.web_search ? 'checked' : ''}> Boleh mencari di web untuk menjawab <span class="muted small">(hanya penyedia Kenari; terpakai hari ini ${cfg.llm.web_search_used}/${cfg.llm.web_search_cap}${cfg.llm.web_search_ready ? '' : '; belum aktif untuk konfigurasi saat ini'})</span></label>
+    <label class="row"><input type="checkbox" name="web_search_auto" ${cfg.llm.web_search_auto ? 'checked' : ''}> Balasan berbasis hasil web boleh terkirim otomatis <span class="muted small">(bila tidak dicentang, selalu menunggu persetujuan)</span></label>
+    <label>Batas pencarian web per hari<input type="number" name="web_search_cap" min="0" max="500" value="${cfg.llm.web_search_cap}" style="max-width:140px"></label></div></div>
     <div class="row"><button class="btn primary small">Simpan</button><button type="button" class="btn small" id="llmtest">Uji koneksi</button>${cfg.llm.has_key ? '<button type="button" class="btn small danger" id="llmclear">Hapus API key</button>' : ''}</div></form>` : ''}
   ${can('admin') ? `<form id="stf" class="card stack"><h3>Data produk &amp; stok (API delova.id)</h3>
     <p class="small muted">Auto Reply dan pembuat post mengambil nama, harga, varian, stok, dan tautan produk langsung dari API Delova Store, jadi tidak mengarang. Stok bukan realtime (disalin dari Shopee berkala); usia data selalu disertakan ke model. Kunci API dibuat di VPS delova.id (<code>API_KEYS</code>) dan hanya dipakai server-ke-server.</p>
@@ -867,10 +871,10 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
   if (lf) {
     $('#llmpreset', lf).onchange = (e) => { if (e.target.value) { lf.elements.base_url.value = e.target.value; lf.elements.provider.value = 'openai'; } };
     lf.onsubmit = (e) => { e.preventDefault(); busy($('button', lf), async () => {
-      await api('PUT', '/api/auto/llm', { provider: lf.elements.provider.value, base_url: lf.elements.base_url.value, model: lf.elements.model.value, api_key: lf.elements.api_key.value, fallback: lf.elements.fallback.checked });
+      await api('PUT', '/api/auto/llm', { provider: lf.elements.provider.value, base_url: lf.elements.base_url.value, model: lf.elements.model.value, api_key: lf.elements.api_key.value, fallback: lf.elements.fallback.checked, web_search: lf.elements.web_search.checked, web_search_auto: lf.elements.web_search_auto.checked, web_search_cap: Number(lf.elements.web_search_cap.value) });
       toast('Pengaturan model tersimpan.'); route(); }); };
     $('#llmtest', lf).onclick = (e) => busy(e.target, async () => {
-      await api('PUT', '/api/auto/llm', { provider: lf.elements.provider.value, base_url: lf.elements.base_url.value, model: lf.elements.model.value, api_key: lf.elements.api_key.value, fallback: lf.elements.fallback.checked });
+      await api('PUT', '/api/auto/llm', { provider: lf.elements.provider.value, base_url: lf.elements.base_url.value, model: lf.elements.model.value, api_key: lf.elements.api_key.value, fallback: lf.elements.fallback.checked, web_search: lf.elements.web_search.checked, web_search_auto: lf.elements.web_search_auto.checked, web_search_cap: Number(lf.elements.web_search_cap.value) });
       try { const r = await api('POST', '/api/auto/llm/test'); toast(`Terhubung (${r.ms} ms).`); } catch (err) { toast(err.message, true); } });
     const ml = $('#llmload', lf);
     ml.onclick = () => busy(ml, async () => {
@@ -1103,7 +1107,7 @@ VIEWS.pesan = async (v) => {
     const b = e.target.closest('[data-a="reply"]'); if (!b) return;
     const el = b.closest('[data-i]'); const x = data[el.dataset.p][Number(el.dataset.i)];
     busy(b, async () => {
-      const text = await ui.ask({ title: `Balas @${x.author}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: x.platform === 'threads' ? 500 : 2200, rows: 5, ok: 'Kirim balasan', quote: x.text, quoteLabel: 'Pesan', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: x.brand_id, platform: x.platform, kind: x.kind || 'reply', username: x.author, text: x.text, post_text: x.post_text }, $('textarea', f), se, true) } });
+      const text = await ui.ask({ title: `Balas @${x.author}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: x.platform === 'threads' ? 500 : 2200, rows: 5, ok: 'Kirim balasan', quote: x.text, quoteLabel: 'Pesan', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: x.brand_id, platform: x.platform, kind: x.kind || 'reply', username: x.author, text: x.text, post_text: x.post_text || x.post, ext_id: x.ext_id, media_id: x.media_id, conv_id: x.conv_id, event_id: x.event_id }, $('textarea', f), se, true) } });
       if (text === null) return;
       await api('POST', x.platform === 'instagram' ? `/api/ig/${x.brand_id}/comments/${x.ext_id}/reply` : `/api/brands/${x.brand_id}/replies/${x.ext_id}/reply`, { text });
       toast('Balasan terkirim.'); await load(true);

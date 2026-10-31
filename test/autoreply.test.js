@@ -244,6 +244,28 @@ test('llm: model reasoning (qwen3) yang content-nya kosong diulang dengan thinki
   assert.equal(t.status, 502); assert.match(t.json.error, /tidak mengembalikan teks.*finish: length/);
 });
 
+test('pertanyaan umum di luar brand: dijawab; perlu data terkini → cari web (Kenari), ditinjau manusia', async () => {
+  AR.setDrafter(null); llmCalls = []; const searches = [];
+  const resp = (content) => new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  await A('PUT', '/api/auto/llm', { web_search: true, web_search_auto: false, web_search_cap: 5 });
+  mockLlm(async (url, opts) => {
+    if (url.endsWith('/web/search')) { searches.push(JSON.parse(opts.body)); return new Response(JSON.stringify({ results: [{ title: 'Film Netflix terbaru', url: 'https://x.test', content: 'Judul A dan Judul B sedang tren minggu ini.' }] }), { status: 200, headers: { 'content-type': 'application/json' } }); }
+    const body = JSON.parse(opts.body); llmCalls.push(body);
+    const hasWeb = body.messages[1].content.includes('HASIL PENCARIAN WEB');
+    return resp(hasWeb ? '{"action":"reply","category":"pertanyaan_umum","confidence":0.9,"reply":"Coba Judul A atau B Kak, lagi ramai 🍿","reason":"ok"}' : '{"action":"reply","category":"pertanyaan_umum","confidence":0.9,"reply":"","search_query":"film netflix terbaru","reason":"butuh data terkini"}'); });
+  await A('PUT', `/api/auto/rules/${brand.id}/threads`, { mode: 'draft', enabled: true });
+  const r = await A('POST', '/api/auto/test-event', { brand_id: brand.id, platform: 'threads', kind: 'reply', text: 'Kak rekomendasi film Netflix dong' });
+  assert.equal(searches.length, 1); assert.equal(searches[0].query, 'film netflix terbaru');
+  assert.equal(llmCalls.length, 2); assert.match(llmCalls[0].messages[0].content, /Pencarian web: TERSEDIA/);
+  assert.match(r.json.draft, /Judul A/); assert.equal(r.json.needs_human, 1); assert.match(r.json.note, /pencarian web/); assert.match(r.json.used_data, /Web: "film netflix terbaru"/);
+  const cfg = (await A('GET', '/api/auto/config')).json.llm; assert.equal(cfg.web_search_used, 1); assert.equal(cfg.web_search_ready, true);
+  // dimatikan → tidak mencari, model diberi tahu
+  await A('PUT', '/api/auto/llm', { web_search: false }); searches.length = 0; llmCalls.length = 0;
+  await A('POST', '/api/auto/test-event', { brand_id: brand.id, platform: 'threads', kind: 'reply', text: 'Kak film apa yang bagus?' });
+  assert.equal(searches.length, 0); assert.match(llmCalls[0].messages[0].content, /Pencarian web: TIDAK tersedia/);
+  await A('PUT', '/api/auto/llm', { web_search: true });
+});
+
 test('llm: error penyedia → event menunggu manusia; tombol uji koneksi', async () => {
   mockLlm(async () => new Response(JSON.stringify({ error: { message: 'rate limited' } }), { status: 429, headers: { 'content-type': 'application/json' } }));
   const r = await A('POST', '/api/auto/test-event', { brand_id: brand.id, platform: 'threads', kind: 'reply', text: 'Halo' });
@@ -396,4 +418,18 @@ test('pencarian katalog untuk dashboard/MCP', async () => {
   globalThis.fetch = realFetch;
   assert.equal((await A('PUT', '/api/store/config', { clear_key: true })).status, 200);
   assert.equal((await req(viewer, 'GET', '/api/store/search?q=x')).status, 503);
+});
+
+test('kata marketplace bukan kata kunci produk', async () => {
+  const { keywords } = await import('../src/store-api.js');
+  assert.deepEqual(keywords('Apakah ready di shopee ?'), []);
+  assert.ok(keywords('ZEA Cardigan Stripe ready?').includes('cardigan'));
+});
+
+test('Saran AI membaca utas DM sebelumnya (jawaban singkat dipahami dari konteks)', async () => {
+  let seen;
+  AR.setDrafter(async (b, a) => { seen = a; return { action: 'reply', category: 'sapaan', confidence: 0.9, reply: 'Siap Kak 😊', reason: 'ok' }; });
+  const r = await A('POST', '/api/ai/compose-reply', { brand_id: brand.id, platform: 'instagram', kind: 'dm', username: 'pembeli_contoh', text: 'yang M aja', conv_id: 'abc_conv1' });
+  assert.equal(r.status, 200);
+  assert.match(seen.thread, /masih ready ukuran M/); assert.match(seen.thread, /Mau dikirim ke mana/);
 });
