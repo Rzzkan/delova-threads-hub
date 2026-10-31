@@ -1143,7 +1143,7 @@ VIEWS.plan = async (v) => {
 
 /* ---------- Inbox ---------- */
 VIEWS.inbox = async (v) => {
-  v.innerHTML = `<h1>Inbox Reply</h1><p class="muted">Reply terbaru pada 5 post terakhir tiap akun. AI menyiapkan balasan lewat tombol “Dibantu AI”, Anda yang mengirim.</p>
+  v.innerHTML = `<h1>Inbox Reply</h1><p class="muted">Reply terbaru pada 8 post terakhir tiap akun, termasuk post yang dibuat langsung di app Threads. AI menyiapkan balasan lewat tombol “Dibantu AI”, Anda yang mengirim.</p>
   <div class="row">${brandPick(brands[0].id)}<button class="btn primary" id="load">Muat reply</button></div><div id="out" class="stack" style="margin-top:14px"></div>`;
   $('#load').onclick = (e) => busy(e.target, async () => {
     const id = $('[name=brand]').value;

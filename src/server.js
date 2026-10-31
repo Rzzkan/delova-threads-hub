@@ -469,9 +469,18 @@ export function createApp() {
     const b = brandOr404(req.params.id);
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
     const out = [];
-    for (const p of publishedWithMedia(b.id, 5)) {
-      for (const r of await T.listReplies(b, p.threads_media_id)) out.push({ post_id: p.id, post_text: p.text, reply: r });
+    // Sumber 1: post yang diterbitkan lewat Hub. Sumber 2: post terbaru langsung dari Threads (termasuk yang dibuat di app Threads).
+    const posts = new Map();
+    for (const p of publishedWithMedia(b.id, 5)) posts.set(p.threads_media_id, { id: p.id, text: p.text, ts: p.published_at || '' });
+    let liveErr = null;
+    try { for (const t of await T.listMyThreads(b, 8)) if (!posts.has(t.id)) posts.set(t.id, { id: null, text: t.text || '', ts: t.timestamp || '', permalink: t.permalink }); }
+    catch (e) { liveErr = e.message; }
+    const list = [...posts.entries()].sort((a, c) => String(c[1].ts).localeCompare(String(a[1].ts))).slice(0, 8);
+    for (const [mediaId, p] of list) {
+      try { for (const r of await T.listReplies(b, mediaId)) out.push({ post_id: p.id, media_id: mediaId, post_text: p.text || '(tanpa teks)', post_permalink: p.permalink || null, reply: r }); }
+      catch (e) { liveErr = liveErr || e.message; }
     }
+    if (liveErr && !out.length) return bad(res, `Gagal membaca reply dari Threads: ${liveErr}`, 502);
     // Balasan yang sudah kita kirim ke tiap reply (manual di sini, Auto Reply, atau Kotak Pesan)
     const ids = out.map((x) => x.reply.id);
     const hist = new Map();

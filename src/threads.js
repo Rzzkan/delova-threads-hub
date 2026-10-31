@@ -215,6 +215,17 @@ export async function listReplies(brand, mediaId) {
   return r.data || [];
 }
 
+/** Post terbaru akun langsung dari Threads (termasuk yang dibuat di app Threads, bukan lewat Hub). Reply dilewati. */
+export async function listMyThreads(brand, limit = 12) {
+  if (isDryRun(brand)) return [];
+  const r = await call('GET', `${V}/me/threads`, {
+    fields: 'id,text,timestamp,permalink,is_reply,media_type',
+    limit: Math.min(Math.max(limit, 1) * 2, 50),
+    access_token: tokenOf(brand),
+  });
+  return (r.data || []).filter((x) => !x.is_reply).slice(0, limit);
+}
+
 export async function postText(brand, id) {
   if (isDryRun(brand)) return 'Kebaya brokat sage, cocok untuk kondangan siang #kebayamodern';
   const r = await call('GET', `${V}/${id}`, { fields: 'text', access_token: tokenOf(brand) });
