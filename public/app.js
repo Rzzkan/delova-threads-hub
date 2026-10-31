@@ -179,14 +179,16 @@ async function boot() {
   ].join('');
   route();
 }
+let routeSeq = 0;
 async function route() {
   if (!me) return;
   const name = (location.hash.slice(2).split('?')[0]) || 'dashboard';
   const r = ROUTES.find((x) => x[0] === name && can(x[2])) || ROUTES[0];
   $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === r[0]));
   $('#crumb').textContent = r[1]; closeDrawer(); window.scrollTo(0, 0);
-  const v = $('#view'); v.onclick = v.onsubmit = v.onchange = null; v.innerHTML = '<p class="muted">Memuat…</p>';
-  try { await VIEWS[r[0]](v); } catch (e) { v.innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+  // Tiap navigasi memakai wadah baru: render lama yang terlambat (hashchange ganda/klik cepat) tidak lagi menimpa tampilan baru.
+  const seq = ++routeSeq; const old = $('#view'); const v = old.cloneNode(false); v.innerHTML = '<p class="muted">Memuat…</p>'; old.replaceWith(v);
+  try { await VIEWS[r[0]](v); } catch (e) { if (seq === routeSeq) v.innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', route);
 
@@ -682,8 +684,8 @@ VIEWS.autoreply = async (v) => {
   ${!cfg.ai ? '<div class="banner">Model AI untuk balasan belum dikonfigurasi. ' + (can('admin') ? 'Atur di <a href="#/webhook">Pengaturan → Webhook &amp; Setup</a> (mis. Kenari), atau isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.' : 'Minta admin mengaturnya.') + ' Event akan menunggu balasan manual.</div>' : ''}
   ${AR_TABS.length > 1 ? `<div class="tabs">${AR_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}${ob[t[0]] ? ` <span class="badge s-pending_approval">${ob[t[0]]}</span>` : ''}</a>`).join('')}</div>` : ''}
   <div id="arbody" class="stack" style="margin-top:14px"></div>`;
-  const body = $('#arbody'); const ctx = { cfg, body, q };
-  try { await ARV.inbox({ ...ctx, platform: tab }); } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  const body = v.querySelector('#arbody'); const ctx = { cfg, body, q };
+  try { await ARV.inbox({ ...ctx, platform: tab }); } catch (e) { if (body.isConnected) body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
 };
 const ARV = {};
 
@@ -703,7 +705,8 @@ ARV.inbox = async ({ cfg, body, q, platform }) => {
       ${e.used_data ? `<div class="small muted">Data produk dipakai: ${esc(e.used_data)}</div>` : ''}${e.note || e.error ? `<div class="small ${e.status === 'failed' ? 'err' : 'muted'}">${esc(e.error || e.note)}</div>` : ''}
       <div class="row">${act && can('editor') ? '<button class="btn primary small" data-a="approve" type="button">Kirim balasan</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped', 'rejected'].includes(e.status) && cfg.ai ? '<button class="btn small" data-a="redraft" type="button">Draf ulang dengan AI</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped'].includes(e.status) ? '<button class="btn small" data-a="reject" type="button">Tolak</button>' : ''}${e.permalink ? `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(e.permalink)}">Buka</a>` : ''}</div></div>`; }).join('')
     : `<div class="card muted">Belum ada event ${PLAT[pf]} di sini. Setelah webhook terpasang, ${pf === 'threads' ? 'reply/mention' : pf === 'instagram' ? 'komentar/mention/DM' : 'pesan masuk'} baru muncul otomatis. Mode simulasi: pakai kotak uji di Pengetahuan Brand → Aturan per akun.</div>`}`;
-  $('#fb').onchange = (e) => { location.hash = link('brand', e.target.value); };
+  if (!body.isConnected) return;
+  $('#fb', body).onchange = (e) => { location.hash = link('brand', e.target.value); };
   body.onclick = (e) => {
     const btn = e.target.closest('[data-a]'); if (!btn) return; const card = btn.closest('.ev'); const id = card.dataset.id; const a = btn.dataset.a;
     busy(btn, async () => {
