@@ -156,7 +156,7 @@ const ROUTES = [
   ['calendar', 'Kalender', 'viewer', 'Menu'], ['instagram', 'Instagram', 'viewer', 'Menu'], ['autoreply', 'Auto Reply', 'viewer', 'Menu'], ['pesan', 'Kotak Pesan', 'editor', 'Menu'], ['whatsapp', 'WhatsApp', 'editor', 'Menu'], ['plan', 'Rencana Mingguan', 'editor', 'Menu'], ['inbox', 'Inbox Reply', 'editor', 'Menu'], ['insights', 'Insight', 'viewer', 'Menu'],
   ['trends', 'Tren', 'editor', 'Riset & Kolaborasi'], ['katalog', 'Katalog Meta', 'manager', 'Riset & Kolaborasi'], ['embed', 'Embed Post', 'editor', 'Riset & Kolaborasi'], ['peluang', 'Peluang Engage', 'editor', 'Riset & Kolaborasi'], ['research', 'Riset', 'viewer', 'Riset & Kolaborasi'], ['mentions', 'Mention', 'viewer', 'Riset & Kolaborasi'], ['creators', 'Kolaborasi', 'viewer', 'Riset & Kolaborasi'],
   ['brands', 'Pengetahuan Brand', 'viewer', 'Pengaturan'], ['claude', 'Hubungkan Claude', 'viewer', 'Pengaturan'], ['control', 'Kontrol Claude', 'admin', 'Pengaturan'],
-  ['akun', 'Akun Terhubung', 'manager', 'Pengaturan'], ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
+  ['akun', 'Akun Terhubung', 'manager', 'Pengaturan'], ['webhook', 'Webhook & Setup', 'manager', 'Pengaturan'], ['meta', 'Pengaturan Meta', 'admin', 'Pengaturan'], ['team', 'Tim', 'admin', 'Pengaturan'],
 ];
 const VIEWS = {};
 
@@ -174,7 +174,7 @@ async function boot() {
   }).join('');
   $('#banner').innerHTML = [
     health.simulated ? '<div class="banner"><b>Mode simulasi:</b> post tidak dikirim ke Threads asli. Isi kredensial Meta di <code>.env</code> dan set <code>THREADS_DRY_RUN=false</code> untuk go-live (lihat README).</div>' : '',
-    !health.ai ? '<div class="banner">Fitur AI di dashboard belum aktif: pilih model (mis. Kenari) di Auto Reply → Webhook &amp; setup, atau isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.</div>' : '',
+    !health.ai ? '<div class="banner">Fitur AI di dashboard belum aktif: pilih model (mis. Kenari) di Pengaturan → Webhook &amp; Setup, atau isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.</div>' : '',
   ].join('');
   route();
 }
@@ -550,7 +550,7 @@ function igActions(p) {
 /** Bagian "Diterima lewat webhook": apa yang sudah masuk ke Hub, terlepas dari daftar API Instagram. */
 const wbEvents = (evs, kindLabel) => `<div class="card stack"><div class="row between"><b>Diterima lewat webhook (${evs.length})</b><a class="btn small" href="#/autoreply?tab=inbox&f=all">Buka Kotak masuk Auto Reply</a></div>
   <p class="small muted">${kindLabel} yang dikirim Meta ke Hub secara real-time. Balasan &amp; persetujuan ada di Auto Reply → Kotak masuk.</p>
-  ${evs.length ? evs.map((e) => `<div class="pitem" style="border-top:1px solid var(--line,#e5e7eb);padding:8px 0"><div class="row between"><span><b>${e.author_username ? `@${esc(e.author_username)}` : `ID ${esc(e.author_id || '-')}`}</b> <span class="small muted">${esc(igTime(e.received_at))} · ${esc(e.kind)}</span></span><span class="badge">${esc(AR_STATUS[e.status] || e.status)}</span></div><div style="white-space:pre-wrap">${esc(e.text)}</div>${e.draft ? `<div class="small muted">Draf: ${esc(e.draft)}</div>` : ''}${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ''}</div>`).join('') : '<div class="small muted">Belum ada yang diterima lewat webhook. Cek Auto Reply → Webhook &amp; setup → Log penerimaan webhook untuk melihat apakah Meta mengirim sesuatu.</div>'}</div>`;
+  ${evs.length ? evs.map((e) => `<div class="pitem" style="border-top:1px solid var(--line,#e5e7eb);padding:8px 0"><div class="row between"><span><b>${e.author_username ? `@${esc(e.author_username)}` : `ID ${esc(e.author_id || '-')}`}</b> <span class="small muted">${esc(igTime(e.received_at))} · ${esc(e.kind)}</span></span><span class="badge">${esc(AR_STATUS[e.status] || e.status)}</span></div><div style="white-space:pre-wrap">${esc(e.text)}</div>${e.draft ? `<div class="small muted">Draf: ${esc(e.draft)}</div>` : ''}${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ''}</div>`).join('') : '<div class="small muted">Belum ada yang diterima lewat webhook. Cek Pengaturan → Webhook &amp; Setup → Log penerimaan webhook untuk melihat apakah Meta mengirim sesuatu.</div>'}</div>`;
 IGV.komentar = async ({ bid, body }) => {
   const [d, evs] = await Promise.all([api('GET', `/api/ig/${bid}/comments?diag=1`), api('GET', `/api/ig/${bid}/webhook-events?kind=comment`).catch(() => [])]);
   const groups = d.groups;
@@ -644,7 +644,7 @@ IGV.akun = async ({ st, body }) => {
 };
 
 /* ---------- Auto Reply & Webhook ---------- */
-const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
+const AR_TABS = [['inbox', 'Kotak masuk', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 /** Tombol "Saran AI": model LLM terpilih + aturan brand + Pengetahuan brand + data produk delova.id. Hanya mengisi kotak balasan; manusia yang mengirim. */
 const aiBtn = () => (health.ai && can('editor') ? '<button type="button" class="btn small" data-ai title="Dibuat dengan model AI terpilih, mengikuti brand voice dan Pengetahuan brand">✨ Saran AI</button>' : '');
@@ -669,15 +669,16 @@ const PLAT = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' 
 
 VIEWS.autoreply = async (v) => {
   const q = params();
+  if (q.get('tab') === 'webhook') { location.replace('#/webhook'); return; }
   if (['keyword', 'aturan', 'pengetahuan'].includes(q.get('tab'))) { location.replace(`#/brands?${q.toString()}`); return; } // pindah ke Pengetahuan Brand
   const cfg = await api('GET', '/api/auto/config');
   const tab = AR_TABS.some((t) => t[0] === q.get('tab')) ? q.get('tab') : 'inbox';
   const nav = (t) => `#/autoreply?tab=${t}`;
   const open = (cfg.stats.pending || 0) + (cfg.stats.failed || 0);
   v.innerHTML = `<div class="page-head"><h1>Auto Reply</h1><p class="muted">Webhook Meta menangkap reply, mention, komentar, dan DM secara real-time; Claude menyusun balasan sesuai brand voice. Anda memilih: tinjau dulu, atau kirim otomatis dengan pagar pengaman.</p></div>
-  ${!cfg.enabled ? '<div class="banner"><b>Auto reply sedang mati.</b> Event yang masuk tetap dicatat tetapi tidak dibalas. ' + (can('admin') ? 'Nyalakan di tab Webhook &amp; setup.' : 'Minta admin menyalakannya.') + '</div>' : ''}
-  ${!cfg.ai ? '<div class="banner">Model AI untuk balasan belum dikonfigurasi. ' + (can('admin') ? 'Atur di tab Webhook &amp; setup (mis. Kenari), atau isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.' : 'Minta admin mengaturnya.') + ' Event akan menunggu balasan manual.</div>' : ''}
-  <div class="tabs">${AR_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}${t[0] === 'inbox' && open ? ` <span class="badge s-pending_approval">${open}</span>` : ''}</a>`).join('')}</div>
+  ${!cfg.enabled ? '<div class="banner"><b>Auto reply sedang mati.</b> Event yang masuk tetap dicatat tetapi tidak dibalas. ' + (can('admin') ? 'Nyalakan di <a href="#/webhook">Pengaturan → Webhook &amp; Setup</a>.' : 'Minta admin menyalakannya.') + '</div>' : ''}
+  ${!cfg.ai ? '<div class="banner">Model AI untuk balasan belum dikonfigurasi. ' + (can('admin') ? 'Atur di <a href="#/webhook">Pengaturan → Webhook &amp; Setup</a> (mis. Kenari), atau isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.' : 'Minta admin mengaturnya.') + ' Event akan menunggu balasan manual.</div>' : ''}
+  ${AR_TABS.length > 1 ? `<div class="tabs">${AR_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}${t[0] === 'inbox' && open ? ` <span class="badge s-pending_approval">${open}</span>` : ''}</a>`).join('')}</div>` : ''}
   <div id="arbody" class="stack" style="margin-top:14px"></div>`;
   const body = $('#arbody'); const ctx = { cfg, body, q };
   try { await ARV[tab](ctx); } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
@@ -806,6 +807,12 @@ ARV.pengetahuan = async ({ cfg, body, q }) => {
     busy(del, async () => { const r = await api('POST', '/api/knowledge/delete', { ids }); toast(`${r.deleted} butir dihapus.`); route(); }); };
 };
 
+VIEWS.webhook = async (v) => {
+  const cfg = await api('GET', '/api/auto/config');
+  v.innerHTML = `<div class="page-head"><h1>Webhook &amp; Setup</h1><p class="muted">Saklar utama Auto Reply, model AI (mis. Kenari), data produk delova.id, dan data webhook untuk Meta for Developers beserta log penerimaannya.</p></div><div id="whbody" class="stack"></div>`;
+  const body = $('#whbody', v);
+  try { await ARV.webhook({ cfg, body }); } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+};
 ARV.webhook = async ({ cfg, body }) => {
   const copy = (id) => `<span class="row"><input id="${id}" readonly value="" style="flex:1"><button type="button" class="btn small" data-cp="${id}">Salin</button></span>`;
   body.innerHTML = `${can('admin') ? `<div class="card stack"><h3>Saklar utama</h3><label class="row"><input type="checkbox" id="gon" ${cfg.enabled ? 'checked' : ''}> <b>Aktifkan webhook &amp; auto reply</b></label>

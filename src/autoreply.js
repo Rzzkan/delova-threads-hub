@@ -251,7 +251,7 @@ export async function processEvent(id) {
     if (!rule.enabled) return end(id, 'ignored', 'Auto reply belum diaktifkan untuk akun ini.');
     if (!rule.kinds.includes(ev.kind)) return end(id, 'ignored', `Jenis "${ev.kind}" tidak diaktifkan.`);
     if (ev.kind === 'dm' && Date.now() - Date.parse(ev.received_at) > 23.5 * 3600e3) return end(id, 'ignored', 'Di luar jendela balas 24 jam Instagram.');
-    if (!drafter && !AI.replyAiEnabled()) return end(id, 'pending', 'Model AI belum dikonfigurasi (Auto Reply → Webhook & setup).', { needs_human: 1 });
+    if (!drafter && !AI.replyAiEnabled()) return end(id, 'pending', 'Model AI belum dikonfigurasi (Pengaturan → Webhook & Setup).', { needs_human: 1 });
 
     const cap = Number(getSetting('auto_llm_daily_cap')) || 300;
     if (get('SELECT COUNT(*) AS n FROM auto_events WHERE drafted_at>?', new Date(Date.now() - 86400e3).toISOString()).n >= cap) return end(id, 'pending', 'Batas draf LLM harian tercapai; tulis balasan manual.', { needs_human: 1 });

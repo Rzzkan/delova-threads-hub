@@ -554,7 +554,7 @@ export function createApp() {
   }));
   // Saran balasan satu pesan (komentar/reply/DM/WhatsApp): LLM terpilih + aturan & Pengetahuan brand + data produk. Hanya saran; manusia yang mengirim.
   api.post('/ai/compose-reply', ...aiRoute('editor', async (brand, b) => {
-    if (!AI.replyAiEnabled()) { const e = new Error('Model AI belum dikonfigurasi (Auto Reply → Webhook & setup).'); e.status = 409; throw e; }
+    if (!AI.replyAiEnabled()) { const e = new Error('Model AI belum dikonfigurasi (Pengaturan → Webhook & Setup).'); e.status = 409; throw e; }
     if (!String(b.text || '').trim()) { const e = new Error('Teks pesan wajib diisi.'); e.status = 400; throw e; }
     return composeReply(brand, { platform: b.platform, kind: b.kind, username: String(b.username || '').slice(0, 60), text: String(b.text).slice(0, 1200), postText: String(b.post_text || '').slice(0, 600) });
   }));

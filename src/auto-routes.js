@@ -15,7 +15,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
   for (const platform of PLATFORMS) {
     app.get(`/webhooks/${platform}`, (req, res) => {
       const c = A_.verifyChallenge(req.query);
-      A_.logWebhook(platform, c === null ? 'verifikasi_gagal' : 'verifikasi_ok', c === null ? 'Token verifikasi tidak cocok dengan "Verify token" di halaman Webhook & setup.' : 'Meta berhasil memverifikasi URL callback.');
+      A_.logWebhook(platform, c === null ? 'verifikasi_gagal' : 'verifikasi_ok', c === null ? 'Token verifikasi tidak cocok dengan "Verify token" di halaman Pengaturan → Webhook & Setup.' : 'Meta berhasil memverifikasi URL callback.');
       return c === null ? res.status(403).send('Verifikasi gagal') : res.type('text/plain').send(c);
     });
     app.post(`/webhooks/${platform}`, (req, res) => {
@@ -109,7 +109,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
   }));
   const storeFail = (res, e) => bad(res, e.message, [400, 401, 404, 429, 503].includes(e.status) ? e.status : 502);
   api.get('/store/search', need('viewer'), ah(async (req, res) => {
-    if (!Store.storeReady()) return bad(res, 'API produk belum dikonfigurasi (admin: menu Auto Reply → Webhook & setup).', 503);
+    if (!Store.storeReady()) return bad(res, 'API produk belum dikonfigurasi (admin: menu Pengaturan → Webhook & Setup).', 503);
     try { res.json(await Store.searchCatalog({ q: req.query.q, brand: req.query.brand, in_stock: req.query.in_stock, sort: req.query.sort, limit: req.query.limit })); } catch (e) { storeFail(res, e); }
   }));
   api.get('/store/product/:ref', need('viewer'), ah(async (req, res) => {

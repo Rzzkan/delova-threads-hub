@@ -72,7 +72,7 @@ export function mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 }) {
     res.json({ added, skipped });
   }));
   api.post('/opps/draft', need('editor'), humanOnly, ah(async (req, res) => {
-    if (!AI.replyAiEnabled()) return bad(res, 'Model AI belum dikonfigurasi (Auto Reply → Webhook & setup).', 409);
+    if (!AI.replyAiEnabled()) return bad(res, 'Model AI belum dikonfigurasi (Pengaturan → Webhook & Setup).', 409);
     const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).slice(0, 8);
     const out = [];
     for (const id of ids) {
