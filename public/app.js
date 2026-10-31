@@ -1148,8 +1148,9 @@ VIEWS.inbox = async (v) => {
   $('#load').onclick = (e) => busy(e.target, async () => {
     const id = $('[name=brand]').value;
     const items = await api('GET', `/api/brands/${id}/replies`);
+    const ansHtml = (x) => (x.answers?.length ? `<div class="stack" style="gap:6px;border-left:3px solid #2e9d6b;padding-left:10px"><span class="badge" style="background:#e3f5ec;color:#1d7a50">✓ Sudah terbalas${x.answers.length > 1 ? ` (${x.answers.length}×)` : ''}</span>${x.answers.map((a) => `<div class="small"><span class="muted">${esc(a.by)} · ${esc(a.via)} · ${esc(new Date(a.at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }))}</span><div>${esc(a.text)}</div></div>`).join('')}</div>` : '');
     $('#out').innerHTML = items.map((x, i) => `<div class="card stack" data-i="${i}"><div class="small muted">Pada post: “${esc(x.post_text.slice(0, 90))}…”</div>
-      <div><b>@${esc(x.reply.username)}</b> ${x.reply.hide_status === 'HIDDEN' ? '<span class="badge">disembunyikan</span>' : ''}<p style="margin:.3em 0">${esc(x.reply.text)}</p></div>
+      <div><b>@${esc(x.reply.username)}</b> ${x.reply.hide_status === 'HIDDEN' ? '<span class="badge">disembunyikan</span>' : ''}<p style="margin:.3em 0">${esc(x.reply.text)}</p></div><div class="ans">${ansHtml(x)}</div>
       <div class="row">${health.ai ? '<button class="btn small" data-ai>✨ Dibantu AI</button>' : ''}${can('manager') ? '<button class="btn small" data-a="hide">Sembunyikan</button>' : ''}</div>
       <div class="opts stack"></div><div class="row"><textarea style="min-height:56px" class="rt" placeholder="Tulis balasan…"></textarea>${can('manager') ? '<button class="btn small primary" data-a="send">Kirim</button>' : ''}</div></div>`).join('') || '<p class="muted">Belum ada reply.</p>';
     $$('#out [data-i]').forEach((card) => { const x = items[card.dataset.i]; wireAi($('[data-ai]', card), { brand_id: id, platform: 'threads', kind: 'reply', username: x.reply.username, text: x.reply.text, post_text: x.post_text }, $('.rt', card)); });
@@ -1159,7 +1160,7 @@ VIEWS.inbox = async (v) => {
       const x = items[card.dataset.i];
       await busy(ev.target, async () => {
         if (a === 'hide') { await api('POST', `/api/brands/${id}/replies/${x.reply.id}/hide`, { hide: true }); toast('Disembunyikan.'); }
-        if (a === 'send') { const t = $('.rt', card).value.trim(); if (!t) throw new Error('Tulis balasan dulu.'); if (!(await ui.confirm({ title: 'Kirim balasan?', message: 'Balasan tampil publik atas nama brand.', quote: t, quoteLabel: 'Balasan Anda', ok: 'Kirim balasan' }))) return; await api('POST', `/api/brands/${id}/replies/${x.reply.id}/reply`, { text: t }); toast('Balasan terkirim.'); $('.rt', card).value = ''; }
+        if (a === 'send') { const t = $('.rt', card).value.trim(); if (!t) throw new Error('Tulis balasan dulu.'); if (!(await ui.confirm({ title: 'Kirim balasan?', message: 'Balasan tampil publik atas nama brand.', quote: t, quoteLabel: 'Balasan Anda', ok: 'Kirim balasan' }))) return; await api('POST', `/api/brands/${id}/replies/${x.reply.id}/reply`, { text: t }); toast('Balasan terkirim.'); (x.answers ||= []).push({ text: t, at: new Date().toISOString(), by: 'Anda', via: 'Inbox Reply' }); $('.ans', card).innerHTML = ansHtml(x); $('.rt', card).value = ''; }
       });
     };
   });

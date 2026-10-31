@@ -208,3 +208,15 @@ test('Upload PNG diterima; untuk Instagram otomatis jadi JPG (transparansi dirat
   const c = await api('POST', '/api/ig/posts', { brand_id: 'kids', kind: 'feed', caption: 'x', media_urls: [plain.body.url.replace('http://localhost', 'https://localhost')] });
   assert.equal(c.status, 201); assert.match(c.body.media_urls[0], /\.jpg$/);
 });
+
+test('Inbox Reply: reply yang sudah dibalas menampilkan daftar balasannya', async () => {
+  const p = await api('POST', '/api/posts', { brand_id: 'wardrobe', text: 'Tim Peach atau Mint?' });
+  await api('POST', `/api/posts/${p.body.id}/submit`); await api('POST', `/api/posts/${p.body.id}/approve`); await api('POST', `/api/posts/${p.body.id}/publish`);
+  const l1 = await api('GET', '/api/brands/wardrobe/replies');
+  assert.ok(l1.body.length, 'ada reply simulasi');
+  assert.deepEqual(l1.body[0].answers, []);
+  const rid = l1.body[0].reply.id;
+  assert.equal((await api('POST', `/api/brands/wardrobe/replies/${rid}/reply`, { text: 'Siap Bunda, ya!' })).status, 200);
+  const l2 = (await api('GET', '/api/brands/wardrobe/replies')).body.find((x) => x.reply.id === rid);
+  assert.equal(l2.answers.length, 1); assert.equal(l2.answers[0].text, 'Siap Bunda, ya!');
+});

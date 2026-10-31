@@ -472,7 +472,19 @@ export function createApp() {
     for (const p of publishedWithMedia(b.id, 5)) {
       for (const r of await T.listReplies(b, p.threads_media_id)) out.push({ post_id: p.id, post_text: p.text, reply: r });
     }
-    res.json(out);
+    // Balasan yang sudah kita kirim ke tiap reply (manual di sini, Auto Reply, atau Kotak Pesan)
+    const ids = out.map((x) => x.reply.id);
+    const hist = new Map();
+    const add = (k, o) => { if (!hist.has(k)) hist.set(k, []); hist.get(k).push(o); };
+    for (let i = 0; i < ids.length; i += 200) {
+      const ph = ids.slice(i, i + 200).map(() => '?').join(',');
+      if (!ph) continue;
+      for (const r of all(`SELECT s.target_id, s.text, s.created_at, u.name AS by FROM sent_replies s LEFT JOIN users u ON u.id=s.sent_by WHERE s.brand_id=? AND s.target_id IN (${ph})`, b.id, ...ids.slice(i, i + 200)))
+        add(r.target_id, { text: r.text, at: r.created_at, by: r.by || 'Tim', via: 'Inbox Reply' });
+      for (const r of all(`SELECT e.target_id, e.reply_text, e.received_at, e.decided_by, u.name AS by FROM auto_events e LEFT JOIN users u ON u.id=e.decided_by WHERE e.platform='threads' AND e.brand_id=? AND e.status='sent' AND e.reply_text IS NOT NULL AND e.target_id IN (${ph})`, b.id, ...ids.slice(i, i + 200)))
+        add(r.target_id, { text: r.reply_text, at: r.received_at, by: r.by || 'Auto Reply', via: r.decided_by ? 'Kotak Pesan' : 'Auto Reply' });
+    }
+    res.json(out.map((x) => ({ ...x, answers: (hist.get(x.reply.id) || []).sort((a, c) => String(a.at).localeCompare(String(c.at))) })));
   }));
 
   api.post('/brands/:id/replies/:replyId/reply', need('manager'), gate('claude_reply'), ah(async (req, res) => {
@@ -481,6 +493,7 @@ export function createApp() {
     if (!b || !text) return bad(res, 'Teks balasan wajib diisi.');
     if (threadsLength(text) > 500) return bad(res, 'Balasan maksimal 500 karakter.');
     const r = await T.replyTo(b, req.params.replyId, text);
+    run('INSERT INTO sent_replies(brand_id,target_id,text,sent_id,sent_by,created_at) VALUES (?,?,?,?,?,?)', b.id, req.params.replyId, text, String(r.mediaId || r.id || ''), req.user?.id || null, now());
     A(req, 'reply.sent', { brand: b.id, to: req.params.replyId });
     res.json(r);
   }));

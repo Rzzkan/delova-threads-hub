@@ -374,6 +374,16 @@ CREATE TABLE IF NOT EXISTS research_saves (
   created_by TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sent_replies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  brand_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  sent_id TEXT,
+  sent_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sent_replies_target ON sent_replies(target_id);
 CREATE TABLE IF NOT EXISTS mentions (
   id TEXT PRIMARY KEY,              -- brand_id:media_id (satu mention bisa menyebut beberapa brand)
   media_id TEXT NOT NULL,
