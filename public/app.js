@@ -1590,11 +1590,11 @@ VIEWS.control = async (v) => {
   <form id="pf" class="card stack">
     ${sw('claude_enabled', 'Akses Claude aktif', 'Saklar utama. Matikan untuk memutus SEMUA akses Claude dalam sekejap (darurat).', p.claude_enabled)}
     ${sw('can_create', 'Buat &amp; edit draft, ajukan approval', 'Aman: tidak pernah langsung terbit.', p.can_create)}
-    ${sw('can_approve', 'Setujui &amp; jadwalkan post', 'Claude boleh menyetujui hanya setelah user yang login memberi konfirmasi di percakapan. Hanya efektif jika akun yang dipakai berperan manager/admin.', p.can_approve)}
-    ${sw('can_publish', 'Publish langsung ke Threads', 'Risiko tertinggi: post langsung tayang. Disarankan tetap mati.', p.can_publish)}
+    ${sw('can_approve', 'Setujui &amp; jadwalkan post (Threads &amp; Instagram)', 'Claude boleh menyetujui hanya setelah user yang login memberi konfirmasi di percakapan. Hanya efektif jika akun yang dipakai berperan manager/admin.', p.can_approve)}
+    ${sw('can_publish', 'Publish langsung ke Threads &amp; Instagram', 'Risiko tertinggi: post langsung tayang. Disarankan tetap mati.', p.can_publish)}
     ${sw('can_reply', 'Balas &amp; sembunyikan komentar', 'Balasan tampil publik atas nama brand.', p.can_reply)}
     ${sw('can_edit_brand', 'Ubah profil brand (voice, pillar, hashtag, dos/donts)', 'Claude boleh mengubah isi profil brand setelah konfirmasi user di percakapan. Memengaruhi semua tulisan berikutnya; setiap perubahan tersimpan di riwayat dan bisa dipulihkan. Nama brand &amp; kredensial tidak bisa diubah Claude.', p.can_edit_brand)}
-    ${sw('can_edit_knowledge', 'Isi Pengetahuan brand Auto Reply', 'Claude boleh menambah fakta (kebijakan, ongkir, ukuran, FAQ) ke Pengetahuan brand setelah konfirmasi user. Isi ini jadi sumber fakta balasan otomatis, jadi pantau hasilnya di Auto Reply. Perubahan tercatat di log audit.', pol.can_edit_knowledge)}
+    ${sw('can_edit_knowledge', 'Isi Pengetahuan brand Auto Reply', 'Claude boleh menambah fakta (kebijakan, ongkir, ukuran, FAQ) ke Pengetahuan brand setelah konfirmasi user. Isi ini jadi sumber fakta balasan otomatis, jadi pantau hasilnya di Auto Reply. Perubahan tercatat di log audit.', p.can_edit_knowledge)}
     <label>Batas draft baru dari Claude per 24 jam<input type="number" name="daily_create_cap" min="0" max="500" value="${p.daily_create_cap}" style="max-width:140px"></label>
     <div><button class="btn primary">Simpan kontrol</button></div>
   </form>
