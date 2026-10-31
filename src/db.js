@@ -288,6 +288,15 @@ CREATE TABLE IF NOT EXISTS wa_out (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS wa_out_idx ON wa_out(brand_id, to_id, created_at);
+CREATE TABLE IF NOT EXISTS webhook_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  result TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  events INTEGER NOT NULL DEFAULT 0,
+  created INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS brand_knowledge (
   id TEXT PRIMARY KEY,
   brand_id TEXT NOT NULL REFERENCES brands(id),

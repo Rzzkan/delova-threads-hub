@@ -100,7 +100,7 @@ ${factsBlock(facts)}Format: [{"text": "...", "angle": "apa yang diubah"}]`,
   return fit(parseJson(out));
 }
 
-export async function suggestReplies(brand, { postText, replies, count }) {
+export async function suggestReplies(brand, { postText, replies, count, knowledge = '', storeFacts = '' }) {
   const n = clampCount(count, 3, 5);
   const list = replies.map((r, i) => `${i + 1}. @${r.username}: ${r.text}`).join('\n');
   const out = await ask(
@@ -108,7 +108,7 @@ export async function suggestReplies(brand, { postText, replies, count }) {
     `Post kami: """${postText || '(tidak tersedia)'}"""
 Reply dari audiens:
 ${list}
-Untuk SETIAP reply, buat ${n} opsi balasan singkat (maks 280 karakter), ramah dan sesuai brand voice. Jangan menjanjikan stok/harga/pengiriman yang tidak diketahui; arahkan ke Shopee/DM bila perlu.
+${knowledge ? `PENGETAHUAN BRAND (sumber fakta, jangan keluar dari sini):\n${knowledge}\n` : ''}${storeFacts ? `${storeFacts}\n` : ''}Untuk SETIAP reply, buat ${n} opsi balasan singkat (maks 280 karakter), ramah dan sesuai brand voice. Harga/stok/varian/tautan HANYA boleh diambil dari pengetahuan brand atau data produk di atas; bila tidak ada, jangan menebak, arahkan ke Shopee/DM.
 Format: [{"index": 1, "options": ["...", "..."]}]`,
   );
   return parseJson(out);
@@ -290,7 +290,7 @@ export async function oppReply(brand, { username, text, keyword, knowledge, maxC
   return parseJson(out);
 }
 export async function aiReply(brand, { platform, kind, username, text, postText, knowledge, storeFacts, maxChars }) {
-  const where = { threads: 'Threads', instagram: 'Instagram' }[platform] || platform;
+  const where = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' }[platform] || platform;
   const kindLabel = { reply: 'reply pada post kami', mention: 'post yang me-mention kami', comment: 'komentar pada post kami', dm: 'pesan langsung (DM)' }[kind] || kind;
   const system = `${REPLY_RULES}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}${storeFacts ? `\n\n${storeFacts}` : ''}`;
   const user = `Platform: ${where}. Jenis: ${kindLabel}. Maksimal ${maxChars} karakter.

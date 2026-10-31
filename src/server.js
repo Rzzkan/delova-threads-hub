@@ -22,6 +22,7 @@ import { mountWhatsApp } from './wa-routes.js';
 import { mountCatalog } from './catalog-routes.js';
 import { mountKnowledge } from './knowledge-routes.js';
 import * as Store from './store-api.js';
+import { composeReply, ruleOf } from './autoreply.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
 const need = (min) => (req, res, next) =>
@@ -551,9 +552,19 @@ export function createApp() {
     const sf = await postFacts(brand, [b.text, b.instruction]);
     return { variants: await AI.improvePost(brand, { ...b, facts: sf.facts }), data_used: sf.used };
   }));
-  api.post('/ai/reply-suggestions', ...aiRoute('manager', async (brand, b) => ({
-    suggestions: await AI.suggestReplies(brand, { postText: b.post_text, replies: b.replies || [], count: b.count }),
-  })));
+  // Saran balasan satu pesan (komentar/reply/DM/WhatsApp): LLM terpilih + aturan & Pengetahuan brand + data produk. Hanya saran; manusia yang mengirim.
+  api.post('/ai/compose-reply', ...aiRoute('editor', async (brand, b) => {
+    if (!AI.replyAiEnabled()) { const e = new Error('Model AI belum dikonfigurasi (Auto Reply → Webhook & setup).'); e.status = 409; throw e; }
+    if (!String(b.text || '').trim()) { const e = new Error('Teks pesan wajib diisi.'); e.status = 400; throw e; }
+    return composeReply(brand, { platform: b.platform, kind: b.kind, username: String(b.username || '').slice(0, 60), text: String(b.text).slice(0, 1200), postText: String(b.post_text || '').slice(0, 600) });
+  }));
+  api.post('/ai/reply-suggestions', ...aiRoute('manager', async (brand, b) => {
+    const rs = (b.replies || []).slice(0, 10); const c = Store.storeConfig();
+    const sf = c.useReply && Store.storeReady() ? await Store.productFacts(brand.id, [b.post_text, ...rs.map((r) => r.text)].filter(Boolean)) : { facts: '' };
+    return {
+    suggestions: await AI.suggestReplies(brand, { postText: b.post_text, replies: rs, count: b.count, knowledge: ruleOf(brand.id, 'threads').knowledge, storeFacts: sf.facts }),
+    };
+  }));
   api.post('/ai/weekly-plan', ...aiRoute('editor', async (brand, b) => {
     const sf = await postFacts(brand, [b.goal, b.promo], { featured: true });
     const items = await AI.weeklyPlan(brand, { ...b, facts: sf.facts });

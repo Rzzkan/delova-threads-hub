@@ -149,6 +149,29 @@ export function parseInstagram(body) {
   return out;
 }
 
+/* ---------------- Log penerimaan webhook (diagnosis) ---------------- */
+export function logWebhook(platform, result, detail = '', events = 0, created = 0) {
+  try {
+    run('INSERT INTO webhook_log(at,platform,result,detail,events,created) VALUES (?,?,?,?,?,?)', now(), platform, result, String(detail).slice(0, 500), events, created);
+    run('DELETE FROM webhook_log WHERE id <= (SELECT MAX(id) FROM webhook_log) - 200');
+  } catch { /* log tidak boleh mengganggu webhook */ }
+}
+/** Ringkas isi payload: akun mana (id), bidang/jenis apa, dan apakah id itu dikenali. */
+export function describePayload(platform, body) {
+  const parts = [];
+  for (const en of body?.entry || []) {
+    const id = String(en.id ?? '');
+    let known = false; let what = [];
+    if (platform === 'threads') known = !!get('SELECT 1 FROM brands WHERE threads_user_id=?', id);
+    else if (platform === 'instagram') known = !!get('SELECT 1 FROM ig_accounts WHERE ig_user_id=?', id);
+    else known = (en.changes || []).some((c) => !!W.numberByPhoneId(c.value?.metadata?.phone_number_id));
+    for (const c of en.changes || []) what.push(c.field);
+    if ((en.messaging || []).length) what.push(`messaging×${en.messaging.length}`);
+    parts.push(`${platform === 'whatsapp' ? 'WABA' : 'akun'} ${id || '?'} ${known ? '(dikenali)' : '(TIDAK cocok dengan akun terhubung)'}: ${what.join(', ') || 'tanpa isi'}`);
+  }
+  return parts.join(' | ') || 'payload kosong';
+}
+
 /* ---------------- Simpan & proses ---------------- */
 export function ingest(events, { simulated = false } = {}) {
   const ids = [];
@@ -196,6 +219,22 @@ export function unsafeReason(text, knowledge, limit) {
   const squash = (x) => x.replace(/(?<=\d)[\s.-]+(?=\d)/g, '');
   if (/(?<!\d)(\+?62|0)8\d{8,11}(?!\d)/.test(squash(text)) && !/\d{8}/.test(squash(known))) return 'Draf memuat nomor telepon yang tidak ada di pengetahuan brand.';
   return null;
+}
+
+/** Saran balasan untuk manusia (tombol "Saran AI" di dashboard): model LLM terpilih + aturan brand + Pengetahuan brand + data produk delova.id. Tidak mengirim apa pun. */
+export async function composeReply(brand, { platform, kind, username, text, postText }) {
+  const pl = ['threads', 'instagram', 'whatsapp'].includes(platform) ? platform : 'threads';
+  const rule = ruleOf(brand.id, pl);
+  const limit = maxChars(pl, kind);
+  let storeFacts = ''; let used = [];
+  if (Store.storeConfig().useReply && Store.storeReady()) {
+    const sf = await Store.productFacts(brand.id, [text, postText]); storeFacts = sf.facts; used = sf.used;
+  }
+  const d = await draftWith(brand, { platform: pl, kind, username, text, postText, knowledge: rule.knowledge, storeFacts, maxChars: limit });
+  const reply = String(d.reply || '').trim();
+  const warning = reply ? unsafeReason(reply, `${rule.knowledge}\n${storeFacts}`, limit) : null;
+  const sensitive = SENSITIVE.test(text || '');
+  return { reply, action: d.action, category: String(d.category || ''), confidence: Number(d.confidence) || 0, reason: String(d.reason || '').slice(0, 300), warning, sensitive, used, model: d.model || null, max: limit };
 }
 
 export async function processEvent(id) {

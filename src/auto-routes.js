@@ -15,18 +15,25 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
   for (const platform of PLATFORMS) {
     app.get(`/webhooks/${platform}`, (req, res) => {
       const c = A_.verifyChallenge(req.query);
+      A_.logWebhook(platform, c === null ? 'verifikasi_gagal' : 'verifikasi_ok', c === null ? 'Token verifikasi tidak cocok dengan "Verify token" di halaman Webhook & setup.' : 'Meta berhasil memverifikasi URL callback.');
       return c === null ? res.status(403).send('Verifikasi gagal') : res.type('text/plain').send(c);
     });
     app.post(`/webhooks/${platform}`, (req, res) => {
-      if (!A_.verifySignature(platform, req.rawBody, req.get('x-hub-signature-256'))) return res.status(401).json({ error: 'Tanda tangan tidak valid.' });
+      if (!A_.verifySignature(platform, req.rawBody, req.get('x-hub-signature-256'))) {
+        A_.logWebhook(platform, 'tanda_tangan_salah', req.get('x-hub-signature-256') ? 'Tanda tangan tidak cocok: App Secret di Hub berbeda dari App Secret aplikasi Meta yang mengirim (untuk Instagram pakai Instagram App Secret).' : 'Permintaan tanpa header tanda tangan (bukan dari Meta).');
+        return res.status(401).json({ error: 'Tanda tangan tidak valid.' });
+      }
       res.sendStatus(200); // balas cepat; Meta mengulang bila lambat
       try {
         const events = platform === 'threads' ? A_.parseThreads(req.body) : platform === 'whatsapp' ? A_.parseWhatsApp(req.body) : A_.parseInstagram(req.body);
         const ids = A_.ingest(events);
+        A_.logWebhook(platform, events.length ? (ids.length ? 'diterima' : 'duplikat') : 'akun_tak_dikenal', events.length ? `${A_.describePayload(platform, req.body)} → ${events.length} event, ${ids.length} baru.` : `Tidak ada event yang cocok. ${A_.describePayload(platform, req.body)}`, events.length, ids.length);
         for (const id of ids) setImmediate(() => A_.processEvent(id).catch((e) => console.error('[auto]', e.message)));
-      } catch (e) { console.error('[webhook]', e.message); }
+      } catch (e) { A_.logWebhook(platform, 'error', e.message); console.error('[webhook]', e.message); }
     });
   }
+
+  api.get('/auto/webhook-log', need('manager'), (req, res) => res.json(all('SELECT * FROM webhook_log ORDER BY id DESC LIMIT 40')));
 
   /* ---------- Konfigurasi ---------- */
   api.get('/auto/config', need('viewer'), (req, res) => {

@@ -333,6 +333,35 @@ test('jalur langsung: harga/stok/detail dari API delova.id dibalas tanpa approva
   globalThis.fetch = realFetch;
 });
 
+test('Saran AI: pakai Pengetahuan brand + data produk, hanya saran (tidak mengirim), editor boleh', async () => {
+  netCalls = []; mockNet(catalog);
+  await A('PUT', '/api/store/config', { use_reply: true });
+  let seen;
+  AR.setDrafter(async (b, a) => { seen = a; return { action: 'reply', category: 'pertanyaan_produk', confidence: 0.9, reply: 'Ready Kak, Rp72.000 ya 😊', reason: 'ok' }; });
+  const before = all('SELECT COUNT(*) AS n FROM auto_events')[0].n;
+  const r = await A('POST', '/api/ai/compose-reply', { brand_id: brand.id, platform: 'instagram', kind: 'comment', username: 'budi', text: 'Kak kebaya sage ready?' });
+  assert.equal(r.status, 200); assert.match(r.json.reply, /Ready Kak/); assert.equal(r.json.warning, null);
+  assert.match(seen.knowledge, /Katalog ada di DM/); assert.match(seen.storeFacts, /KEBAYA BROKAT SAGE/);
+  assert.equal(all('SELECT COUNT(*) AS n FROM auto_events')[0].n, before);
+  AR.setDrafter(async () => ({ action: 'reply', category: 'pertanyaan_produk', confidence: 0.9, reply: 'Cuma Rp10.000 Kak', reason: 'ok' }));
+  const w = await A('POST', '/api/ai/compose-reply', { brand_id: brand.id, platform: 'instagram', kind: 'comment', username: 'budi', text: 'Kak kebaya sage berapa?' });
+  assert.match(w.json.warning, /harga Rp10\.000/);
+  assert.equal((await A('POST', '/api/ai/compose-reply', { brand_id: brand.id, platform: 'instagram', kind: 'dm', text: '' })).status, 400);
+  globalThis.fetch = realFetch;
+});
+
+test('log webhook: tanda tangan salah, akun tak dikenal, diterima', async () => {
+  run('DELETE FROM webhook_log');
+  await hook('threads', thReply('halo'), { sig: 'sha256=' + '0'.repeat(64) });
+  await hook('instagram', { object: 'instagram', entry: [{ id: '999000', time: 1, changes: [{ field: 'comments', value: { id: 'c1', text: 'hai' } }] }] });
+  const log = (await A('GET', '/api/auto/webhook-log')).json;
+  assert.ok(log.some((x) => x.result === 'tanda_tangan_salah'));
+  const u = log.find((x) => x.result === 'akun_tak_dikenal'); assert.ok(u); assert.match(u.detail, /999000.*TIDAK cocok/);
+  await hook('threads', thReply('halo lagi'));
+  assert.ok((await A('GET', '/api/auto/webhook-log')).json.some((x) => x.result === 'diterima'));
+  assert.equal((await req(viewer, 'GET', '/api/auto/webhook-log')).status, 403);
+});
+
 test('API produk down → tetap diproses, model diberi tahu data tidak tersedia, tanpa harga', async () => {
   await A('PUT', '/api/store/config', { use_reply: true }); // membersihkan cache
   mockNet(() => json({ error: { message: 'boom' } }, 500));

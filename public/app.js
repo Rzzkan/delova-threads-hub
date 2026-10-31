@@ -174,7 +174,7 @@ async function boot() {
   }).join('');
   $('#banner').innerHTML = [
     health.simulated ? '<div class="banner"><b>Mode simulasi:</b> post tidak dikirim ke Threads asli. Isi kredensial Meta di <code>.env</code> dan set <code>THREADS_DRY_RUN=false</code> untuk go-live (lihat README).</div>' : '',
-    !health.ai ? '<div class="banner">Fitur Claude di dalam dashboard belum aktif: isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.</div>' : '',
+    !health.ai ? '<div class="banner">Fitur AI di dashboard belum aktif: pilih model (mis. Kenari) di Auto Reply → Webhook &amp; setup, atau isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.</div>' : '',
   ].join('');
   route();
 }
@@ -402,12 +402,13 @@ function actions(p) {
 
 
 /* ---------- Instagram ---------- */
-const IG_TABS = [['konten', 'Konten & Jadwal', 'viewer'], ['komentar', 'Komentar', 'editor'], ['dm', 'Pesan (DM)', 'editor'], ['insight', 'Insight', 'viewer']];
+const IG_TABS = [['konten', 'Konten & Jadwal', 'viewer'], ['komentar', 'Komentar', 'editor'], ['dm', 'Pesan (DM)', 'editor']];
 const IG_KIND = { feed: 'Feed', reels: 'Reels', story: 'Story' };
 const igTime = (iso) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', ':');
 
 VIEWS.instagram = async (v) => {
   const q = params(); if (q.get('tab') === 'akun') { location.replace('#/akun?tab=instagram'); return; }
+  if (q.get('tab') === 'insight') { location.replace(`#/insights?tab=instagram&brand=${q.get('brand') || ''}${q.get('days') ? `&days=${q.get('days')}` : ''}`); return; }
   const st = await api('GET', '/api/ig/status');
   const tab = IG_TABS.some((t) => t[0] === q.get('tab') && can(t[2])) ? q.get('tab') : 'konten';
   const bid = st.brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : (st.brands.find((b) => b.connected) || st.brands[0]).id;
@@ -557,7 +558,7 @@ IGV.komentar = async ({ bid, body }) => {
     busy(e.target, async () => {
       if (a === 'reply') {
         const quote = $('div[style]', el).textContent; const who = $('b', el).textContent;
-        const text = await ui.ask({ title: `Balas komentar ${who}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: 2200, rows: 5, ok: 'Kirim balasan', quote, quoteLabel: 'Komentar' });
+        const text = await ui.ask({ title: `Balas komentar ${who}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: 2200, rows: 5, ok: 'Kirim balasan', quote, quoteLabel: 'Komentar', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: bid, platform: 'instagram', kind: 'comment', username: who.replace(/^@/, ''), text: quote }, $('textarea', f), se) } });
         if (text === null) return; await api('POST', `/api/ig/${bid}/comments/${id}/reply`, { text }); toast('Balasan terkirim.'); return route();
       }
       await api('POST', `/api/ig/${bid}/comments/${id}/hide`, { hide: a === 'hide' }); toast(a === 'hide' ? 'Komentar disembunyikan.' : 'Komentar ditampilkan lagi.'); route();
@@ -576,9 +577,10 @@ IGV.dm = async ({ bid, body }) => {
     const th = $('#thread'); th.innerHTML = '<span class="muted">Memuat…</span>';
     const msgs = await api('GET', `/api/ig/${bid}/conversations/${encodeURIComponent(id)}`);
     th.innerHTML = `<div class="row between"><b>@${esc(c.participant.username || '')}</b></div><div class="msgs">${msgs.map((m) => { const mine = String(m.from?.id) !== String(c.participant.id); return `<div class="bubble ${mine ? 'me' : ''}"><div>${esc(m.message || '(lampiran)')}</div><span class="small">${esc(igTime(m.created_time))}</span></div>`; }).join('')}</div>
-      ${c.can_reply ? `<form id="dmf" class="stack"><label>Balas<textarea name="text" maxlength="1000" style="min-height:70px" placeholder="Tulis balasan…"></textarea></label><div><button class="btn primary" type="submit">Kirim</button></div></form>` : '<div class="banner">Jendela balasan 24 jam sudah habis atau pesan terakhir berasal dari brand. Tunggu pelanggan membalas.</div>'}`;
+      ${c.can_reply ? `<form id="dmf" class="stack"><label>Balas<textarea name="text" maxlength="1000" style="min-height:70px" placeholder="Tulis balasan…"></textarea></label><div><div class="row"><button class="btn primary" type="submit">Kirim</button>${aiBtn()}</div></div></form>` : '<div class="banner">Jendela balasan 24 jam sudah habis atau pesan terakhir berasal dari brand. Tunggu pelanggan membalas.</div>'}`;
     const box = $('.msgs', th); box.scrollTop = box.scrollHeight;
-    const f = $('#dmf', th); if (f) f.onsubmit = (e) => { e.preventDefault(); const text = f.elements.text.value.trim(); if (!text) return; busy($('button', f), async () => {
+    const f = $('#dmf', th); if (f) wireAi($('[data-ai]', f), () => ({ brand_id: bid, platform: 'instagram', kind: 'dm', username: c.participant.username, text: [...msgs].reverse().find((m) => String(m.from?.id) === String(c.participant.id))?.message || '' }), f.elements.text);
+    if (f) f.onsubmit = (e) => { e.preventDefault(); const text = f.elements.text.value.trim(); if (!text) return; busy($('button', f), async () => {
       if (!(await ui.confirm({ title: 'Kirim pesan ini?', message: `Dikirim ke @${c.participant.username} atas nama brand.`, quote: text, quoteLabel: 'Pesan', ok: 'Kirim' }))) return;
       await api('POST', `/api/ig/${bid}/conversations/${encodeURIComponent(id)}/send`, { recipient_id: c.participant.id, text }); toast('Pesan terkirim.'); open(id);
     }); };
@@ -588,7 +590,7 @@ IGV.dm = async ({ bid, body }) => {
 };
 
 /* ---- Insight ---- */
-IGV.insight = async ({ bid, body }) => {
+IGV.insight = async ({ bid, body, hash }) => {
   const days = Number(params().get('days')) || 7;
   const [acc, media] = await Promise.all([api('GET', `/api/ig/${bid}/insights?days=${days}`), api('GET', `/api/ig/${bid}/media-insights`)]);
   const K = [['followers', 'Followers', acc.followers], ['reach', 'Jangkauan', acc.metrics.reach], ['views', 'Tayangan', acc.metrics.views], ['accounts_engaged', 'Akun berinteraksi', acc.metrics.accounts_engaged], ['total_interactions', 'Interaksi', acc.metrics.total_interactions], ['likes', 'Suka', acc.metrics.likes], ['comments', 'Komentar', acc.metrics.comments], ['shares', 'Dibagikan', acc.metrics.shares], ['saves', 'Disimpan', acc.metrics.saves]];
@@ -608,7 +610,7 @@ IGV.insight = async ({ bid, body }) => {
     $('#qrows').innerHTML = rows.map((m) => `<tr><td style="max-width:340px"><a href="${esc(m.permalink)}" target="_blank" rel="noopener">${esc((m.caption || '(tanpa caption)').slice(0, 90))}</a> <span class="badge">${esc(({ IMAGE: 'Foto', VIDEO: 'Video', CAROUSEL_ALBUM: 'Carousel' })[m.media_type] || m.media_type)}</span></td><td class="small">${esc(igTime(m.timestamp))}</td>${['reach', 'views', 'likes', 'comments', 'shares', 'saved'].map((k) => `<td>${num(m.insights[k])}</td>`).join('')}<td>${er(m) === null ? '–' : `${er(m).toFixed(1)}%`}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Tidak ada konten yang cocok.</td></tr>';
   };
   ['qs', 'qt', 'qo'].forEach((i) => $(`#${i}`).addEventListener('input', draw)); draw();
-  $('#days').onchange = (e) => { location.hash = `#/instagram?tab=insight&brand=${bid}&days=${e.target.value}`; };
+  $('#days').onchange = (e) => { location.hash = `${hash || `#/instagram?tab=insight&brand=${bid}`}&days=${e.target.value}`; };
   $('#fresh').onclick = (e) => busy(e.target, async () => { await api('GET', `/api/ig/${bid}/media-insights?fresh=1`); toast('Insight disegarkan.'); route(); });
 };
 
@@ -618,7 +620,7 @@ IGV.akun = async ({ st, body }) => {
     ${b.connected ? `<div class="small muted">${esc(b.account_type || '')}${b.followers !== null ? ` · ${num(b.followers)} followers` : ''} · token berlaku s/d ${wib(b.token_expires_at)} (diperpanjang otomatis)</div>` : '<div class="small muted">Butuh akun Instagram Professional (Business/Creator).</div>'}
     <div class="row">${can('manager') && !st.simulated ? `<a class="btn small primary" href="/auth/instagram/start?brand=${b.id}">${b.connected ? 'Hubungkan ulang' : 'Hubungkan ke Instagram'}</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}</div></div>`).join('')}</div>
   <div class="card stack"><h3>Izin yang diminta</h3><div class="chips">${st.scopes.map((s) => `<span class="chip">${esc(s)}</span>`).join('')}</div>
-    <p class="small muted">Konten &amp; jadwal memakai <code>content_publish</code>; komentar memakai <code>manage_comments</code>; DM memakai <code>manage_messages</code>; insight memakai <code>manage_insights</code>. Izin ini perlu Advanced Access lewat App Review Meta bila dipakai untuk akun di luar tester.</p></div>
+    <p class="small muted">Konten &amp; jadwal memakai <code>content_publish</code>; komentar memakai <code>manage_comments</code>; DM memakai <code>manage_messages</code>; insight (kini di menu Insight) memakai <code>manage_insights</code>. Izin ini perlu Advanced Access lewat App Review Meta bila dipakai untuk akun di luar tester.</p></div>
   ${can('admin') ? `<form id="igf" class="card stack"><h3>Aplikasi Instagram (Meta for Developers)</h3>
     <p class="small muted">Di aplikasi Meta Anda, tambahkan produk <b>Instagram</b> → <i>API setup with Instagram login</i>. Pakai <b>Instagram App ID</b> dan <b>Instagram App Secret</b> dari halaman itu (berbeda dari App ID Threads). Sumber aktif: <b>${esc({ dashboard: 'Dashboard', env: '.env server', none: 'Belum diisi' }[st.source])}</b>.</p>
     <div class="grid g2"><label>Instagram App ID<input name="app_id" value="${esc(st.app_id || '')}" autocomplete="off"></label>
@@ -638,6 +640,21 @@ IGV.akun = async ({ st, body }) => {
 /* ---------- Auto Reply & Webhook ---------- */
 const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['keyword', 'Aturan keyword', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['pengetahuan', 'Pengetahuan brand', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
+/** Tombol "Saran AI": model LLM terpilih + aturan brand + Pengetahuan brand + data produk delova.id. Hanya mengisi kotak balasan; manusia yang mengirim. */
+const aiBtn = () => (health.ai && can('editor') ? '<button type="button" class="btn small" data-ai title="Dibuat dengan model AI terpilih, mengikuti brand voice dan Pengetahuan brand">✨ Saran AI</button>' : '');
+function wireAi(btn, ctx, ta, setErr) {
+  if (!btn) return;
+  btn.onclick = () => busy(btn, async () => {
+    const c = typeof ctx === 'function' ? ctx() : ctx; if (setErr) setErr('');
+    if (!c.text) { toast('Tidak ada pesan pelanggan untuk dibalas.', true); return; }
+    const r = await api('POST', '/api/ai/compose-reply', { brand_id: c.brand_id, platform: c.platform, kind: c.kind, username: c.username, text: c.text, post_text: c.post_text });
+    if (!r.reply) { toast(r.reason || 'Model memilih tidak membalas pesan ini.', true); return; }
+    ta.value = r.reply; ta.dispatchEvent(new Event('input')); ta.focus();
+    const warn = [r.sensitive ? 'Pesan memuat kata sensitif (komplain/refund/kerja sama): tinjau dengan teliti.' : '', r.warning || '', r.action === 'escalate' ? `Model menyarankan ditangani manusia${r.reason ? `: ${r.reason}` : ''}.` : ''].filter(Boolean).join(' ');
+    if (warn) { if (setErr) setErr(`⚠ ${warn}`); toast('Saran dibuat, ada catatan: periksa sebelum kirim.', true); } else toast(`Saran dibuat${r.used?.length ? ` (data produk: ${r.used.slice(0, 2).join(', ')})` : ''}. Periksa lalu kirim.`);
+  });
+}
+
 const AR_KIND = { reply: 'Reply', mention: 'Mention', comment: 'Komentar', dm: 'DM' };
 const PLAT = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' };
 
@@ -801,6 +818,9 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
   <div class="card stack"><h3>Data untuk Meta for Developers</h3>
     ${cfg.webhooks.map((w) => `<div class="stack" style="gap:4px"><b>${PLAT[w.platform]}</b> ${w.has_secret ? '<span class="badge s-published">App Secret terisi</span>' : '<span class="badge s-failed">App Secret belum diisi</span>'}<label>Callback URL${copy('u_' + w.platform)}</label></div>`).join('')}
     ${cfg.verify_token ? `<label>Verify token (sama untuk keduanya)${copy('vt')}</label>${can('admin') ? '<div><button type="button" class="btn small danger" id="regen">Buat ulang token</button></div>' : ''}` : '<p class="small muted">Verify token hanya terlihat oleh admin.</p>'}</div>
+  ${can('manager') ? `<div class="card stack"><div class="row between"><h3>Log penerimaan webhook</h3><button type="button" class="btn small" id="wlr">Muat ulang</button></div>
+    <p class="small muted">Setiap permintaan dari Meta tercatat di sini. Kalau reply/komentar/DM tidak membalas, cek baris terbaru: <b>kosong</b> = Meta tidak mengirim (periksa langganan field &amp; role akun); <b>tanda tangan salah</b> = App Secret keliru; <b>akun tak dikenal</b> = ID akun di Meta berbeda dari akun yang terhubung; <b>diterima</b> = masuk, lanjut ke Kotak masuk.</p>
+    <div id="wlog" class="stack small"><span class="muted">Memuat…</span></div></div>` : ''}
   <div class="card stack"><h3>Langkah pemasangan</h3><ol class="small" style="padding-left:18px;display:grid;gap:6px">
     <li><b>Threads:</b> Meta for Developers → aplikasi Threads → <i>Webhooks</i> → objek <b>Threads</b> → isi Callback URL &amp; Verify token di atas → <i>Verify and save</i> → subscribe ke field <code>replies</code> dan <code>mentions</code>. Izin <code>threads_read_replies</code>, <code>threads_manage_replies</code>, dan <code>threads_manage_mentions</code> harus aktif (Advanced Access untuk akun non-tester).</li>
     <li><b>Instagram:</b> aplikasi Instagram → <i>API setup with Instagram login</i> → <i>Configure webhooks</i> → isi Callback URL &amp; Verify token → subscribe ke <code>comments</code>, <code>messages</code>, <code>mentions</code>. Lalu di tab <i>Aturan per akun</i> klik <i>Daftarkan webhook akun ini</i> untuk tiap brand.</li>
@@ -809,6 +829,11 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
     <p class="small muted">Webhook Threads dan Instagram memakai tanda tangan <code>X-Hub-Signature-256</code>. Event dicatat 30 hari lalu dibersihkan otomatis (kecuali yang masih menunggu).</p></div>`;
   for (const w of cfg.webhooks) { const el = $('#u_' + w.platform, body); if (el) el.value = w.url; }
   if ($('#vt', body)) $('#vt', body).value = cfg.verify_token;
+  const WL = { diterima: ['s-published', 'Diterima'], duplikat: ['', 'Duplikat'], akun_tak_dikenal: ['s-failed', 'Akun tak dikenal'], tanda_tangan_salah: ['s-failed', 'Tanda tangan salah'], verifikasi_ok: ['s-published', 'Verifikasi OK'], verifikasi_gagal: ['s-failed', 'Verifikasi gagal'], error: ['s-failed', 'Error'] };
+  const loadWl = async () => { const el = $('#wlog', body); if (!el) return; try { const r = await api('GET', '/api/auto/webhook-log');
+    el.innerHTML = r.length ? r.map((x) => `<div class="row" style="gap:8px;align-items:flex-start;border-top:1px solid var(--line,#e5e7eb);padding-top:6px"><span class="muted" style="min-width:128px">${esc(wib(x.at))}</span><span class="badge ${(WL[x.result] || [''])[0]}">${esc(PLAT[x.platform] || x.platform)} · ${esc((WL[x.result] || [0, x.result])[1])}</span><span style="flex:1">${esc(x.detail)}</span></div>`).join('') : '<div class="banner"><b>Belum ada satu pun permintaan dari Meta.</b> Berarti Meta belum mengirim webhook ke URL ini: pastikan field comments/messages/mentions sudah di-subscribe, akun delovadaily terhubung, dan akun pengirim punya role (admin/developer/tester) bila aplikasi masih mode Development.</div>'; }
+    catch (e) { el.innerHTML = `<span class="err">${esc(e.message)}</span>`; } };
+  loadWl(); const wr = $('#wlr', body); if (wr) wr.onclick = (e) => busy(e.target, loadWl);
   body.onclick = (e) => { const c = e.target.closest('[data-cp]'); if (c) copyText($('#' + c.dataset.cp, body).value); };
   const sf = $('#stf', body);
   if (sf) {
@@ -1062,7 +1087,7 @@ VIEWS.pesan = async (v) => {
     const b = e.target.closest('[data-a="reply"]'); if (!b) return;
     const el = b.closest('[data-i]'); const x = data[el.dataset.p][Number(el.dataset.i)];
     busy(b, async () => {
-      const text = await ui.ask({ title: `Balas @${x.author}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: x.platform === 'threads' ? 500 : 2200, rows: 5, ok: 'Kirim balasan', quote: x.text, quoteLabel: 'Pesan' });
+      const text = await ui.ask({ title: `Balas @${x.author}`, label: 'Balasan (tampil publik atas nama brand)', placeholder: 'mis. Halo Kak, ready ya 😊', max: x.platform === 'threads' ? 500 : 2200, rows: 5, ok: 'Kirim balasan', quote: x.text, quoteLabel: 'Pesan', extra: { html: aiBtn(), init: (f, se) => wireAi($('[data-ai]', f), { brand_id: x.brand_id, platform: x.platform, kind: x.kind || 'reply', username: x.author, text: x.text, post_text: x.post_text }, $('textarea', f), se) } });
       if (text === null) return;
       await api('POST', x.platform === 'instagram' ? `/api/ig/${x.brand_id}/comments/${x.ext_id}/reply` : `/api/brands/${x.brand_id}/replies/${x.ext_id}/reply`, { text });
       toast('Balasan terkirim.'); await load(true);
@@ -1093,8 +1118,9 @@ VIEWS.whatsapp = async (v) => {
       const draw = async () => {
         const t = await api('GET', `/api/wa/conversations/${bid}/${wa}`);
         $('#thread', body).innerHTML = `<div class="row between"><b>+${esc(wa)}</b>${tag(bid)}</div><div class="stack" style="max-height:420px;overflow:auto">${t.messages.map((m) => `<div class="quote ${m.dir === 'out' ? 'me' : ''}"><span class="small muted">${m.dir === 'out' ? (m.auto ? 'Auto reply' : 'Tim') : 'Pelanggan'} · ${esc(igTime(m.at))}${m.status === 'pending' ? ' · menunggu keputusan' : ''}</span>\n${esc(m.text || '')}${m.draft && m.status === 'pending' ? `\n<span class="small muted">Draf: ${esc(m.draft)}</span>` : ''}</div>`).join('') || '<p class="muted">Kosong.</p>'}</div>
-          ${can('editor') ? (t.can_reply ? `<form id="wsend" class="stack"><textarea name="text" maxlength="1000" rows="3" placeholder="Tulis balasan…" required></textarea><div class="row"><button class="btn primary">Kirim</button><span class="small muted">Teks bebas, jendela 24 jam terbuka.</span></div></form>` : `<div class="banner">Di luar jendela 24 jam: teks bebas tidak bisa dikirim. ${can('manager') ? `<a href="${nav({ tab: 'template' })}">Kirim lewat template</a>.` : 'Minta manager mengirim template.'}</div>`) : ''}`;
-        const f = $('#wsend', body); if (f) f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
+          ${can('editor') ? (t.can_reply ? `<form id="wsend" class="stack"><textarea name="text" maxlength="1000" rows="3" placeholder="Tulis balasan…" required></textarea><div class="row"><button class="btn primary">Kirim</button>${aiBtn()}<span class="small muted">Teks bebas, jendela 24 jam terbuka.</span></div></form>` : `<div class="banner">Di luar jendela 24 jam: teks bebas tidak bisa dikirim. ${can('manager') ? `<a href="${nav({ tab: 'template' })}">Kirim lewat template</a>.` : 'Minta manager mengirim template.'}</div>`) : ''}`;
+        const f = $('#wsend', body); if (f) wireAi($('[data-ai]', f), () => ({ brand_id: bid, platform: 'whatsapp', kind: 'dm', username: wa, text: [...t.messages].reverse().find((m) => m.dir !== 'out')?.text || '' }), f.elements.text);
+        if (f) f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
           const text = f.elements.text.value.trim(); if (!text) return;
           if (!(await ui.confirm({ title: `Kirim ke +${wa}?`, message: 'Dikirim lewat WhatsApp brand ini dan langsung diterima pelanggan.', quote: text, quoteLabel: 'Pesan', ok: 'Kirim' }))) return;
           const r = await api('POST', '/api/wa/send', { brand_id: bid, to: wa, text }); toast(r.dryRun ? 'Simulasi: pesan dicatat, tidak dikirim.' : 'Terkirim.'); await draw(); });
@@ -1346,7 +1372,25 @@ VIEWS.peluang = async (v) => {
 
 /* ---------- Insights ---------- */
 VIEWS.insights = async (v) => {
-  v.innerHTML = `<h1>Insight</h1><div class="row">${brandPick(brands[0].id)}<select id="days" style="width:auto"><option value="7">7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select><button class="btn primary" id="load">Tampilkan</button>${can('manager') && health.ai ? '<button class="btn" id="an">Analisis Claude</button>' : ''}</div><div id="out" class="stack" style="margin-top:14px"></div>`;
+  const qp = params(); const tab = qp.get('tab') === 'instagram' ? 'instagram' : 'threads';
+  v.innerHTML = `<div class="tabs" style="margin-bottom:12px"><a class="tab ${tab === 'threads' ? 'on' : ''}" href="#/insights?tab=threads">Threads</a><a class="tab ${tab === 'instagram' ? 'on' : ''}" href="#/insights?tab=instagram">Instagram</a></div><div id="inbody"></div>`;
+  if (tab === 'instagram') {
+    const body = $('#inbody', v); body.innerHTML = '<span class="muted">Memuat…</span>';
+    try {
+      const st = await api('GET', '/api/ig/status');
+      const bid = st.brands.some((b) => b.id === qp.get('brand')) ? qp.get('brand') : (st.brands.find((b) => b.connected) || st.brands[0]).id;
+      const cur = st.brands.find((b) => b.id === bid); const hash = `#/insights?tab=instagram&brand=${bid}`;
+      body.innerHTML = `<h1>Insight Instagram</h1>${st.simulated ? '<div class="banner"><b>Mode simulasi:</b> angka adalah contoh.</div>' : ''}
+      <div class="chips" style="margin-bottom:10px">${st.brands.map((b) => `<a class="chip" href="#/insights?tab=instagram&brand=${b.id}" ${b.id === bid ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot ${b.connected || st.simulated ? 'on' : 'off'}" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}${b.username ? ` <span class="muted small">@${esc(b.username)}</span>` : ''}</a>`).join('')}</div>
+      ${!cur.connected && !st.simulated ? `<div class="banner">Akun Instagram ${esc(cur.name)} belum terhubung. ${can('manager') ? '<a href="#/akun?tab=instagram">Hubungkan di Pengaturan → Akun Terhubung</a>.' : 'Minta manajer menghubungkannya.'}</div>` : '<div id="igin" class="stack"></div>'}`;
+      if (cur.connected || st.simulated) { const ib = $('#igin', body); try { await IGV.insight({ bid, body: ib, hash }); } catch (e) { ib.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; } }
+    } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+    return;
+  }
+  const tv = $('#inbody', v); await renderThreadsInsights(tv);
+};
+async function renderThreadsInsights(v) {
+  v.innerHTML = `<h1>Insight Threads</h1><div class="row">${brandPick(brands[0].id)}<select id="days" style="width:auto"><option value="7">7 hari</option><option value="14">14 hari</option><option value="30">30 hari</option></select><button class="btn primary" id="load">Tampilkan</button>${can('manager') && health.ai ? '<button class="btn" id="an">Analisis Claude</button>' : ''}</div><div id="out" class="stack" style="margin-top:14px"></div>`;
   const q = () => ({ id: $('[name=brand]').value, days: $('#days').value });
   $('#load').onclick = (e) => busy(e.target, async () => {
     const { id, days } = q(); const d = await api('GET', `/api/brands/${id}/insights?days=${days}`); const a = d.account;
@@ -1362,7 +1406,7 @@ VIEWS.insights = async (v) => {
     $('#ana').innerHTML = `<div class="card"><h3>Analisis Claude</h3><p>${esc(a.summary)}</p><div class="grid g2"><div><b>Yang jalan</b>${ul(a.whats_working)}<b>Yang belum</b>${ul(a.whats_not)}</div><div><b>Tindakan minggu depan</b>${ul(a.next_actions)}<b>Ide post</b>${ul(a.post_ideas)}</div></div></div>`;
   });
   $('#load').click();
-};
+}
 
 /* ---------- Brand ---------- */
 const PERM_LABEL = {
