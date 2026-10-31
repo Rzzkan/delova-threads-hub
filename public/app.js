@@ -644,7 +644,7 @@ IGV.akun = async ({ st, body }) => {
 };
 
 /* ---------- Auto Reply & Webhook ---------- */
-const AR_TABS = [['inbox', 'Kotak masuk', 'viewer']];
+const AR_TABS = [['threads', 'Threads', 'viewer'], ['instagram', 'Instagram', 'viewer'], ['whatsapp', 'WhatsApp', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 /** Tombol "Saran AI": model LLM terpilih + aturan brand + Pengetahuan brand + data produk delova.id. Hanya mengisi kotak balasan; manusia yang mengirim. */
 const aiBtn = () => (health.ai && can('editor') ? '<button type="button" class="btn small" data-ai title="Dibuat dengan model AI terpilih, mengikuti brand voice dan Pengetahuan brand">✨ Saran AI</button>' : '');
@@ -672,27 +672,27 @@ VIEWS.autoreply = async (v) => {
   if (q.get('tab') === 'webhook') { location.replace('#/webhook'); return; }
   if (['keyword', 'aturan', 'pengetahuan'].includes(q.get('tab'))) { location.replace(`#/brands?${q.toString()}`); return; } // pindah ke Pengetahuan Brand
   const cfg = await api('GET', '/api/auto/config');
-  const tab = AR_TABS.some((t) => t[0] === q.get('tab')) ? q.get('tab') : 'inbox';
+  const ob = cfg.open_by || {};
+  const tab = AR_TABS.some((t) => t[0] === q.get('tab')) ? q.get('tab') : (AR_TABS.map((t) => t[0]).sort((a, b) => (ob[b] || 0) - (ob[a] || 0))[0]); // 'inbox'/kosong: platform dengan antrean terbanyak
   const nav = (t) => `#/autoreply?tab=${t}`;
   const open = (cfg.stats.pending || 0) + (cfg.stats.failed || 0);
   v.innerHTML = `<div class="page-head"><h1>Auto Reply</h1><p class="muted">Webhook Meta menangkap reply, mention, komentar, dan DM secara real-time; Claude menyusun balasan sesuai brand voice. Anda memilih: tinjau dulu, atau kirim otomatis dengan pagar pengaman.</p></div>
   ${!cfg.enabled ? '<div class="banner"><b>Auto reply sedang mati.</b> Event yang masuk tetap dicatat tetapi tidak dibalas. ' + (can('admin') ? 'Nyalakan di <a href="#/webhook">Pengaturan → Webhook &amp; Setup</a>.' : 'Minta admin menyalakannya.') + '</div>' : ''}
   ${!cfg.ai ? '<div class="banner">Model AI untuk balasan belum dikonfigurasi. ' + (can('admin') ? 'Atur di <a href="#/webhook">Pengaturan → Webhook &amp; Setup</a> (mis. Kenari), atau isi <code>ANTHROPIC_API_KEY</code> di <code>.env</code>.' : 'Minta admin mengaturnya.') + ' Event akan menunggu balasan manual.</div>' : ''}
-  ${AR_TABS.length > 1 ? `<div class="tabs">${AR_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}${t[0] === 'inbox' && open ? ` <span class="badge s-pending_approval">${open}</span>` : ''}</a>`).join('')}</div>` : ''}
+  ${AR_TABS.length > 1 ? `<div class="tabs">${AR_TABS.map((t) => `<a class="tab ${t[0] === tab ? 'on' : ''}" href="${nav(t[0])}">${t[1]}${ob[t[0]] ? ` <span class="badge s-pending_approval">${ob[t[0]]}</span>` : ''}</a>`).join('')}</div>` : ''}
   <div id="arbody" class="stack" style="margin-top:14px"></div>`;
   const body = $('#arbody'); const ctx = { cfg, body, q };
-  try { await ARV[tab](ctx); } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  try { await ARV.inbox({ ...ctx, platform: tab }); } catch (e) { body.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
 };
 const ARV = {};
 
-ARV.inbox = async ({ cfg, body, q }) => {
-  const f = q.get('f') || 'open'; const bf = q.get('brand') || ''; const pf = q.get('p') || '';
+ARV.inbox = async ({ cfg, body, q, platform }) => {
+  const f = q.get('f') || 'open'; const bf = q.get('brand') || ''; const pf = platform;
   const qs = new URLSearchParams({ status: f === 'all' ? '' : f, brand: bf, platform: pf, limit: 80 });
   const rows = await api('GET', `/api/auto/events?${qs}`);
-  const link = (k, val) => { const n = new URLSearchParams({ tab: 'inbox', f, brand: bf, p: pf, [k]: val }); return `#/autoreply?${n}`; };
+  const link = (k, val) => { const n = new URLSearchParams({ tab: pf, f, brand: bf, [k]: val }); return `#/autoreply?${n}`; };
   body.innerHTML = `<div class="chips">${[['open', 'Perlu tindakan'], ['sent', 'Terkirim'], ['skipped', 'Dilewati'], ['ignored', 'Diabaikan'], ['rejected', 'Ditolak'], ['all', 'Semua']].map(([k, l]) => `<a class="chip" href="${link('f', k)}" ${k === f ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${l}</a>`).join('')}</div>
-  <div class="row"><select id="fb" style="width:auto"><option value="">Semua brand</option>${cfg.brands.map((b) => `<option value="${b.id}" ${b.id === bf ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
-  <select id="fp" style="width:auto"><option value="">Semua platform</option>${Object.entries(PLAT).map(([k, l]) => `<option value="${k}" ${k === pf ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+  <div class="row"><select id="fb" style="width:auto"><option value="">Semua brand</option>${cfg.brands.map((b) => `<option value="${b.id}" ${b.id === bf ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
   ${rows.length ? rows.map((e) => { const b = cfg.brands.find((x) => x.id === e.brand_id); const act = ['pending', 'failed'].includes(e.status);
     return `<div class="card stack ev" data-id="${e.id}"><div class="row between"><span class="row"><span class="badge">${PLAT[e.platform]}</span><span class="badge">${AR_KIND[e.kind]}</span><b>${esc(b?.name.replace('Delova ', '') || '')}</b><span class="muted small">dari @${esc(e.author_username || e.author_id || '-')} · ${esc(igTime(e.received_at))}</span>${e.simulated ? '<span class="badge">Simulasi</span>' : ''}</span>
       <span class="row">${e.needs_human ? '<span class="badge s-failed">Perlu manusia</span>' : ''}<span class="badge s-${e.status === 'sent' ? 'published' : e.status === 'failed' ? 'failed' : 'pending_approval'}">${AR_STATUS[e.status] || e.status}</span></span></div>
@@ -701,8 +701,8 @@ ARV.inbox = async ({ cfg, body, q }) => {
       ${e.dm_text ? `<div class="small muted">Juga dikirim lewat DM${e.dm_status ? ` (${esc(e.dm_status)})` : ''}: “${esc(e.dm_text)}”</div>` : ''}
       ${e.used_data ? `<div class="small muted">Data produk dipakai: ${esc(e.used_data)}</div>` : ''}${e.note || e.error ? `<div class="small ${e.status === 'failed' ? 'err' : 'muted'}">${esc(e.error || e.note)}</div>` : ''}
       <div class="row">${act && can('editor') ? '<button class="btn primary small" data-a="approve" type="button">Kirim balasan</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped', 'rejected'].includes(e.status) && cfg.ai ? '<button class="btn small" data-a="redraft" type="button">Draf ulang dengan Claude</button>' : ''}${can('editor') && ['pending', 'failed', 'skipped'].includes(e.status) ? '<button class="btn small" data-a="reject" type="button">Tolak</button>' : ''}${e.permalink ? `<a class="btn small ghost" target="_blank" rel="noopener" href="${esc(e.permalink)}">Buka</a>` : ''}</div></div>`; }).join('')
-    : '<div class="card muted">Belum ada event di sini. Setelah webhook terpasang, reply/komentar/DM baru muncul otomatis. Mode simulasi: pakai kotak uji di tab Aturan.</div>'}`;
-  $('#fb').onchange = (e) => { location.hash = link('brand', e.target.value); }; $('#fp').onchange = (e) => { location.hash = link('p', e.target.value); };
+    : `<div class="card muted">Belum ada event ${PLAT[pf]} di sini. Setelah webhook terpasang, ${pf === 'threads' ? 'reply/mention' : pf === 'instagram' ? 'komentar/mention/DM' : 'pesan masuk'} baru muncul otomatis. Mode simulasi: pakai kotak uji di Pengetahuan Brand → Aturan per akun.</div>`}`;
+  $('#fb').onchange = (e) => { location.hash = link('brand', e.target.value); };
   body.onclick = (e) => {
     const btn = e.target.closest('[data-a]'); if (!btn) return; const card = btn.closest('.ev'); const id = card.dataset.id; const a = btn.dataset.a;
     busy(btn, async () => {

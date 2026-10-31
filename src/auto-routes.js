@@ -47,6 +47,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
       store: (() => { const c = Store.storeConfig(); return { base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_direct: c.useDirect, use_posts: c.usePosts }; })(),
       llm_cap: Number(getSetting('auto_llm_daily_cap')) || 300,
       stats: A_.stats(),
+      open_by: Object.fromEntries(all("SELECT platform, COUNT(*) AS n FROM auto_events WHERE status IN ('pending','failed') GROUP BY platform").map((r) => [r.platform, r.n])),
       brands: brands.map((b) => ({
         ...b,
         rules: Object.fromEntries(PLATFORMS.map((p) => [p, A_.ruleOf(b.id, p)])),
