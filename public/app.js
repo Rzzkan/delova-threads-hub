@@ -183,7 +183,7 @@ let routeSeq = 0;
 async function route() {
   if (!me) return;
   const name = (location.hash.slice(2).split('?')[0]) || 'dashboard';
-  if (name === 'approvals') { location.replace('#/queue?tab=persetujuan'); return; }
+  if (name === 'approvals') { location.replace('#/queue'); return; }
   const r = ROUTES.find((x) => x[0] === name && can(x[2])) || ROUTES[0];
   $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === r[0]));
   $('#crumb').textContent = r[1]; closeDrawer(); window.scrollTo(0, 0);
@@ -319,24 +319,33 @@ VIEWS.compose = async (v) => {
 };
 
 /* ---------- Antrean ---------- */
-const qTabs = (on) => `<div class="tabs"><a class="tab ${on === 'persetujuan' ? 'on' : ''}" href="#/queue?tab=persetujuan">Perlu disetujui</a><a class="tab ${on === 'semua' ? 'on' : ''}" href="#/queue?tab=semua">Semua post Threads</a></div>`;
+const QSTAT = [['', 'Perlu disetujui'], ['scheduled', 'Terjadwal'], ['draft', 'Draft'], ['published', 'Terbit'], ['failed', 'Gagal'], ['all', 'Semua']];
+const qHead = (st, fb) => `<div class="chips" style="margin:6px 0 12px">${QSTAT.filter(([k]) => k || can('editor')).map(([k, l]) => `<a class="chip" href="#/queue?${new URLSearchParams({ ...(k && { status: k }), ...(fb && { brand: fb }) })}" ${st === k ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${l}</a>`).join('')}</div>`;
 VIEWS.queue = async (v) => {
-  const q = params(); const fb = q.get('brand') || ''; const fs = q.get('status') || '';
-  const tab = q.get('tab') || (can('editor') && !fb && !fs ? 'persetujuan' : 'semua');
-  if (tab === 'persetujuan' && can('editor')) return VIEWS.approvals(v);
-  const rows = await api('GET', `/api/posts?${new URLSearchParams({ ...(fb && { brand: fb }), ...(fs && { status: fs }) })}`);
-  v.innerHTML = `<h1>Antrean &amp; Persetujuan</h1>${can('editor') ? qTabs('semua') : ''}
+  const q = params(); const fb = q.get('brand') || ''; let fs = q.get('status') || ''; const fp = q.get('platform') || '';
+  if (q.get('tab') === 'persetujuan') fs = '';
+  if (q.get('tab') === 'semua') fs = fs || 'all';
+  if (fs === 'pending_approval') fs = '';
+  if (!fs && can('editor')) return VIEWS.approvals(v);
+  if (!fs) fs = 'all';
+  const sq = (extra = {}) => new URLSearchParams({ ...(fb && { brand: fb }), ...(fs !== 'all' && { status: fs }), ...extra });
+  const [thr, igr] = await Promise.all([fp === 'instagram' ? [] : api('GET', `/api/posts?${sq()}`), fp === 'threads' ? [] : api('GET', `/api/ig/posts?${sq()}`).catch(() => [])]);
+  const rows = thr;
+  const items = [...thr.map((p) => ({ ...p, platform: 'threads', body: p.text, t: p.published_at || p.scheduled_at || p.created_at })), ...igr.map((p) => ({ ...p, platform: 'instagram', body: p.caption || '(tanpa caption)', t: p.published_at || p.scheduled_at || p.created_at }))].sort((x, y) => String(y.t || '').localeCompare(String(x.t || '')));
+  v.innerHTML = `<h1>Antrean &amp; Persetujuan</h1>${qHead(fs, fb)}
   <div class="row"><select id="fb" style="width:auto"><option value="">Semua akun</option>${brands.map((b) => `<option value="${b.id}" ${b.id === fb ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
-  <select id="fs" style="width:auto"><option value="">Semua status</option>${Object.entries(STATUS).map(([k, l]) => `<option value="${k}" ${k === fs ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+  <select id="fs" style="width:auto"><option value="all">Semua status</option>${Object.entries(STATUS).map(([k, l]) => `<option value="${k}" ${k === fs ? 'selected' : ''}>${l}</option>`).join('')}</select>
+  <select id="fp" style="width:auto"><option value="">Threads &amp; Instagram</option><option value="threads" ${fp === 'threads' ? 'selected' : ''}>Threads</option><option value="instagram" ${fp === 'instagram' ? 'selected' : ''}>Instagram</option></select></div>
   <div id="bulk" class="bulkbar hidden"><b id="bn">0 dipilih</b><span class="row">${can('manager') ? '<button type="button" class="btn small primary" data-bulk="approve">Setujui terpilih</button><button type="button" class="btn small" data-bulk="reject">Kembalikan</button>' : ''}${can('editor') ? '<button type="button" class="btn small" data-bulk="submit">Ajukan approval</button>' : ''}<button type="button" class="btn small ghost" data-bulk="clear">Batal pilih</button></span></div>
   <div class="card" style="margin-top:12px"><table><thead><tr><th style="width:34px">${can('editor') ? `<input type="checkbox" id="all" aria-label="Pilih semua" title="Pilih semua yang bisa diproses" />` : ''}</th><th>Akun</th><th>Isi</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
-  ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && ['pending_approval', 'draft', 'failed', 'scheduled'].includes(p.status) ? `<input type="checkbox" class="pick" aria-label="Pilih post" />` : ''}</td><td><span class="btag" style="--c:${brandOf(p.brand_id).color}"><i class="cal-dot on" style="--c:${brandOf(p.brand_id).color}"></i><b>${esc(brandOf(p.brand_id).name.replace('Delova ', ''))}</b></span><div class="small muted">${esc(p.author || '')}${p.source === 'claude' ? ' · via Claude' : p.source === 'ai' ? ' · AI' : ''}</div></td>
-    <td>${esc(p.text.slice(0, 140))}${p.text.length > 140 ? '…' : ''}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}</td>
+  ${items.map((p) => { const ig = p.platform === 'instagram'; const br = brandOf(p.brand_id);
+    return `<tr data-id="${p.id}" ${ig ? 'data-ig="1"' : ''}><td>${!ig && can('editor') && ['pending_approval', 'draft', 'failed', 'scheduled'].includes(p.status) ? `<input type="checkbox" class="pick" aria-label="Pilih post" />` : ''}</td><td><span class="btag" style="--c:${br.color}"><i class="cal-dot on" style="--c:${br.color}"></i><b>${esc(br.name.replace('Delova ', ''))}</b></span><div class="small muted"><span class="badge">${ig ? `Instagram · ${esc(IG_KIND[p.kind] || p.kind)}` : 'Threads'}</span> ${esc(p.author || '')}${p.source === 'claude' ? ' · via Claude' : p.source === 'ai' ? ' · AI' : ''}</div></td>
+    <td>${esc(p.body.slice(0, 140))}${p.body.length > 140 ? '…' : ''}${ig && p.media_urls?.length ? `<div class="small muted">🖼 ${p.media_urls.length} media</div>` : ''}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}</td>
     <td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
-    <td><div class="row">${actions(p)}</div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada post.</td></tr>'}
+    <td><div class="row">${ig ? qIgActions(p) : actions(p)}</div></td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Tidak ada post pada filter ini.</td></tr>'}
   </tbody></table></div>`;
-  const go = () => { location.hash = `#/queue?tab=semua&brand=${$('#fb').value}&status=${$('#fs').value}`; };
-  $('#fb').onchange = go; $('#fs').onchange = go;
+  const go = () => { location.hash = `#/queue?${new URLSearchParams({ brand: $('#fb').value, status: $('#fs').value, platform: $('#fp').value })}`; };
+  $('#fb').onchange = go; $('#fs').onchange = go; $('#fp').onchange = go;
   // ---- persetujuan massal ----
   const picked = () => $$('.pick:checked', v).map((c) => rows.find((r) => r.id === c.closest('tr').dataset.id));
   const refreshBulk = () => {
@@ -378,6 +387,20 @@ VIEWS.queue = async (v) => {
     });
   };
   v.onclick = async (e) => {
+    const ib = e.target.closest('[data-igact]');
+    if (ib) {
+      const id = ib.closest('tr').dataset.id; const act = ib.dataset.igact; const p = igr.find((r) => r.id === id);
+      return busy(ib, async () => {
+        let payload;
+        if (act === 'delete' && !(await ui.confirm({ title: 'Hapus konten Instagram ini?', message: 'Konten dihapus dari antrean dan tidak bisa dikembalikan.', ok: 'Hapus', danger: true }))) return;
+        if (act === 'now' && !(await ui.confirm({ title: 'Publish ke Instagram sekarang?', message: 'Konten langsung tayang tanpa menunggu jadwal.', ok: 'Publish sekarang' }))) return;
+        if (act === 'reject') { const note = await ui.ask({ title: 'Kembalikan konten ke penulis', label: 'Catatan untuk penulis (opsional)', optional: true, max: 300, rows: 3, ok: 'Kembalikan' }); if (note === null) return; payload = { note }; }
+        if (act === 'approve') { if (!p.scheduled_at) { toast('Tentukan jadwal dulu di Instagram → Konten & Jadwal.', true); return (location.hash = `#/instagram?tab=konten&brand=${p.brand_id}`); } payload = { scheduled_at: p.scheduled_at }; }
+        if (act === 'delete') await api('DELETE', `/api/ig/posts/${id}`);
+        else await api('POST', `/api/ig/posts/${id}/${act === 'now' ? 'publish-now' : act}`, payload);
+        toast('Berhasil.'); route();
+      });
+    }
     const btn = e.target.closest('[data-act]'); if (!btn) return;
     const id = btn.closest('tr').dataset.id; const act = btn.dataset.act;
     await busy(btn, async () => {
@@ -393,6 +416,19 @@ VIEWS.queue = async (v) => {
     });
   };
 };
+function qIgActions(p) {
+  const b = (act, label, cls = '') => `<button class="btn small ${cls}" data-igact="${act}">${label}</button>`;
+  const out = [];
+  if (p.status === 'published') return p.permalink ? `<a class="btn small" target="_blank" rel="noopener" href="${esc(p.permalink)}">Buka</a>` : '';
+  if (p.status === 'publishing') return '';
+  if (can('editor')) out.push(`<a class="btn small" href="#/instagram?tab=konten&brand=${p.brand_id}">Edit</a>`);
+  if (can('editor') && ['draft', 'failed'].includes(p.status)) out.push(b('submit', 'Ajukan'));
+  if (can('manager') && ['pending_approval', 'draft', 'failed'].includes(p.status)) out.push(b('approve', 'Setujui', 'primary'));
+  if (can('manager') && ['pending_approval', 'scheduled'].includes(p.status)) out.push(b('reject', 'Kembalikan'));
+  if (can('manager')) out.push(b('now', 'Publish'));
+  if (can('editor')) out.push(b('delete', 'Hapus', 'danger'));
+  return out.join('');
+}
 function actions(p) {
   const b = (act, label, cls = '') => `<button class="btn small ${cls}" data-act="${act}">${label}</button>`;
   const out = [];
@@ -1329,9 +1365,9 @@ VIEWS.approvals = async (v) => {
     const all = { posts: d.posts, igposts: d.igposts, events: d.events, opps: d.opps };
     const per = {}; Object.values(all).forEach((arr) => arr.forEach((x) => { per[x.brand_id] = (per[x.brand_id] || 0) + 1; }));
     const show = (arr) => (fbrand ? arr.filter((x) => x.brand_id === fbrand) : arr);
-    v.innerHTML = `<div class="page-head"><h1>Antrean &amp; Persetujuan</h1>${qTabs('persetujuan')}<p class="muted">Satu tempat untuk menyetujui atau menolak banyak item sekaligus: post Threads, konten Instagram, balasan Auto Reply, dan peluang engage. Centang item, lalu setujui atau tolak terpilih.</p></div>
+    v.innerHTML = `<div class="page-head"><h1>Antrean &amp; Persetujuan</h1>${qHead('', fbrand)}<p class="muted">Satu tempat untuk menyetujui atau menolak banyak item sekaligus: post Threads, konten Instagram, balasan Auto Reply, dan peluang engage. Centang item, lalu setujui atau tolak terpilih.</p></div>
     ${result ? `<div class="card stack"><b>Hasil terakhir: ${result.ok} berhasil, ${result.failed} gagal</b>${result.results.filter((r) => !r.ok).map((r) => `<div class="small err">${esc(r.type)} ${esc(r.id.slice(0, 8))}: ${esc(r.msg)}</div>`).join('')}</div>` : ''}
-    ${total ? `<div class="chips"><a class="chip" href="#/queue?tab=persetujuan" ${!fbrand ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>Semua brand (${total})</a>${brands.map((b) => `<a class="chip" href="#/queue?tab=persetujuan&brand=${b.id}" ${fbrand === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))} (${per[b.id] || 0})</a>`).join('')}</div>` : ''}
+    ${total ? `<div class="chips"><a class="chip" href="#/queue" ${!fbrand ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>Semua brand (${total})</a>${brands.map((b) => `<a class="chip" href="#/queue?brand=${b.id}" ${fbrand === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))} (${per[b.id] || 0})</a>`).join('')}</div>` : ''}
     ${total ? `<div class="ap-bar card"><div class="row"><button class="btn small" type="button" data-s="safe">Pilih yang aman</button><button class="btn small" type="button" data-s="all">Pilih semua</button><button class="btn small" type="button" data-s="none">Kosongkan</button><span class="muted small" id="apn">0 dipilih</span></div>
       <div class="row"><label class="small">Jadwalkan yang belum bertanggal ke <input type="datetime-local" id="apwhen" style="width:auto"></label><label class="small">jarak <input type="number" id="apgap" value="60" min="0" max="10080" style="width:80px"> menit</label><button class="btn primary" type="button" id="apok" disabled>Setujui terpilih</button><button class="btn" type="button" id="apno" disabled>Tolak terpilih</button></div></div>` : '<div class="card muted">Tidak ada yang menunggu persetujuan. 🎉</div>'}
     ${SEC.map(([k, type, title, hint]) => (show(d[k]).length ? `<section class="psec stack"><div class="psec-h"><h2><label class="row" style="gap:8px"><input type="checkbox" data-sec="${type}"> ${title} <span class="badge">${show(d[k]).length}</span></label></h2><span class="small muted">${hint}</span></div>${show(d[k]).map((x) => itemHtml(type, x)).join('')}</section>` : '')).join('')}
