@@ -395,7 +395,7 @@ VIEWS.queue = async (v) => {
         if (act === 'delete' && !(await ui.confirm({ title: 'Hapus konten Instagram ini?', message: 'Konten dihapus dari antrean dan tidak bisa dikembalikan.', ok: 'Hapus', danger: true }))) return;
         if (act === 'now' && !(await ui.confirm({ title: 'Publish ke Instagram sekarang?', message: 'Konten langsung tayang tanpa menunggu jadwal.', ok: 'Publish sekarang' }))) return;
         if (act === 'reject') { const note = await ui.ask({ title: 'Kembalikan konten ke penulis', label: 'Catatan untuk penulis (opsional)', optional: true, max: 300, rows: 3, ok: 'Kembalikan' }); if (note === null) return; payload = { note }; }
-        if (act === 'approve') { if (!p.scheduled_at) { toast('Tentukan jadwal dulu di Instagram → Konten & Jadwal.', true); return (location.hash = `#/instagram?tab=konten&brand=${p.brand_id}`); } payload = { scheduled_at: p.scheduled_at }; }
+        if (act === 'approve') { if (!p.scheduled_at) { toast('Tentukan jadwal dulu di Instagram → Konten & Jadwal.', true); return (location.hash = `#/instagram?tab=${p.kind === 'story' ? 'story' : 'konten'}&brand=${p.brand_id}`); } payload = { scheduled_at: p.scheduled_at }; }
         if (act === 'delete') await api('DELETE', `/api/ig/posts/${id}`);
         else await api('POST', `/api/ig/posts/${id}/${act === 'now' ? 'publish-now' : act}`, payload);
         toast('Berhasil.'); route();
@@ -421,7 +421,7 @@ function qIgActions(p) {
   const out = [];
   if (p.status === 'published') return p.permalink ? `<a class="btn small" target="_blank" rel="noopener" href="${esc(p.permalink)}">Buka</a>` : '';
   if (p.status === 'publishing') return '';
-  if (can('editor')) out.push(`<a class="btn small" href="#/instagram?tab=konten&brand=${p.brand_id}">Edit</a>`);
+  if (can('editor')) out.push(`<a class="btn small" href="#/instagram?tab=${p.kind === 'story' ? 'story' : 'konten'}&brand=${p.brand_id}">Edit</a>`);
   if (can('editor') && ['draft', 'failed'].includes(p.status)) out.push(b('submit', 'Ajukan'));
   if (can('manager') && ['pending_approval', 'draft', 'failed'].includes(p.status)) out.push(b('approve', 'Setujui', 'primary'));
   if (can('manager') && ['pending_approval', 'scheduled'].includes(p.status)) out.push(b('reject', 'Kembalikan'));
@@ -445,7 +445,7 @@ function actions(p) {
 
 
 /* ---------- Instagram ---------- */
-const IG_TABS = [['konten', 'Konten & Jadwal', 'viewer'], ['komentar', 'Komentar', 'editor'], ['dm', 'Pesan (DM)', 'editor']];
+const IG_TABS = [['konten', 'Konten & Jadwal', 'viewer'], ['story', 'Story', 'viewer'], ['komentar', 'Komentar', 'editor'], ['dm', 'Pesan (DM)', 'editor']];
 const IG_KIND = { feed: 'Feed', reels: 'Reels', story: 'Story' };
 const igTime = (iso) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', ':');
 
@@ -470,15 +470,20 @@ VIEWS.instagram = async (v) => {
 const IGV = {};
 
 /* ---- Konten & jadwal ---- */
-IGV.konten = async ({ v, bid, cur, body }) => {
-  const [rows, lib] = await Promise.all([api('GET', `/api/ig/posts?brand=${bid}`), can('editor') ? api('GET', '/api/media?limit=40').catch(() => []) : []]);
+IGV.story = (ctx) => IGV.konten({ ...ctx, only: 'story' });
+IGV.konten = async ({ v, bid, cur, body, only }) => {
+  const SM = only === 'story';
+  const [allRows, lib] = await Promise.all([api('GET', `/api/ig/posts?brand=${bid}`), can('editor') ? api('GET', '/api/media?limit=40').catch(() => []) : []]);
+  const rows = allRows.filter((p) => (SM ? p.kind === 'story' : p.kind !== 'story'));
+  const cntBy = (st) => rows.filter((p) => p.status === st).length;
   const libOk = lib.filter((m) => m.free && (m.mime === 'image/jpeg' || m.mime.startsWith('video/')));
   let editing = null;
   const isVid = (u) => /\.(mp4|mov)(\?|$)/i.test(u);
-  body.innerHTML = `${can('editor') ? `<div class="row between"><b>${rows.length} konten · ${esc(cur.name)}</b><button class="btn primary" id="newc" type="button">Buat konten</button></div>
+  body.innerHTML = `${can('editor') ? `<div class="row between"><b>${rows.length} ${SM ? 'slide Story' : 'konten'} · ${esc(cur.name)}</b><button class="btn primary" id="newc" type="button">${SM ? 'Buat Story' : 'Buat konten'}</button></div>
+  ${SM ? `<div class="chips"><span class="chip">Draft ${cntBy('draft')}</span><span class="chip">Menunggu approval ${cntBy('pending_approval')}</span><span class="chip">Terjadwal ${cntBy('scheduled')}</span><span class="chip">Terbit ${cntBy('published')}</span>${cntBy('failed') ? `<span class="chip" style="color:var(--err,#b3261e)">Gagal ${cntBy('failed')}</span>` : ''}</div><div class="small muted">Story tayang 24 jam di Instagram. Pilih beberapa foto/video sekaligus untuk dijadwalkan sebagai rangkaian slide berurutan. Caption tidak tampil di Story; taruh teks langsung di gambar (9:16 terbaik). Stiker dan tautan belum bisa dipasang lewat API Instagram.</div>` : ''}
   <div id="comp" class="card stack hidden">
-    <h3 id="ctitle">Konten baru</h3>
-    <div class="grid g2"><label>Jenis<select id="kind"><option value="feed">Feed (foto / carousel)</option><option value="reels">Reels (video)</option><option value="story">Story (foto / video)</option></select></label>
+    <h3 id="ctitle">${SM ? 'Story baru' : 'Konten baru'}</h3>
+    <div class="grid g2"><label>Jenis<select id="kind">${SM ? '<option value="story">Story (foto / video)</option>' : '<option value="feed">Feed (foto / carousel)</option><option value="reels">Reels (video)</option>'}</select></label>
       <label>Jadwal tayang (WIB)<input id="iwhen" class="dtp" placeholder="Pilih tanggal &amp; jam" /></label></div>
     <div id="storyhint" class="banner hidden"><b>Story:</b> caption tidak ditampilkan Instagram di Story, jadi taruh teks langsung di gambar (rasio 9:16 terbaik). Pilih beberapa media untuk membuat <b>rangkaian Story</b>: tiap media jadi satu slide yang tayang berurutan.<label class="row" style="margin-top:8px"><input type="checkbox" id="series"> Pecah jadi rangkaian Story, jarak antar slide <input type="number" id="gap" value="5" min="1" max="1440" style="width:80px;flex:none"> menit</label></div>
     <label>Caption <textarea id="cap" style="min-height:110px" placeholder="Tulis caption. Maks 2200 karakter dan 30 hashtag."></textarea></label>
@@ -494,16 +499,16 @@ IGV.konten = async ({ v, bid, cur, body }) => {
   <div class="card"><table><thead><tr><th style="width:28px">${can('editor') ? '<input type="checkbox" id="igall" aria-label="Pilih semua">' : ''}</th><th>Konten</th><th>Jenis</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
   ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && !['published', 'publishing'].includes(p.status) ? `<input type="checkbox" class="igsel" value="${p.id}" aria-label="Pilih konten">` : ''}</td><td><div class="row" style="flex-wrap:nowrap"><span class="mini">${isVid(p.media_urls[0]) ? `<video src="${esc(p.media_urls[0])}" muted preload="metadata"></video>` : `<img src="${esc(p.media_urls[0])}" alt="" loading="lazy" />`}${p.media_urls.length > 1 ? `<i>${p.media_urls.length}</i>` : ''}</span><span>${esc((p.caption || '(tanpa caption)').slice(0, 110))}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}<div class="small muted">${esc(p.author || '')}</div></span></div></td>
     <td><span class="badge">${IG_KIND[p.kind]}</span></td><td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
-    <td><div class="row">${igActions(p)}</div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada konten untuk akun ini.</td></tr>'}</tbody></table></div>`;
+    <td><div class="row">${igActions(p)}</div></td></tr>`).join('') || `<tr><td colspan="6" class="muted">${SM ? 'Belum ada Story untuk akun ini. Klik “Buat Story”.' : 'Belum ada konten untuk akun ini.'}</td></tr>`}</tbody></table></div>`;
   if (!can('editor')) return;
   pickers(body);
   const $c = (s) => $(s, body); const lines = () => $c('#imedia').value.split('\n').map((x) => x.trim()).filter(Boolean);
   const paint = () => { $c('#ithumbs').innerHTML = lines().map((u, i) => `<div class="thumb">${isVid(u) ? `<video src="${esc(u)}" muted preload="metadata"></video>` : `<img src="${esc(u)}" alt="" loading="lazy" />`}<button type="button" class="thumb-x" data-i="${i}" aria-label="Hapus media ${i + 1}">×</button><span class="thumb-n">${i + 1}</span></div>`).join(''); };
   const cnt = () => { const c = $c('#cap').value; const h = (c.match(/#[\p{L}\p{N}_]+/gu) || []).length; const el = $c('#ccnt'); el.textContent = `${len(c)}/2200 · ${h}/30 hashtag`; el.className = 'counter' + (len(c) > 2200 || h > 30 ? ' over' : ''); };
   const open = (p) => {
-    editing = p || null; $c('#comp').classList.remove('hidden'); $c('#ctitle').textContent = p ? 'Edit konten' : 'Konten baru';
-    $c('#kind').value = p?.kind || 'feed'; $c('#cap').value = p?.caption || ''; $c('#imedia').value = (p?.media_urls || []).join('\n');
-    const w = $c('#iwhen')._flatpickr; if (w) w.setDate(p?.scheduled_at ? toInput(p.scheduled_at) : null, false); $c('#series').checked = false; syncKind(); paint(); cnt(); $c('#comp').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    editing = p || null; $c('#comp').classList.remove('hidden'); $c('#ctitle').textContent = p ? (SM ? 'Edit Story' : 'Edit konten') : (SM ? 'Story baru' : 'Konten baru');
+    $c('#kind').value = p?.kind || (SM ? 'story' : 'feed'); $c('#cap').value = p?.caption || ''; $c('#imedia').value = (p?.media_urls || []).join('\n');
+    const w = $c('#iwhen')._flatpickr; if (w) w.setDate(p?.scheduled_at ? toInput(p.scheduled_at) : null, false); $c('#series').checked = SM && !p; syncKind(); paint(); cnt(); $c('#comp').scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   $c('#newc').onclick = () => open(null); $c('#icancel').onclick = () => $c('#comp').classList.add('hidden');
   $c('#cap').addEventListener('input', cnt); $c('#imedia').addEventListener('input', paint);
@@ -1353,7 +1358,7 @@ VIEWS.approvals = async (v) => {
     const vis = (type === 'post' || type === 'igpost') ? x.visual : null;
     const thumbs = (vis?.urls || []).map((u) => `<img src="${esc(u)}" alt="" loading="lazy" style="height:54px;width:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#ddd)">`).join('');
     const visHtml = !vis ? '' : vis.missing
-      ? `<div class="banner" style="margin:0;padding:6px 10px"><b>${vis.need === 'wajib' ? 'Butuh gambar/video' : 'Disarankan pakai gambar'}.</b> ${vis.need === 'wajib' ? 'Instagram wajib punya media, belum ada yang terlampir; tidak bisa disetujui sebelum dilampirkan.' : `${vis.hint ? `Teks menandai butuh visual (“${esc(vis.hint.slice(0, 60))}”)` : `Post membahas produk (“${esc(vis.product)}”)`}, tetapi belum ada gambar terlampir. Threads tetap bisa tayang tanpa gambar, namun post produk biasanya lebih menarik dengan foto.`} <a href="${type === 'igpost' ? `#/instagram?tab=konten&brand=${x.brand_id}` : `#/compose?edit=${x.id}`}">Lampirkan</a></div>`
+      ? `<div class="banner" style="margin:0;padding:6px 10px"><b>${vis.need === 'wajib' ? 'Butuh gambar/video' : 'Disarankan pakai gambar'}.</b> ${vis.need === 'wajib' ? 'Instagram wajib punya media, belum ada yang terlampir; tidak bisa disetujui sebelum dilampirkan.' : `${vis.hint ? `Teks menandai butuh visual (“${esc(vis.hint.slice(0, 60))}”)` : `Post membahas produk (“${esc(vis.product)}”)`}, tetapi belum ada gambar terlampir. Threads tetap bisa tayang tanpa gambar, namun post produk biasanya lebih menarik dengan foto.`} <a href="${type === 'igpost' ? `#/instagram?tab=${x.kind === 'story' ? 'story' : 'konten'}&brand=${x.brand_id}` : `#/compose?edit=${x.id}`}">Lampirkan</a></div>`
       : `<div class="small muted">${vis.have ? `🖼 ${vis.have} gambar/video terlampir` : 'Tanpa gambar (hanya teks). Gambar opsional untuk Threads.'}</div>${thumbs ? `<div class="row" style="gap:6px">${thumbs}</div>` : ''}`;
     let main = '';
     if (type === 'post' || type === 'igpost') main = `<div style="white-space:pre-wrap">${esc((x.text || '').slice(0, 280))}</div><div class="small ${noSched ? 'err' : 'muted'}">${x.media_urls?.length ? `${x.media_urls.length} media · ` : ''}${x.scheduled_at ? `Jadwal ${wib(x.scheduled_at)}` : 'Belum dijadwalkan'}${type === 'igpost' ? ` · ${esc(x.kind)}` : ''}</div>${visHtml}`;
