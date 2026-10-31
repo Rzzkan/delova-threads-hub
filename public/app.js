@@ -432,6 +432,7 @@ IGV.konten = async ({ v, bid, cur, body }) => {
     <h3 id="ctitle">Konten baru</h3>
     <div class="grid g2"><label>Jenis<select id="kind"><option value="feed">Feed (foto / carousel)</option><option value="reels">Reels (video)</option><option value="story">Story (foto / video)</option></select></label>
       <label>Jadwal tayang (WIB)<input id="iwhen" class="dtp" placeholder="Pilih tanggal &amp; jam" /></label></div>
+    <div id="storyhint" class="banner hidden"><b>Story:</b> caption tidak ditampilkan Instagram di Story, jadi taruh teks langsung di gambar (rasio 9:16 terbaik). Pilih beberapa media untuk membuat <b>rangkaian Story</b>: tiap media jadi satu slide yang tayang berurutan.<label class="row" style="margin-top:8px"><input type="checkbox" id="series"> Pecah jadi rangkaian Story, jarak antar slide <input type="number" id="gap" value="5" min="1" max="1440" style="width:80px;flex:none"> menit</label></div>
     <label>Caption <textarea id="cap" style="min-height:110px" placeholder="Tulis caption. Maks 2200 karakter dan 30 hashtag."></textarea></label>
     <div class="counter" id="ccnt">0/2200 · 0/30 hashtag</div>
     <div class="stack" style="gap:8px"><span class="lbl">Foto / video <span class="muted small">(Instagram hanya menerima foto JPG; video MP4/MOV)</span></span>
@@ -441,10 +442,11 @@ IGV.konten = async ({ v, bid, cur, body }) => {
       <details><summary class="small muted">Tempel URL sendiri (HTTPS publik, satu per baris)</summary><textarea id="imedia" style="min-height:64px"></textarea></details></div>
     <div class="row"><button class="btn" id="isave" type="button">Simpan draft</button><button class="btn primary" id="isubmit" type="button">Ajukan approval</button>${can('manager') ? '<button class="btn primary" id="iapprove" type="button">Setujui &amp; jadwalkan</button><button class="btn danger" id="inow" type="button">Terbitkan sekarang</button>' : ''}<button class="btn ghost" id="icancel" type="button">Batal</button></div>
   </div>` : ''}
-  <div class="card"><table><thead><tr><th>Konten</th><th>Jenis</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
-  ${rows.map((p) => `<tr data-id="${p.id}"><td><div class="row" style="flex-wrap:nowrap"><span class="mini">${isVid(p.media_urls[0]) ? `<video src="${esc(p.media_urls[0])}" muted preload="metadata"></video>` : `<img src="${esc(p.media_urls[0])}" alt="" loading="lazy" />`}${p.media_urls.length > 1 ? `<i>${p.media_urls.length}</i>` : ''}</span><span>${esc((p.caption || '(tanpa caption)').slice(0, 110))}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}<div class="small muted">${esc(p.author || '')}</div></span></div></td>
+  ${can('editor') ? '<div class="row hidden" id="igbulk"><span class="small muted" id="igbn"></span><button class="btn small" data-bulk="submit" type="button">Ajukan terpilih</button>' + (can('manager') ? '<button class="btn small primary" data-bulk="approve" type="button">Setujui &amp; jadwalkan terpilih</button><button class="btn small" data-bulk="reject" type="button">Kembalikan terpilih</button>' : '') + '</div>' : ''}
+  <div class="card"><table><thead><tr><th style="width:28px">${can('editor') ? '<input type="checkbox" id="igall" aria-label="Pilih semua">' : ''}</th><th>Konten</th><th>Jenis</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
+  ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && !['published', 'publishing'].includes(p.status) ? `<input type="checkbox" class="igsel" value="${p.id}" aria-label="Pilih konten">` : ''}</td><td><div class="row" style="flex-wrap:nowrap"><span class="mini">${isVid(p.media_urls[0]) ? `<video src="${esc(p.media_urls[0])}" muted preload="metadata"></video>` : `<img src="${esc(p.media_urls[0])}" alt="" loading="lazy" />`}${p.media_urls.length > 1 ? `<i>${p.media_urls.length}</i>` : ''}</span><span>${esc((p.caption || '(tanpa caption)').slice(0, 110))}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}<div class="small muted">${esc(p.author || '')}</div></span></div></td>
     <td><span class="badge">${IG_KIND[p.kind]}</span></td><td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
-    <td><div class="row">${igActions(p)}</div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Belum ada konten untuk akun ini.</td></tr>'}</tbody></table></div>`;
+    <td><div class="row">${igActions(p)}</div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada konten untuk akun ini.</td></tr>'}</tbody></table></div>`;
   if (!can('editor')) return;
   pickers(body);
   const $c = (s) => $(s, body); const lines = () => $c('#imedia').value.split('\n').map((x) => x.trim()).filter(Boolean);
@@ -453,7 +455,7 @@ IGV.konten = async ({ v, bid, cur, body }) => {
   const open = (p) => {
     editing = p || null; $c('#comp').classList.remove('hidden'); $c('#ctitle').textContent = p ? 'Edit konten' : 'Konten baru';
     $c('#kind').value = p?.kind || 'feed'; $c('#cap').value = p?.caption || ''; $c('#imedia').value = (p?.media_urls || []).join('\n');
-    const w = $c('#iwhen')._flatpickr; if (w) w.setDate(p?.scheduled_at ? toInput(p.scheduled_at) : null, false); paint(); cnt(); $c('#comp').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const w = $c('#iwhen')._flatpickr; if (w) w.setDate(p?.scheduled_at ? toInput(p.scheduled_at) : null, false); $c('#series').checked = false; syncKind(); paint(); cnt(); $c('#comp').scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   $c('#newc').onclick = () => open(null); $c('#icancel').onclick = () => $c('#comp').classList.add('hidden');
   $c('#cap').addEventListener('input', cnt); $c('#imedia').addEventListener('input', paint);
@@ -478,16 +480,38 @@ IGV.konten = async ({ v, bid, cur, body }) => {
   ['dragleave', 'drop'].forEach((ev) => $c('#idrop').addEventListener(ev, (e) => { e.preventDefault(); $c('#idrop').classList.remove('over'); }));
   $c('#idrop').addEventListener('drop', (e) => send([...e.dataTransfer.files]));
   const payload = () => ({ brand_id: bid, kind: $c('#kind').value, caption: $c('#cap').value, media_urls: lines(), scheduled_at: fromInput($c('#iwhen').value) });
-  const saveIt = async () => { const b = payload(); if (editing) { const { brand_id, ...rest } = b; editing = await api('PUT', `/api/ig/posts/${editing.id}`, rest); } else editing = await api('POST', '/api/ig/posts', b); return editing; };
-  $c('#isave').onclick = (e) => busy(e.target, async () => { await saveIt(); toast('Draft tersimpan.'); route(); });
-  $c('#isubmit').onclick = (e) => busy(e.target, async () => { await saveIt(); await api('POST', `/api/ig/posts/${editing.id}/submit`); toast('Diajukan ke manajer.'); route(); });
+  const isSeries = () => $c('#kind').value === 'story' && $c('#series').checked && lines().length > 1 && !editing;
+  const syncKind = () => { const st = $c('#kind').value === 'story'; $c('#storyhint').classList.toggle('hidden', !st); $c('#cap').closest('label').classList.toggle('hidden', st); $c('#ccnt').classList.toggle('hidden', st); };
+  $c('#kind').addEventListener('change', syncKind);
+  const saveIt = async (submit = false) => { if (isSeries()) { const b = payload(); if (!b.scheduled_at) throw new Error('Pilih jadwal slide pertama dulu.'); const r = await api('POST', '/api/ig/posts/story-series', { brand_id: bid, media_urls: b.media_urls, scheduled_at: b.scheduled_at, interval_minutes: Number($c('#gap').value) || 5, submit }); editing = r[0]; return { series: r }; } const b = payload(); if (editing) { const { brand_id, ...rest } = b; editing = await api('PUT', `/api/ig/posts/${editing.id}`, rest); } else editing = await api('POST', '/api/ig/posts', b); return editing; };
+  $c('#isave').onclick = (e) => busy(e.target, async () => { const r = await saveIt(); toast(r.series ? `${r.series.length} slide Story tersimpan sebagai draft.` : 'Draft tersimpan.'); route(); });
+  $c('#isubmit').onclick = (e) => busy(e.target, async () => { const r = await saveIt(true); if (!r.series) await api('POST', `/api/ig/posts/${editing.id}/submit`); toast(r.series ? `${r.series.length} slide Story diajukan ke manajer.` : 'Diajukan ke manajer.'); route(); });
   if (can('manager')) {
-    $c('#iapprove').onclick = (e) => busy(e.target, async () => { const w = fromInput($c('#iwhen').value); if (!w) throw new Error('Pilih jadwal tayang dulu.'); await saveIt(); await api('POST', `/api/ig/posts/${editing.id}/approve`, { scheduled_at: w }); toast('Disetujui dan dijadwalkan.'); route(); });
+    $c('#iapprove').onclick = (e) => busy(e.target, async () => { const w = fromInput($c('#iwhen').value); if (!w) throw new Error('Pilih jadwal tayang dulu.'); const sr = await saveIt(true); if (sr.series) { await api('POST', '/api/ig/posts/bulk', { action: 'approve', ids: sr.series.map((x) => x.id) }); toast(`${sr.series.length} slide Story dijadwalkan.`); return route(); } await api('POST', `/api/ig/posts/${editing.id}/approve`, { scheduled_at: w }); toast('Disetujui dan dijadwalkan.'); route(); });
     $c('#inow').onclick = (e) => busy(e.target, async () => {
+      if (isSeries()) throw new Error('Rangkaian Story tidak bisa diterbitkan sekaligus. Gunakan Setujui & jadwalkan.');
       if (!(await ui.confirm({ title: 'Terbitkan ke Instagram sekarang?', message: 'Konten langsung tayang di akun Instagram tanpa menunggu jadwal.', quote: $c('#cap').value.slice(0, 200), quoteLabel: cur.name, ok: 'Terbitkan sekarang' }))) return;
       await saveIt(); const r = await api('POST', `/api/ig/posts/${editing.id}/publish-now`); if (r.status === 'failed') throw new Error(r.error); toast('Terbit.'); route();
     });
   }
+  const selIds = () => $$('.igsel:checked', body).map((c) => c.value);
+  const syncBulk = () => { const n = selIds().length; $c('#igbulk').classList.toggle('hidden', !n); $c('#igbn').textContent = `${n} dipilih`; };
+  body.addEventListener('change', (e) => { if (e.target.id === 'igall') { $$('.igsel', body).forEach((c) => { c.checked = e.target.checked; }); } if (e.target.id === 'igall' || e.target.classList.contains('igsel')) syncBulk(); });
+  body.addEventListener('click', (e) => {
+    const bb = e.target.closest('[data-bulk]'); if (!bb) return; const action = bb.dataset.bulk; const ids = selIds();
+    busy(bb, async () => {
+      let fill_missing;
+      if (action === 'approve') {
+        const missing = ids.filter((id) => !rows.find((r) => r.id === id)?.scheduled_at).length;
+        const html = `<div class="stack"><p class="small muted">${ids.length} konten dipilih. ${missing ? `${missing} belum punya jadwal: isi waktu mulai dan jarak, jadwal diberikan berurutan sesuai urutan di tabel.` : 'Semua sudah punya jadwal; jadwal tidak diubah.'}</p>${missing ? '<label>Mulai tayang<input type="datetime-local" name="start"></label><label>Jarak antar konten (menit)<input type="number" name="gap" value="60" min="1" max="10080"></label>' : ''}</div>`;
+        const out = await ui.form({ title: 'Setujui & jadwalkan massal', ok: `Setujui ${ids.length} konten`, extra: { html, collect: (f) => { if (missing && !f.elements.start.value) { f.querySelector('[data-err]').textContent = 'Pilih waktu mulai.'; return undefined; } return missing ? { start: new Date(f.elements.start.value).toISOString(), interval_minutes: Number(f.elements.gap.value) } : {}; } } });
+        if (!out) return; if (out.start) fill_missing = out;
+      } else if (!(await ui.confirm({ title: action === 'submit' ? `Ajukan ${ids.length} konten?` : `Kembalikan ${ids.length} konten ke draft?`, message: action === 'submit' ? 'Konten masuk antrean approval manajer.' : 'Jadwal dibatalkan dan konten kembali berstatus draft.', ok: action === 'submit' ? 'Ajukan' : 'Kembalikan' }))) return;
+      const r = await api('POST', '/api/ig/posts/bulk', { action, ids, fill_missing });
+      toast(`${r.done.length} berhasil${r.skipped.length ? `, ${r.skipped.length} dilewati: ${r.skipped[0].reason}` : ''}.`, !r.skipped.length); route();
+    });
+  });
+  { const d = params().get('date'); if (/^\d{4}-\d{2}-\d{2}$/.test(d || '')) { open(null); const w = $c('#iwhen')._flatpickr; if (w) w.setDate(new Date(`${d}T09:00:00+07:00`), false); } }
   body.onclick = async (e) => {
     const btn = e.target.closest('[data-iact]'); if (!btn) return;
     const id = btn.closest('tr').dataset.id; const act = btn.dataset.iact; const p = rows.find((r) => r.id === id);
@@ -846,12 +870,12 @@ VIEWS.calendar = async (v) => {
     let inner;
     if (bid) {
       const b = shown[0]; const st = stateOf(d, b.id);
-      inner = ps.slice(0, 2).map((p) => `<span class="cal-chip ${SET_STATUS.includes(p.status) ? 'on' : p.status === 'failed' ? 'bad' : 'half'}" style="--c:${b.color}">${new Date(p.published_at || p.scheduled_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).replace('.', ':')} ${esc(p.text.slice(0, 22))}</span>`).join('') + (ps.length > 2 ? `<span class="cal-more">+${ps.length - 2} lagi</span>` : '') + (!ps.length && !past ? '<span class="cal-empty">Kosong</span>' : '');
+      inner = ps.slice(0, 2).map((p) => `<span class="cal-chip ${SET_STATUS.includes(p.status) ? 'on' : p.status === 'failed' ? 'bad' : 'half'}" style="--c:${b.color}">${new Date(p.published_at || p.scheduled_at).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }).replace('.', ':')} ${p.platform === 'instagram' ? `<b>${p.kind === 'story' ? 'Story' : 'IG'}</b> ` : ''}${esc(p.text.slice(0, 22))}</span>`).join('') + (ps.length > 2 ? `<span class="cal-more">+${ps.length - 2} lagi</span>` : '') + (!ps.length && !past ? '<span class="cal-empty">Kosong</span>' : '');
       void st;
     } else inner = `<span class="cal-dots">${shown.map((b) => dot(b, stateOf(d, b.id))).join('')}</span>`;
     cells.push(`<button type="button" class="cal-cell ${k === todayKey ? 'today' : ''} ${past ? 'past' : ''} ${!ps.length && !past && bid ? 'free' : ''}" data-day="${k}"><span class="cal-num">${d}</span>${inner}</button>`);
   }
-  v.innerHTML = `<div class="page-head row between"><div><h1>Kalender</h1><p class="muted">Tanggal yang sudah dan belum punya jadwal post untuk tiap akun (WIB). Klik tanggal untuk melihat detail atau menjadwalkan.</p></div></div>
+  v.innerHTML = `<div class="page-head row between"><div><h1>Kalender</h1><p class="muted">Tanggal yang sudah dan belum punya jadwal post (Threads, Instagram, dan Story) untuk tiap akun (WIB). Klik tanggal untuk melihat detail atau menjadwalkan.</p></div></div>
   <div class="row between" style="margin-bottom:12px"><div class="chips"><a class="chip" href="${nav(monthKey, '')}" ${bid ? '' : 'style="border-color:var(--accent);color:var(--accent)"'}>Semua akun</a>${brands.map((b) => `<a class="chip" href="${nav(monthKey, b.id)}" ${bid === b.id ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot on" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}</a>`).join('')}</div>
     <div class="row"><a class="btn small" href="${nav(prevM)}" aria-label="Bulan sebelumnya">${ico('chevl')}</a><b style="min-width:9.5rem;text-align:center">${MONTHS[M - 1]} ${Y}</b><a class="btn small" href="${nav(nextM)}" aria-label="Bulan berikutnya">${ico('chevr')}</a><a class="btn small" href="${nav(todayKey.slice(0, 7))}">Hari ini</a></div></div>
   <div class="cal-sums">${summary}</div>
@@ -862,8 +886,8 @@ VIEWS.calendar = async (v) => {
     const d = Number(k.slice(8)); const ps = byDay[k] || []; const label = new Date(`${k}T12:00:00+07:00`).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     const rowFor = (b) => {
       const mine = ps.filter((p) => p.brand_id === b.id); const past = k < todayKey;
-      return `<div class="cal-day-brand" style="--c:${b.color}"><div class="row between"><b>${esc(b.name)}</b>${can('editor') && !past ? `<a class="btn small primary" href="#/compose?brand=${b.id}&date=${k}">${mine.length ? 'Tambah post' : 'Jadwalkan post'}</a>` : ''}</div>
-        ${mine.length ? mine.map((p) => `<div class="row between cal-post"><span><span class="small muted">${wib(p.published_at || p.scheduled_at).replace(' WIB', '')}</span> ${esc(p.text)}</span><span class="row">${badge(p.status)}${can('editor') && p.status !== 'published' ? `<a class="btn small" href="#/compose?edit=${p.id}">Edit</a>` : ''}</span></div>`).join('') : `<span class="muted small">${past ? 'Tidak ada post pada tanggal ini.' : 'Belum ada jadwal pada tanggal ini.'}</span>`}</div>`;
+      return `<div class="cal-day-brand" style="--c:${b.color}"><div class="row between"><b>${esc(b.name)}</b>${can('editor') && !past ? `<span class="row"><a class="btn small primary" href="#/compose?brand=${b.id}&date=${k}">${mine.length ? 'Tambah post' : 'Jadwalkan post'}</a><a class="btn small" href="#/instagram?tab=konten&brand=${b.id}&date=${k}">Jadwalkan IG / Story</a></span>` : ''}</div>
+        ${mine.length ? mine.map((p) => `<div class="row between cal-post"><span><span class="small muted">${wib(p.published_at || p.scheduled_at).replace(' WIB', '')}</span> <span class="badge">${p.platform === 'instagram' ? `IG ${IG_KIND[p.kind] || ''}` : 'Threads'}</span> ${esc(p.text || (p.kind === 'story' ? '(Story)' : ''))}</span><span class="row">${badge(p.status)}${can('editor') && p.status !== 'published' ? `<a class="btn small" href="${p.platform === 'instagram' ? `#/instagram?tab=konten&brand=${b.id}` : `#/compose?edit=${p.id}`}">${p.platform === 'instagram' ? 'Buka' : 'Edit'}</a>` : ''}</span></div>`).join('') : `<span class="muted small">${past ? 'Tidak ada post pada tanggal ini.' : 'Belum ada jadwal pada tanggal ini.'}</span>`}</div>`;
     };
     $('#day').innerHTML = `<h3>${esc(label)}</h3>${(bid ? shown : brands).map(rowFor).join('')}`; void d;
     $$('.cal-cell.sel', v).forEach((c) => c.classList.remove('sel')); $(`.cal-cell[data-day="${k}"]`, v)?.classList.add('sel');
@@ -1080,7 +1104,7 @@ VIEWS.approvals = async (v) => {
     v.innerHTML = `<div class="page-head"><h1>Pusat Persetujuan</h1><p class="muted">Satu tempat untuk menyetujui atau menolak banyak item sekaligus: post Threads, konten Instagram, balasan Auto Reply, dan peluang engage. Centang item, lalu setujui atau tolak terpilih.</p></div>
     ${result ? `<div class="card stack"><b>Hasil terakhir: ${result.ok} berhasil, ${result.failed} gagal</b>${result.results.filter((r) => !r.ok).map((r) => `<div class="small err">${esc(r.type)} ${esc(r.id.slice(0, 8))}: ${esc(r.msg)}</div>`).join('')}</div>` : ''}
     ${total ? `<div class="ap-bar card"><div class="row"><button class="btn small" type="button" data-s="safe">Pilih yang aman</button><button class="btn small" type="button" data-s="all">Pilih semua</button><button class="btn small" type="button" data-s="none">Kosongkan</button><span class="muted small" id="apn">0 dipilih</span></div>
-      <div class="row"><label class="small">Jadwalkan yang belum bertanggal ke <input type="datetime-local" id="apwhen" style="width:auto"></label><button class="btn primary" type="button" id="apok" disabled>Setujui terpilih</button><button class="btn" type="button" id="apno" disabled>Tolak terpilih</button></div></div>` : '<div class="card muted">Tidak ada yang menunggu persetujuan. 🎉</div>'}
+      <div class="row"><label class="small">Jadwalkan yang belum bertanggal ke <input type="datetime-local" id="apwhen" style="width:auto"></label><label class="small">jarak <input type="number" id="apgap" value="60" min="0" max="10080" style="width:80px"> menit</label><button class="btn primary" type="button" id="apok" disabled>Setujui terpilih</button><button class="btn" type="button" id="apno" disabled>Tolak terpilih</button></div></div>` : '<div class="card muted">Tidak ada yang menunggu persetujuan. 🎉</div>'}
     ${SEC.map(([k, type, title, hint]) => (d[k].length ? `<section class="psec stack"><div class="psec-h"><h2><label class="row" style="gap:8px"><input type="checkbox" data-sec="${type}"> ${title} <span class="badge">${d[k].length}</span></label></h2><span class="small muted">${hint}</span></div>${d[k].map((x) => itemHtml(type, x)).join('')}</section>` : '')).join('')}
     ${!d.can_posts ? '<div class="small muted">Post Threads dan konten Instagram hanya tampil untuk peran manager ke atas.</div>' : ''}`;
     sync();
@@ -1095,7 +1119,7 @@ VIEWS.approvals = async (v) => {
     const send = action === 'approve' && items.some((i) => i.type === 'event' || i.type === 'opp');
     if (!(await ui.confirm({ title: action === 'approve' ? `Setujui ${items.length} item?` : `Tolak ${items.length} item?`, message: `${sum}.${action === 'approve' ? (send ? ' Balasan/DM yang dipilih akan langsung dikirim ke platform atas nama brand.' : ' Post akan masuk jadwal tayang.') : ' Post dikembalikan ke draft; balasan ditolak/dilewati.'}${risky ? ` ${risky} item bertanda "Perlu ditinjau" ikut terpilih, pastikan sudah Anda baca.` : ''}`, ok: action === 'approve' ? 'Setujui' : 'Tolak', danger: action === 'reject' }))) return;
     const when = $('#apwhen', v).value ? new Date($('#apwhen', v).value).toISOString() : undefined;
-    result = await api('POST', '/api/approvals/bulk', { action, items, scheduled_at: when });
+    result = await api('POST', '/api/approvals/bulk', { action, items, scheduled_at: when, interval_minutes: Number($('#apgap', v).value) || 0 });
     toast(`${result.ok} berhasil${result.failed ? `, ${result.failed} gagal` : ''}.`, !result.failed); await load();
   };
   v.onclick = (e) => {

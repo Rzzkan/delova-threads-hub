@@ -106,3 +106,31 @@ test('persetujuan massal: daftar, setujui/tolak terpilih, jadwal massal, peran',
   assert.equal(r4.json.failed, 1);
   assert.equal((await call(mgr, 'POST', '/api/approvals/bulk', { action: 'approve', items: [] })).status, 400);
 });
+
+test('jadwal massal: interval untuk item tanpa jadwal di Pusat Persetujuan', async () => {
+  const t = now(); const ids = [];
+  for (let i = 0; i < 3; i++) { const id = uid(); ids.push(id); run("INSERT INTO ig_posts(id,brand_id,caption,status,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", id, 'wardrobe', 'x' + i, 'pending_approval', 'x', t, t); }
+  const start = new Date(Date.now() + 3600e3).toISOString();
+  const r = await call(mgr, 'POST', '/api/approvals/bulk', { action: 'approve', scheduled_at: start, interval_minutes: 30, items: ids.map((id) => ({ type: 'igpost', id })) });
+  assert.equal(r.json.ok, 3);
+  const at = ids.map((id) => Date.parse(get('SELECT scheduled_at FROM ig_posts WHERE id=?', id).scheduled_at));
+  assert.equal(at[1] - at[0], 30 * 60e3); assert.equal(at[2] - at[1], 30 * 60e3);
+});
+test('rangkaian Story: satu slide per media, berurutan; bulk IG; kalender memuat Instagram', async () => {
+  const media = ['https://example.com/s1.jpg', 'https://example.com/s2.jpg', 'https://example.com/s3.mp4'];
+  const start = new Date(Date.now() + 7200e3).toISOString();
+  assert.equal((await call(ed, 'POST', '/api/ig/posts/story-series', { brand_id: 'kids', media_urls: media })).status, 400);
+  assert.equal((await call(ed, 'POST', '/api/ig/posts/story-series', { brand_id: 'kids', media_urls: ['http://x/a.jpg'], scheduled_at: start })).status, 400);
+  const r = await call(ed, 'POST', '/api/ig/posts/story-series', { brand_id: 'kids', media_urls: media, scheduled_at: start, interval_minutes: 5, submit: true });
+  assert.equal(r.status, 201); assert.equal(r.json.length, 3);
+  assert.ok(r.json.every((p) => p.kind === 'story' && p.status === 'pending_approval' && p.media_urls.length === 1));
+  assert.equal(Date.parse(r.json[1].scheduled_at) - Date.parse(r.json[0].scheduled_at), 5 * 60e3);
+  const ids = r.json.map((p) => p.id);
+  assert.equal((await call(ed, 'POST', '/api/ig/posts/bulk', { action: 'approve', ids })).status, 403);
+  const ok = await call(mgr, 'POST', '/api/ig/posts/bulk', { action: 'approve', ids });
+  assert.equal(ok.json.done.length, 3);
+  assert.equal(get('SELECT status FROM ig_posts WHERE id=?', ids[0]).status, 'scheduled');
+  const from = new Date(Date.now() - 86400e3).toISOString(); const to = new Date(Date.now() + 5 * 86400e3).toISOString();
+  const cal = await call(mgr, 'GET', `/api/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&brand=kids`);
+  assert.ok(cal.json.filter((x) => x.platform === 'instagram' && x.kind === 'story').length >= 3);
+});

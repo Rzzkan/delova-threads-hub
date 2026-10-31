@@ -286,10 +286,13 @@ export function createApp() {
     let brandSql = '';
     if (req.query.brand) { brandSql = 'AND brand_id=?'; args.push(String(req.query.brand)); }
     res.json(all(
-      `SELECT id, brand_id, substr(text,1,140) AS text, status, scheduled_at, published_at FROM posts
+      `SELECT * FROM (SELECT id, brand_id, substr(text,1,140) AS text, status, scheduled_at, published_at, 'threads' AS platform, NULL AS kind FROM posts
        WHERE COALESCE(published_at, scheduled_at) >= ? AND COALESCE(published_at, scheduled_at) < ? ${brandSql}
+       UNION ALL
+       SELECT id, brand_id, substr(caption,1,140) AS text, status, scheduled_at, published_at, 'instagram' AS platform, kind FROM ig_posts
+       WHERE COALESCE(published_at, scheduled_at) >= ? AND COALESCE(published_at, scheduled_at) < ? ${brandSql})
        ORDER BY COALESCE(published_at, scheduled_at)`,
-      ...args,
+      ...args, ...args,
     ));
   });
 

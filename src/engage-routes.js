@@ -143,6 +143,8 @@ export function mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 }) {
     if (!items.length) return bad(res, 'Pilih minimal satu item.');
     const when = req.body?.scheduled_at ? new Date(req.body.scheduled_at) : null;
     if (when && Number.isNaN(when.getTime())) return bad(res, 'Jadwal tidak valid.');
+    const step = Math.min(7 * 1440, Math.max(0, Number(req.body?.interval_minutes) || 0)) * 60_000;
+    let slot = when ? when.getTime() : null;
     const note = String(req.body?.note || '').slice(0, 300) || null;
     const isMgr = RANK[req.user.role] >= RANK.manager;
     const results = []; let sentAny = false;
@@ -157,7 +159,8 @@ export function mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 }) {
           else if (action === 'approve') {
             if (p.status !== 'pending_approval') r.msg = `Berstatus ${p.status}.`;
             else {
-              const at = p.scheduled_at || (when && when.toISOString());
+              let at = p.scheduled_at;
+              if (!at && slot !== null) { at = new Date(slot).toISOString(); slot += step; }
               if (!at) r.msg = 'Belum ada jadwal; isi "Jadwalkan yang belum bertanggal ke".';
               else { run(`UPDATE ${tbl} SET status='scheduled', scheduled_at=?, approved_by=?, error=NULL, updated_at=? WHERE id=? AND status='pending_approval'`, at, req.user.id, now(), p.id); audit(req.user.id, it.type === 'post' ? 'post.approved' : 'ig.post.approved', { id: p.id, bulk: true }); r.ok = true; r.msg = `Dijadwalkan ${at}`; }
             }

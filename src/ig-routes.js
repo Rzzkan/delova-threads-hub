@@ -124,6 +124,60 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
     const lim = Math.min(Number(req.query.limit) || 100, 200);
     res.json(all(`SELECT p.*, u.name AS author FROM ig_posts p LEFT JOIN users u ON u.id=p.created_by ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC LIMIT ${lim}`, ...args).map(parse));
   });
+  /* ---------- Jadwal massal & rangkaian Story ---------- */
+  const slotOf = (f) => { // { start, interval_minutes }
+    if (!f) return { slot: null, step: 0 };
+    const slot = Date.parse(f.start); const step = Number(f.interval_minutes) * 60_000;
+    if (Number.isNaN(slot) || !(step >= 60_000 && step <= 7 * 86400_000)) return { error: 'Jadwal otomatis tidak valid (jarak 1 menit - 7 hari).' };
+    return { slot, step };
+  };
+  api.post('/ig/posts/bulk', need('editor'), humanOnly, (req, res) => {
+    const b = req.body || {}; const action = String(b.action || '');
+    if (!['submit', 'approve', 'reject'].includes(action)) return bad(res, 'Aksi tidak dikenal.');
+    if (action !== 'submit' && RANK[req.user.role] < RANK.manager) return bad(res, 'Butuh peran manager atau lebih tinggi.', 403);
+    const ids = [...new Set(Array.isArray(b.ids) ? b.ids.map(String) : [])];
+    if (!ids.length) return bad(res, 'Pilih minimal satu konten.');
+    if (ids.length > 50) return bad(res, 'Maksimal 50 konten sekali proses.');
+    let { slot, step, error } = slotOf(b.fill_missing); if (error) return bad(res, error);
+    const done = []; const skipped = [];
+    for (const id of ids) {
+      const p = get('SELECT * FROM ig_posts WHERE id=?', id);
+      if (!p) { skipped.push({ id, reason: 'Konten tidak ditemukan.' }); continue; }
+      if (action === 'submit') {
+        if (!['draft', 'failed'].includes(p.status)) { skipped.push({ id, reason: `Berstatus ${p.status}.` }); continue; }
+        run("UPDATE ig_posts SET status='pending_approval', review_note=NULL, error=NULL, updated_at=? WHERE id=?", now(), id); A(req, 'ig.post.submitted', { id, bulk: true }); done.push(id); continue;
+      }
+      if (action === 'reject') {
+        if (!['pending_approval', 'scheduled'].includes(p.status)) { skipped.push({ id, reason: `Berstatus ${p.status}.` }); continue; }
+        run("UPDATE ig_posts SET status='draft', review_note=?, updated_at=? WHERE id=?", String(b.note || '').slice(0, 300) || null, now(), id); A(req, 'ig.post.rejected', { id, bulk: true }); done.push(id); continue;
+      }
+      if (!['pending_approval', 'draft', 'failed'].includes(p.status)) { skipped.push({ id, reason: `Berstatus ${p.status}.` }); continue; }
+      let when = p.scheduled_at;
+      if (!when) { if (slot === null) { skipped.push({ id, reason: 'Belum punya jadwal.' }); continue; } when = new Date(slot).toISOString(); slot += step; }
+      else if (Date.parse(when) < Date.now() - 60_000 && !b.allow_past) { skipped.push({ id, reason: 'Jadwalnya sudah lewat (akan langsung tayang).' }); continue; }
+      run("UPDATE ig_posts SET status='scheduled', scheduled_at=?, approved_by=?, error=NULL, updated_at=? WHERE id=?", when, req.user.id, now(), id);
+      A(req, 'ig.post.approved', { id, scheduled_at: when, bulk: true }); done.push(id);
+    }
+    res.json({ action, done, skipped });
+  });
+  // Satu media = satu slide Story; slide dijadwalkan berurutan dengan jarak tetap.
+  api.post('/ig/posts/story-series', need('editor'), humanOnly, (req, res) => {
+    const b = req.body || {};
+    if (!brandOr404(b.brand_id)) return bad(res, 'Brand tidak ditemukan.', 404);
+    const media = Array.isArray(b.media_urls) ? b.media_urls : [];
+    if (media.length < 1 || media.length > 10) return bad(res, 'Pilih 1-10 media (satu slide per media).');
+    const sl = slotOf({ start: b.scheduled_at, interval_minutes: b.interval_minutes ?? 5 }); if (sl.error || !b.scheduled_at) return bad(res, sl.error || 'Tentukan jadwal tayang slide pertama.');
+    for (const u of media) { const err = validateIgPost({ kind: 'story', media_urls: [u] }); if (err) return bad(res, err); }
+    const status = b.submit ? 'pending_approval' : 'draft'; const ids = [];
+    media.forEach((u, i) => {
+      const id = uid();
+      run('INSERT INTO ig_posts(id,brand_id,kind,caption,media_urls,status,scheduled_at,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        id, b.brand_id, 'story', '', JSON.stringify([u]), status, new Date(sl.slot + i * sl.step).toISOString(), req.user.id, now(), now());
+      M.linkMedia(id, [u]); ids.push(id);
+    });
+    A(req, 'ig.story.series', { brand: b.brand_id, count: ids.length });
+    res.status(201).json(ids.map((id) => parse(get('SELECT * FROM ig_posts WHERE id=?', id))));
+  });
   api.post('/ig/posts', need('editor'), humanOnly, (req, res) => {
     const b = req.body || {};
     if (!brandOr404(b.brand_id)) return bad(res, 'Brand tidak ditemukan.', 404);
