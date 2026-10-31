@@ -180,3 +180,15 @@ test('Instagram: draft boleh tanpa foto/video; ajukan, setujui, dan publish butu
   assert.equal(u.status, 200);
   assert.equal((await api('POST', `/api/ig/posts/${c.body.id}/submit`)).body.status, 'pending_approval');
 });
+
+test('Instagram Story: daftarkan slot tanggal & jam saja (tanpa foto), foto menyusul', async () => {
+  const t1 = new Date(Date.now() + 86400e3).toISOString(); const t2 = new Date(Date.now() + 2 * 86400e3).toISOString();
+  const r = await api('POST', '/api/ig/posts/story-slots', { brand_id: 'kids', times: [t2, t1] });
+  assert.equal(r.status, 201); assert.equal(r.body.length, 2);
+  assert.ok(r.body.every((p) => p.kind === 'story' && p.status === 'draft' && p.media_urls.length === 0));
+  assert.equal(r.body[0].scheduled_at, t1, 'urut waktu');
+  assert.equal((await api('POST', '/api/ig/posts/story-slots', { brand_id: 'kids', times: ['bukan-tanggal'] })).status, 400);
+  assert.equal((await api('POST', `/api/ig/posts/${r.body[0].id}/submit`)).status, 400, 'tanpa foto belum bisa diajukan');
+  assert.equal((await api('PUT', `/api/ig/posts/${r.body[0].id}`, { media_urls: ['https://example.com/s.jpg'] })).status, 200);
+  assert.equal((await api('POST', `/api/ig/posts/${r.body[0].id}/submit`)).body.status, 'pending_approval');
+});

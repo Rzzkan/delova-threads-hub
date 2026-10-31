@@ -479,7 +479,9 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
   const libOk = lib.filter((m) => m.free && (m.mime === 'image/jpeg' || m.mime.startsWith('video/')));
   let editing = null;
   const isVid = (u) => /\.(mp4|mov)(\?|$)/i.test(u);
-  body.innerHTML = `${can('editor') ? `<div class="row between"><b>${rows.length} ${SM ? 'slide Story' : 'konten'} · ${esc(cur.name)}</b><button class="btn primary" id="newc" type="button">${SM ? 'Buat Story' : 'Buat konten'}</button></div>
+  body.innerHTML = `${can('editor') ? `<div class="row between"><b>${rows.length} ${SM ? 'slide Story' : 'konten'} · ${esc(cur.name)}</b><span class="row">${SM ? '<button class="btn" id="slotb" type="button">Daftarkan slot jadwal</button>' : ''}<button class="btn primary" id="newc" type="button">${SM ? 'Buat Story' : 'Buat konten'}</button></span></div>
+  ${SM ? `<div id="slotc" class="card stack hidden"><h3>Daftarkan slot jadwal Story (tanpa foto)</h3><p class="small muted">Cukup isi tanggal dan jam. Slot tersimpan sebagai draft kosong bertanda “Menunggu foto”; unggah foto/video-nya nanti lewat tombol <b>Upload foto</b> di daftar, lalu ajukan atau setujui.</p>
+    <div class="grid g4"><label>Jadwal slot pertama (WIB)<input id="slwhen" class="dtp" placeholder="Pilih tanggal &amp; jam" /></label><label>Jumlah slot<input id="slcount" type="number" min="1" max="20" value="1"></label><label>Jarak antar slot<select id="slgap"><option value="5">5 menit</option><option value="30">30 menit</option><option value="60" selected>1 jam</option><option value="180">3 jam</option><option value="720">12 jam</option><option value="1440">1 hari</option></select></label><div style="align-self:end"><button class="btn primary" id="slsave" type="button">Simpan slot</button></div></div></div>` : ''}
   ${SM ? `<div class="chips"><span class="chip">Draft ${cntBy('draft')}</span><span class="chip">Menunggu approval ${cntBy('pending_approval')}</span><span class="chip">Terjadwal ${cntBy('scheduled')}</span><span class="chip">Terbit ${cntBy('published')}</span>${cntBy('failed') ? `<span class="chip" style="color:var(--err,#b3261e)">Gagal ${cntBy('failed')}</span>` : ''}</div><div class="small muted">Story tayang 24 jam di Instagram. Pilih beberapa foto/video sekaligus untuk dijadwalkan sebagai rangkaian slide berurutan. Caption tidak tampil di Story; taruh teks langsung di gambar (9:16 terbaik). Stiker dan tautan belum bisa dipasang lewat API Instagram.</div>` : ''}
   <div id="comp" class="card stack hidden">
     <h3 id="ctitle">${SM ? 'Story baru' : 'Konten baru'}</h3>
@@ -497,9 +499,9 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
   </div>` : ''}
   ${can('editor') ? '<div class="row hidden" id="igbulk"><span class="small muted" id="igbn"></span><button class="btn small" data-bulk="submit" type="button">Ajukan terpilih</button>' + (can('manager') ? '<button class="btn small primary" data-bulk="approve" type="button">Setujui &amp; jadwalkan terpilih</button><button class="btn small" data-bulk="reject" type="button">Kembalikan terpilih</button>' : '') + '</div>' : ''}
   <div class="card"><table><thead><tr><th style="width:28px">${can('editor') ? '<input type="checkbox" id="igall" aria-label="Pilih semua">' : ''}</th><th>Konten</th><th>Jenis</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
-  ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && !['published', 'publishing'].includes(p.status) ? `<input type="checkbox" class="igsel" value="${p.id}" aria-label="Pilih konten">` : ''}</td><td><div class="row" style="flex-wrap:nowrap">${p.media_urls[0] ? `<span class="mini">${isVid(p.media_urls[0]) ? `<video src="${esc(p.media_urls[0])}" muted preload="metadata"></video>` : `<img src="${esc(p.media_urls[0])}" alt="" loading="lazy" />`}${p.media_urls.length > 1 ? `<i>${p.media_urls.length}</i>` : ''}</span>` : '<span class="mini" style="display:flex;align-items:center;justify-content:center;font-size:20px" title="Belum ada foto/video">🖼</span>'}<span>${esc((p.caption || '(tanpa caption)').slice(0, 110))}${!p.media_urls.length && !['published', 'publishing'].includes(p.status) ? '<div class="small" style="color:#a15c00">🖼 Belum ada foto/video: klik Edit untuk menambahkan sebelum diajukan.</div>' : ''}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}<div class="small muted">${esc(p.author || '')}</div></span></div></td>
+  ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && !['published', 'publishing'].includes(p.status) ? `<input type="checkbox" class="igsel" value="${p.id}" aria-label="Pilih konten">` : ''}</td><td><div class="row" style="flex-wrap:nowrap">${p.media_urls[0] ? `<span class="mini">${isVid(p.media_urls[0]) ? `<video src="${esc(p.media_urls[0])}" muted preload="metadata"></video>` : `<img src="${esc(p.media_urls[0])}" alt="" loading="lazy" />`}${p.media_urls.length > 1 ? `<i>${p.media_urls.length}</i>` : ''}</span>` : '<span class="mini" style="display:flex;align-items:center;justify-content:center;font-size:20px" title="Belum ada foto/video">🖼</span>'}<span>${esc((p.caption || '(tanpa caption)').slice(0, 110))}${!p.media_urls.length && !['published', 'publishing'].includes(p.status) ? `<div class="small" style="color:#a15c00">🖼 Menunggu foto/video: ${can('editor') ? 'klik Upload foto' : 'minta editor mengunggah'} sebelum diajukan.</div>` : ''}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}<div class="small muted">${esc(p.author || '')}</div></span></div></td>
     <td><span class="badge">${IG_KIND[p.kind]}</span></td><td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
-    <td><div class="row">${igActions(p)}</div></td></tr>`).join('') || `<tr><td colspan="6" class="muted">${SM ? 'Belum ada Story untuk akun ini. Klik “Buat Story”.' : 'Belum ada konten untuk akun ini.'}</td></tr>`}</tbody></table></div>`;
+    <td><div class="row">${!p.media_urls.length && can('editor') && !['published', 'publishing'].includes(p.status) ? '<button type="button" class="btn small primary" data-upl>📷 Upload foto</button>' : ''}${igActions(p)}</div></td></tr>`).join('') || `<tr><td colspan="6" class="muted">${SM ? 'Belum ada Story untuk akun ini. Klik “Buat Story”.' : 'Belum ada konten untuk akun ini.'}</td></tr>`}</tbody></table></div>`;
   if (!can('editor')) return;
   pickers(body);
   const $c = (s) => $(s, body); const lines = () => $c('#imedia').value.split('\n').map((x) => x.trim()).filter(Boolean);
@@ -511,6 +513,28 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
     const w = $c('#iwhen')._flatpickr; if (w) w.setDate(p?.scheduled_at ? toInput(p.scheduled_at) : null, false); $c('#series').checked = SM && !p; syncKind(); paint(); cnt(); $c('#comp').scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   $c('#newc').onclick = () => open(null); $c('#icancel').onclick = () => $c('#comp').classList.add('hidden');
+  if (SM) {
+    $c('#slotb').onclick = () => $c('#slotc').classList.toggle('hidden');
+    $c('#slsave').onclick = (e) => busy(e.target, async () => {
+      const start = fromInput($c('#slwhen').value); if (!start) throw new Error('Pilih tanggal dan jam slot pertama.');
+      const n = Math.min(20, Math.max(1, Number($c('#slcount').value) || 1)); const gap = Number($c('#slgap').value) * 60_000;
+      const times = Array.from({ length: n }, (_, i) => new Date(Date.parse(start) + i * gap).toISOString());
+      await api('POST', '/api/ig/posts/story-slots', { brand_id: bid, times }); toast(`${n} slot Story tersimpan. Unggah fotonya lewat tombol Upload foto.`); route();
+    });
+  }
+  // Upload foto langsung ke slot (tanpa membuka form)
+  body.addEventListener('click', (e) => {
+    const ub = e.target.closest('[data-upl]'); if (!ub) return;
+    const id = ub.closest('tr').dataset.id; const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/jpeg,video/mp4,video/quicktime';
+    inp.onchange = () => busy(ub, async () => {
+      const f = inp.files[0]; if (!f) return;
+      const r = await fetch(`/api/media?brand=${bid}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Gagal mengunggah.');
+      if (!/\.(jpg|mp4|mov)$/.test(j.name)) throw new Error('Instagram hanya menerima JPG, MP4, atau MOV.');
+      await api('PUT', `/api/ig/posts/${id}`, { media_urls: [j.url] }); toast('Foto terpasang. Sekarang ajukan atau setujui slot ini.'); route();
+    });
+    inp.click();
+  });
   $c('#cap').addEventListener('input', cnt); $c('#imedia').addEventListener('input', paint);
   body.addEventListener('click', (e) => {
     const lb = e.target.closest('.pick-lib'); if (lb) { $c('#imedia').value = [...lines(), lb.dataset.url].join('\n'); paint(); }

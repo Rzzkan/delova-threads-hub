@@ -169,6 +169,21 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, ga
     }
     res.json({ action, done, skipped });
   });
+  // Slot Story: daftarkan tanggal & jam saja (tanpa foto); foto diunggah belakangan lewat Edit / tombol Upload foto.
+  api.post('/ig/posts/story-slots', need('editor'), gate('claude_create'), claudeCap, (req, res) => {
+    const b = req.body || {};
+    if (!brandOr404(b.brand_id)) return bad(res, 'Brand tidak ditemukan.', 404);
+    const times = [...new Set((Array.isArray(b.times) ? b.times : []).map((t) => (Number.isNaN(Date.parse(t)) ? null : new Date(t).toISOString())))];
+    if (!times.length || times.includes(null)) return bad(res, 'Isi tanggal & jam yang valid (ISO 8601).');
+    if (times.length > 20) return bad(res, 'Maksimal 20 slot sekali daftar.');
+    const out = times.sort().map((t) => {
+      const id = uid();
+      run("INSERT INTO ig_posts(id,brand_id,kind,caption,media_urls,status,scheduled_at,created_by,created_at,updated_at) VALUES (?,?,'story','','[]','draft',?,?,?,?)", id, b.brand_id, t, req.user.id, now(), now());
+      return parse(get('SELECT * FROM ig_posts WHERE id=?', id));
+    });
+    A(req, 'ig.story.slots', { brand: b.brand_id, count: out.length });
+    res.status(201).json(out);
+  });
   // Satu media = satu slide Story; slide dijadwalkan berurutan dengan jarak tetap.
   api.post('/ig/posts/story-series', need('editor'), humanOnly, (req, res) => {
     const b = req.body || {};

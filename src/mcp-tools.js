@@ -333,6 +333,16 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
   );
 
   server.registerTool(
+    'create_ig_story_slots',
+    {
+      title: 'Daftarkan slot Story Instagram (tanggal & jam saja)',
+      description: 'Daftarkan beberapa jadwal Story Instagram TANPA foto: tiap tanggal/jam jadi satu draft slot kosong; tim mengunggah foto/video-nya nanti di web Hub (Instagram → Story) lalu mengajukan approval. Tidak pernah terbit sendiri. times = daftar waktu ISO 8601 dengan zona WIB, mis. 2026-11-02T09:00:00+07:00 (maks 20).',
+      inputSchema: { brand: z.string().describe(brandIds), times: z.array(z.string()).min(1).max(20) },
+    },
+    wrap(({ brand, times }) => call('POST', '/api/ig/posts/story-slots', { brand_id: brand, times })),
+  );
+
+  server.registerTool(
     'update_ig_post',
     { title: 'Edit konten Instagram', description: 'Ubah caption/jadwal/media konten Instagram yang masih draft atau menunggu approval.', inputSchema: { id: z.string(), caption: z.string().max(2200).optional(), kind: z.enum(['feed', 'reels', 'story']).optional(), media_urls: z.array(z.string().url()).max(10).optional(), scheduled_at: z.string().nullable().optional() } },
     wrap(({ id, ...body }) => call('PUT', `/api/ig/posts/${id}`, body)),
