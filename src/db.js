@@ -287,6 +287,20 @@ CREATE TABLE IF NOT EXISTS wa_out (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS wa_out_idx ON wa_out(brand_id, to_id, created_at);
+CREATE TABLE IF NOT EXISTS brand_knowledge (
+  id TEXT PRIMARY KEY,
+  brand_id TEXT NOT NULL REFERENCES brands(id),
+  text TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'lainnya',
+  platforms TEXT NOT NULL DEFAULT '[]',
+  active INTEGER NOT NULL DEFAULT 1,
+  expires_at TEXT,
+  source TEXT NOT NULL DEFAULT 'dashboard',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS brand_knowledge_brand ON brand_knowledge(brand_id, active);
 CREATE TABLE IF NOT EXISTS meta_catalogs (
   brand_id TEXT PRIMARY KEY REFERENCES brands(id),
   catalog_id TEXT NOT NULL,

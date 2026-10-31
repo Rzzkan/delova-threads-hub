@@ -20,6 +20,7 @@ import { mountPesan, mountTrends } from './pesan-routes.js';
 import { mountEngage } from './engage-routes.js';
 import { mountWhatsApp } from './wa-routes.js';
 import { mountCatalog } from './catalog-routes.js';
+import { mountKnowledge } from './knowledge-routes.js';
 import * as Store from './store-api.js';
 
 const RANK = { viewer: 0, editor: 1, manager: 2, admin: 3 };
@@ -941,6 +942,7 @@ export function createApp() {
   mountEngage(api, { need, ah, bad, A, humanOnly, brandOr404 });
   mountWhatsApp(api, { need, ah, bad, A, humanOnly, brandOr404 });
   mountCatalog(api, { need, ah, bad, A, humanOnly, brandOr404 });
+  mountKnowledge(api, { need, bad, A, humanOnly, brandOr404, gate });
   app.use('/api', api);
 
   /* ---------------- MCP lewat HTTP (stateless, Bearer token) ---------------- */

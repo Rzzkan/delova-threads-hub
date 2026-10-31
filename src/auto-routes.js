@@ -109,43 +109,6 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
     try { res.json(await Store.productDetail(req.params.ref)); } catch (e) { storeFail(res, e); }
   }));
 
-  /* ---------- Pengetahuan brand: bisa diisi manusia (dashboard) atau Claude (dibatasi saklar Kontrol Claude) ---------- */
-  const KN_MAX = 6000;
-  const knNorm = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  const knPlatforms = (v) => { const l = (Array.isArray(v) && v.length ? v : PLATFORMS).filter((p) => PLATFORMS.includes(p)); return [...new Set(l)]; };
-  api.get('/auto/knowledge/:brand', need('manager'), (req, res) => {
-    const b = brandOr404(req.params.brand); if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
-    res.json({ brand: b.id, max: KN_MAX, platforms: Object.fromEntries(PLATFORMS.map((p) => { const k = A_.ruleOf(b.id, p).knowledge || ''; return [p, { knowledge: k, length: k.length, left: KN_MAX - k.length }]; })) });
-  });
-  api.post('/auto/knowledge/:brand/add', need('manager'), gate('claude_knowledge'), (req, res) => {
-    const b = brandOr404(req.params.brand); if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
-    const facts = (Array.isArray(req.body?.facts) ? req.body.facts : []).map((f) => String(f || '').replace(/\s+/g, ' ').trim().replace(/^[-•*]\s*/, ''));
-    if (!facts.length || facts.length > 10) return bad(res, 'Kirim 1-10 fakta.');
-    if (facts.some((f) => f.length < 4 || f.length > 300)) return bad(res, 'Tiap fakta 4-300 karakter.');
-    const results = [];
-    for (const p of knPlatforms(req.body?.platforms)) {
-      const cur = A_.ruleOf(b.id, p).knowledge || '';
-      const have = cur.split('\n').map(knNorm).filter(Boolean);
-      const fresh = []; let skipped = 0;
-      for (const f of facts) { const n = knNorm(f); if (have.some((h) => h === n || h.includes(n) || n.includes(h)) || fresh.some((x) => knNorm(x) === n)) skipped += 1; else fresh.push(f); }
-      if (!fresh.length) { results.push({ platform: p, added: 0, skipped, length: cur.length }); continue; }
-      const next = `${cur.trimEnd()}${cur.trim() ? '\n' : ''}${fresh.map((f) => `- ${f}`).join('\n')}`;
-      if (next.length > KN_MAX) { results.push({ platform: p, added: 0, skipped, length: cur.length, error: `Melebihi ${KN_MAX} karakter. Ringkas dulu pengetahuan yang ada (set_auto_reply_knowledge).` }); continue; }
-      A_.saveRule(b.id, p, { knowledge: next });
-      A(req, 'auto.knowledge.add', { brand: b.id, platform: p, via: req.via, facts: fresh.map((f) => f.slice(0, 120)) });
-      results.push({ platform: p, added: fresh.length, skipped, length: next.length });
-    }
-    res.json({ brand: b.id, results });
-  });
-  api.put('/auto/knowledge/:brand', need('manager'), gate('claude_knowledge'), (req, res) => {
-    const b = brandOr404(req.params.brand); if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
-    const k = String(req.body?.knowledge ?? '').trim();
-    if (k.length > KN_MAX) return bad(res, `Maksimal ${KN_MAX} karakter.`);
-    const ps = knPlatforms(req.body?.platforms);
-    for (const p of ps) { A_.saveRule(b.id, p, { knowledge: k }); A(req, 'auto.knowledge.set', { brand: b.id, platform: p, via: req.via, length: k.length }); }
-    res.json({ brand: b.id, platforms: ps, length: k.length });
-  });
-
   api.put('/auto/rules/:brand/:platform', need('manager'), humanOnly, (req, res) => {
     const b = brandOr404(req.params.brand);
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);

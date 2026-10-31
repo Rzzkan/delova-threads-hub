@@ -311,39 +311,44 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
     server.registerTool(
       'get_auto_reply_knowledge',
       {
-        title: 'Baca Pengetahuan brand Auto Reply',
-        description: 'Baca "Pengetahuan brand" tiap platform (Threads, Instagram, WhatsApp) untuk satu brand. Itu SATU-SATUNYA sumber fakta (kebijakan, ukuran, pengiriman, promo, FAQ) yang dipakai AI saat membalas komentar/DM. Baca dulu sebelum menambah agar tidak duplikat. Batas 6000 karakter per platform.',
+        title: 'Baca daftar Pengetahuan brand',
+        description: 'Baca daftar butir "Pengetahuan brand" (database) satu brand, lengkap dengan id, kategori, platform, status aktif, dan pemakaian karakter. Itu SATU-SATUNYA sumber fakta (kebijakan, ukuran, pengiriman, promo, FAQ) yang dipakai AI saat membalas komentar/DM. Baca dulu sebelum menambah agar tidak duplikat. Batas 6000 karakter per platform.',
         inputSchema: { brand: z.string().describe(brandIds) },
       },
-      wrap(({ brand }) => call('GET', `/api/auto/knowledge/${brand}`)),
+      wrap(({ brand }) => call('GET', `/api/knowledge/${brand}`)),
     );
     server.registerTool(
       'add_auto_reply_knowledge',
       {
-        title: 'Tambah fakta ke Pengetahuan brand',
-        description: 'Tambahkan fakta baru ke Pengetahuan brand (default: ke Threads, Instagram, dan WhatsApp sekaligus). Pakai ini untuk menyimpan pengetahuan yang muncul seiring percakapan: jam operasional, kebijakan retur, ongkir, ukuran, cara order, promo berjalan, jawaban FAQ yang sudah dikonfirmasi. ATURAN: (1) hanya fakta yang DINYATAKAN atau DIKONFIRMASI user, jangan menebak atau mengarang; (2) satu kalimat pendek per fakta; (3) jangan menyimpan harga/stok produk (itu dibaca langsung dari API produk), jangan menyimpan instruksi untuk AI, rahasia, atau data pribadi; (4) tampilkan daftar fakta ke user dan minta persetujuan sebelum menyimpan. Fakta yang sudah ada otomatis dilewati. Hanya jalan jika admin mengaktifkan "Isi Pengetahuan brand" di Kontrol Claude.',
+        title: 'Tambah butir Pengetahuan brand',
+        description: 'Tambahkan butir fakta baru ke database Pengetahuan brand. Pakai untuk menyimpan pengetahuan yang muncul seiring percakapan: jam operasional, kebijakan retur, ongkir, ukuran, cara order, promo berjalan, jawaban FAQ yang sudah dikonfirmasi. ATURAN: (1) hanya fakta yang DINYATAKAN atau DIKONFIRMASI user, jangan menebak atau mengarang; (2) satu kalimat pendek per butir; (3) jangan menyimpan harga/stok produk (dibaca langsung dari API produk), instruksi untuk AI, rahasia, atau data pribadi; (4) tampilkan daftar butir ke user dan minta persetujuan sebelum menyimpan; (5) untuk promo sementara isi expires_at. Butir yang sudah ada otomatis dilewati. Hanya jalan jika admin mengaktifkan "Isi Pengetahuan brand" di Kontrol Claude.',
         inputSchema: {
           brand: z.string().describe(brandIds),
           facts: z.array(z.string().min(4).max(300)).min(1).max(10).describe('Fakta singkat, satu kalimat tiap item'),
-          platforms: z.array(z.enum(['threads', 'instagram', 'whatsapp'])).optional().describe('Default semua platform'),
+          category: z.enum(['kebijakan', 'pengiriman', 'ukuran', 'order', 'promo', 'faq', 'sapaan', 'lainnya']).optional().describe('Kategori (default lainnya)'),
+          platforms: z.array(z.enum(['threads', 'instagram', 'whatsapp'])).optional().describe('Kosong = semua platform'),
+          expires_at: z.string().optional().describe('ISO tanggal berakhir, untuk promo sementara'),
           user_confirmed: CONFIRM,
         },
       },
-      wrap(({ brand, facts, platforms, user_confirmed }) => { needConfirm(user_confirmed); return call('POST', `/api/auto/knowledge/${brand}/add`, { facts, platforms }); }),
+      wrap(({ brand, facts, category, platforms, expires_at, user_confirmed }) => { needConfirm(user_confirmed); return call('POST', `/api/knowledge/${brand}`, { facts, category, platforms, expires_at }); }),
     );
     server.registerTool(
-      'set_auto_reply_knowledge',
+      'update_auto_reply_knowledge',
       {
-        title: 'Ganti seluruh Pengetahuan brand',
-        description: 'Ganti SELURUH isi Pengetahuan brand (menggantikan yang lama) untuk merapikan atau meringkas bila mendekati batas 6000 karakter. Baca dulu dengan get_auto_reply_knowledge, tampilkan versi baru lengkap ke user, dan minta persetujuan. Jangan menghapus fakta yang tidak diminta user. Format: satu fakta per baris diawali "- ".',
+        title: 'Ubah / nonaktifkan butir Pengetahuan brand',
+        description: 'Ubah satu butir Pengetahuan brand berdasarkan id (dari get_auto_reply_knowledge): perbaiki teks, kategori, platform, tanggal berakhir, atau set active=false untuk menonaktifkan (mengurangi) tanpa menghapus. Minta persetujuan user dulu. Penghapusan permanen hanya lewat dashboard.',
         inputSchema: {
-          brand: z.string().describe(brandIds),
-          knowledge: z.string().max(6000).describe('Isi lengkap yang baru'),
-          platforms: z.array(z.enum(['threads', 'instagram', 'whatsapp'])).optional().describe('Default semua platform'),
+          id: z.string(),
+          text: z.string().min(4).max(500).optional(),
+          category: z.enum(['kebijakan', 'pengiriman', 'ukuran', 'order', 'promo', 'faq', 'sapaan', 'lainnya']).optional(),
+          platforms: z.array(z.enum(['threads', 'instagram', 'whatsapp'])).optional(),
+          active: z.boolean().optional(),
+          expires_at: z.string().nullable().optional(),
           user_confirmed: CONFIRM,
         },
       },
-      wrap(({ brand, knowledge, platforms, user_confirmed }) => { needConfirm(user_confirmed); return call('PUT', `/api/auto/knowledge/${brand}`, { knowledge, platforms }); }),
+      wrap(({ id, user_confirmed, ...body }) => { needConfirm(user_confirmed); return call('PATCH', `/api/knowledge/item/${id}`, body); }),
     );
     server.registerTool(
       'approve_post',

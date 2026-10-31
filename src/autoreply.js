@@ -3,6 +3,7 @@
  * Alur: webhook (tanda tangan valid) → normalisasi → simpan (dedupe) → pemfilter → draf Claude →
  * mode "draft": menunggu persetujuan manusia | mode "auto": kirim hanya bila lolos semua pagar pengaman.
  */
+import { composeFor } from './knowledge.js';
 import crypto from 'node:crypto';
 import { all, get, run, now, uid, getSetting, setSetting, audit } from './db.js';
 import * as T from './threads.js';
@@ -37,8 +38,9 @@ export const webhookUrl = (platform) => `${baseUrl()}/webhooks/${platform}`;
 
 export function ruleOf(brandId, platform) {
   const r = get('SELECT * FROM auto_rules WHERE brand_id=? AND platform=?', brandId, platform);
-  return r ? { ...r, enabled: !!r.enabled, kinds: JSON.parse(r.kinds || '[]') }
-    : { brand_id: brandId, platform, enabled: false, mode: 'draft', kinds: platform === 'whatsapp' ? ['dm'] : ['reply', 'mention', 'comment'], hourly_cap: 20, knowledge: '' };
+  const knowledge = composeFor(brandId, platform); // dari database butir pengetahuan
+  return r ? { ...r, enabled: !!r.enabled, kinds: JSON.parse(r.kinds || '[]'), knowledge }
+    : { brand_id: brandId, platform, enabled: false, mode: 'draft', kinds: platform === 'whatsapp' ? ['dm'] : ['reply', 'mention', 'comment'], hourly_cap: 20, knowledge };
 }
 export function saveRule(brandId, platform, f) {
   const cur = ruleOf(brandId, platform);
@@ -47,7 +49,7 @@ export function saveRule(brandId, platform, f) {
   const rule = {
     enabled: f.enabled === undefined ? cur.enabled : !!f.enabled,
     mode: f.mode === 'auto' || f.mode === 'draft' ? f.mode : cur.mode,
-    kinds, hourly_cap: cap, knowledge: String(f.knowledge ?? cur.knowledge).slice(0, 6000),
+    kinds, hourly_cap: cap, knowledge: '', // pengetahuan kini di tabel brand_knowledge
   };
   run(`INSERT INTO auto_rules(brand_id,platform,enabled,mode,kinds,hourly_cap,knowledge,updated_at) VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(brand_id,platform) DO UPDATE SET enabled=excluded.enabled, mode=excluded.mode, kinds=excluded.kinds, hourly_cap=excluded.hourly_cap, knowledge=excluded.knowledge, updated_at=excluded.updated_at`,

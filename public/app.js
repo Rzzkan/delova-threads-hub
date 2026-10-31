@@ -636,7 +636,7 @@ IGV.akun = async ({ st, body }) => {
 };
 
 /* ---------- Auto Reply & Webhook ---------- */
-const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['keyword', 'Aturan keyword', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
+const AR_TABS = [['inbox', 'Kotak masuk', 'viewer'], ['keyword', 'Aturan keyword', 'viewer'], ['aturan', 'Aturan per akun', 'viewer'], ['pengetahuan', 'Pengetahuan brand', 'viewer'], ['webhook', 'Webhook & setup', 'viewer']];
 const AR_STATUS = { new: 'Baru', processing: 'Diproses', pending: 'Menunggu', sending: 'Mengirim', sent: 'Terkirim', skipped: 'Dilewati', ignored: 'Diabaikan', rejected: 'Ditolak', failed: 'Gagal', approved: 'Disetujui' };
 const AR_KIND = { reply: 'Reply', mention: 'Mention', comment: 'Komentar', dm: 'DM' };
 const PLAT = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' };
@@ -697,7 +697,7 @@ ARV.aturan = async ({ cfg, body }) => {
       <label>Mode<select name="mode" ${can('manager') ? '' : 'disabled'}><option value="draft" ${r.mode === 'draft' ? 'selected' : ''}>Draft: tinjau dulu (disarankan)</option><option value="auto" ${r.mode === 'auto' ? 'selected' : ''} ${can('admin') || r.mode === 'auto' ? '' : 'disabled'}>Auto: kirim sendiri bila aman ${can('admin') ? '' : '(admin)'}</option></select></label>
       <div class="chips">${(p === 'threads' ? ['reply', 'mention'] : p === 'whatsapp' ? ['dm'] : ['comment', 'mention', 'dm']).map((k) => `<label class="chip"><input type="checkbox" name="k_${k}" ${r.kinds.includes(k) ? 'checked' : ''} ${can('manager') ? '' : 'disabled'}> ${AR_KIND[k]}</label>`).join('')}</div>
       <label>Maks balasan otomatis per jam<input type="number" name="hourly_cap" min="1" max="200" value="${r.hourly_cap}" ${can('manager') ? '' : 'disabled'}></label>
-      <label>Pengetahuan brand <span class="muted small">(satu-satunya sumber fakta untuk Claude)</span><span class="small muted" style="display:block;font-weight:400">Bisa diisi lewat Claude, mis. “tambahkan ke pengetahuan brand Wardrobe: retur maksimal 7 hari”. Fakta baru ditambahkan tanpa menghapus isi ini.</span><textarea name="knowledge" style="min-height:140px" maxlength="6000" placeholder="Contoh:&#10;- Order resmi lewat Shopee: https://shopee.co.id/delovawardrobe&#10;- Ukuran kebaya S-XXL, size chart ada di deskripsi produk&#10;- Pengiriman dari Yogyakarta, resi dikirim maks 2 hari kerja&#10;- Kerja sama/reseller: arahkan ke DM" ${can('manager') ? '' : 'disabled'}>${esc(r.knowledge)}</textarea></label>
+      <div class="small muted">Pengetahuan: <a href="#/autoreply?tab=pengetahuan&b=${b.id}"><b>${r.knowledge ? r.knowledge.split('\n').filter((x) => x.startsWith('- ')).length : 0} butir aktif</b></a> untuk platform ini (kelola di tab Pengetahuan brand).</div>
       ${can('manager') ? `<div class="row"><button class="btn primary small">Simpan</button>${p === 'instagram' && ok ? '<button type="button" class="btn small" data-sub="1">Daftarkan webhook akun ini</button>' : ''}</div>` : ''}</form>`; }).join('')).join('')}</div>
   ${can('manager') ? `<form id="tf" class="card stack"><h3>Uji coba (mode simulasi)</h3><p class="small muted">Menyuntik event palsu lewat jalur yang sama dengan webhook asli, tanpa mengirim apa pun ke Threads/Instagram. Hanya tersedia saat mode simulasi.</p>
     <div class="grid g4"><label>Brand<select name="brand_id">${cfg.brands.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></label>
@@ -706,7 +706,7 @@ ARV.aturan = async ({ cfg, body }) => {
   $$('.rule', body).forEach((f) => {
     f.onsubmit = (e) => { e.preventDefault(); busy($('button', f), async () => {
       const fd = f.elements; const kinds = ['reply', 'mention', 'comment', 'dm'].filter((k) => fd[`k_${k}`]?.checked);
-      await api('PUT', `/api/auto/rules/${f.dataset.b}/${f.dataset.p}`, { enabled: fd.enabled.checked, mode: fd.mode.value, kinds, hourly_cap: Number(fd.hourly_cap.value), knowledge: fd.knowledge.value });
+      await api('PUT', `/api/auto/rules/${f.dataset.b}/${f.dataset.p}`, { enabled: fd.enabled.checked, mode: fd.mode.value, kinds, hourly_cap: Number(fd.hourly_cap.value) });
       toast('Aturan tersimpan.'); route(); }); };
     const sb = $('[data-sub]', f); if (sb) sb.onclick = () => busy(sb, async () => { const r = await api('POST', `/api/auto/instagram/${f.dataset.b}/subscribe`); toast(r.dryRun ? 'Simulasi: webhook dianggap terdaftar.' : `Webhook terdaftar untuk: ${r.fields.join(', ')}.`); });
   });
@@ -715,6 +715,67 @@ ARV.aturan = async ({ cfg, body }) => {
     const [platform, kind] = tf.elements.pk.value.split(':');
     const r = await api('POST', '/api/auto/test-event', { brand_id: tf.elements.brand_id.value, platform, kind, text: tf.elements.text.value });
     toast(`Hasil: ${AR_STATUS[r.status] || r.status}${r.note ? ` (${r.note})` : ''}`); location.hash = '#/autoreply?tab=inbox&f=all'; route(); }); };
+};
+
+const KN_SRC = { dashboard: 'Dashboard', claude: 'Claude', migrasi: 'Migrasi lama' };
+ARV.pengetahuan = async ({ cfg, body, q }) => {
+  const bid = cfg.brands.some((b) => b.id === q.get('b')) ? q.get('b') : cfg.brands[0].id;
+  const fc = q.get('c') || 'all'; const fp = q.get('p') || 'all'; const fs = q.get('s') || 'all';
+  const d = await api('GET', `/api/knowledge/${bid}`);
+  const nowIso = new Date().toISOString();
+  const expired = (e) => e.expires_at && e.expires_at < nowIso;
+  const shown = d.items.filter((e) => (fc === 'all' || e.category === fc) && (fp === 'all' || !e.platforms.length || e.platforms.includes(fp)) && (fs === 'all' || (fs === 'on' ? e.active && !expired(e) : !e.active || expired(e))));
+  const nav = (o) => { const n = { b: bid, c: fc, p: fp, s: fs, ...o }; return `#/autoreply?tab=pengetahuan&b=${n.b}&c=${n.c}&p=${n.p}&s=${n.s}`; };
+  const catOpts = (sel) => Object.entries(d.categories).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  const platBoxes = (sel = []) => d.platforms.map((p) => `<label class="chip"><input type="checkbox" name="pl_${p}" ${sel.includes(p) ? 'checked' : ''}> ${PLAT[p]}</label>`).join('');
+  const pickPl = (el) => d.platforms.filter((p) => el.elements[`pl_${p}`]?.checked);
+  const mgr = can('manager');
+  body.innerHTML = `<div class="chips">${cfg.brands.map((b) => `<a class="chip ${b.id === bid ? 'on' : ''}" href="${nav({ b: b.id })}" style="${b.id === bid ? `border-color:${b.color}` : ''}">${esc(b.name)}</a>`).join('')}</div>
+  <div class="banner"><b>Satu-satunya sumber fakta untuk balasan Claude.</b> Tiap butir adalah satu fakta singkat. Butir yang dinonaktifkan atau lewat tanggal berakhir tidak dipakai. Claude juga bisa menambah &amp; menonaktifkan butir lewat chat (butuh persetujuan Anda; hapus permanen hanya di dashboard).</div>
+  <div class="card stack"><h3>Pemakaian (batas ${d.max} karakter per platform)</h3>
+    <div class="row" style="gap:18px;flex-wrap:wrap">${d.platforms.map((p) => { const u = d.usage[p]; const pct = Math.min(100, Math.round(u / d.max * 100)); return `<div style="min-width:180px;flex:1"><div class="small"><b>${PLAT[p]}</b> · ${u}/${d.max}</div><div style="height:8px;border-radius:99px;background:var(--line,#e5e7eb);overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct > 90 ? '#dc2626' : pct > 70 ? '#d97706' : '#16a34a'}"></div></div></div>`; }).join('')}</div></div>
+  ${mgr ? `<form id="knadd" class="card stack"><h3>Tambah pengetahuan</h3>
+    <label>Satu fakta per baris <span class="muted small">(pendek, 4-500 karakter; jangan harga/stok, itu dibaca otomatis dari API produk)</span><textarea name="facts" rows="4" placeholder="Retur maksimal 7 hari sejak barang diterima&#10;Resi dikirim maks 2 hari kerja&#10;Kerja sama/reseller: arahkan ke DM"></textarea></label>
+    <div class="grid g3"><label>Kategori<select name="category">${catOpts('lainnya')}</select></label>
+    <label>Berlaku sampai <span class="muted small">(opsional, untuk promo)</span><input type="date" name="exp"></label>
+    <div><span class="small muted">Platform (kosong = semua)</span><div class="chips">${platBoxes()}</div></div></div>
+    <p class="err small" data-err></p><div class="row"><button class="btn primary small">Tambah</button></div></form>` : ''}
+  <div class="card stack"><div class="row between" style="flex-wrap:wrap;gap:8px"><h3>Daftar butir (${shown.length} dari ${d.items.length})</h3>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><select id="fc" style="width:auto"><option value="all">Semua kategori</option>${Object.entries(d.categories).map(([k, v]) => `<option value="${k}" ${k === fc ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+    <select id="fp" style="width:auto"><option value="all">Semua platform</option>${d.platforms.map((p) => `<option value="${p}" ${p === fp ? 'selected' : ''}>${PLAT[p]}</option>`).join('')}</select>
+    <select id="fs" style="width:auto"><option value="all" ${fs === 'all' ? 'selected' : ''}>Semua status</option><option value="on" ${fs === 'on' ? 'selected' : ''}>Dipakai</option><option value="off" ${fs === 'off' ? 'selected' : ''}>Nonaktif / kedaluwarsa</option></select></div></div>
+    ${mgr && shown.length ? '<div class="row" style="gap:8px"><label class="chip"><input type="checkbox" id="knall"> Pilih semua</label><button class="btn small danger" id="kndel" disabled>Hapus terpilih</button></div>' : ''}
+    ${shown.length ? shown.map((e) => `<div class="pitem" data-id="${e.id}" style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line,#e5e7eb);${e.active && !expired(e) ? '' : 'opacity:.6'}">
+      ${mgr ? `<input type="checkbox" class="knck" value="${e.id}" aria-label="Pilih">` : ''}
+      <div style="flex:1;min-width:0"><div>${esc(e.text)}</div>
+        <div class="row small muted" style="gap:6px;flex-wrap:wrap;margin-top:4px"><span class="badge">${esc(d.categories[e.category] || e.category)}</span>
+        <span class="badge">${e.platforms.length ? e.platforms.map((p) => PLAT[p]).join(' · ') : 'Semua platform'}</span>
+        ${!e.active ? '<span class="badge s-failed">Nonaktif</span>' : expired(e) ? '<span class="badge s-failed">Kedaluwarsa</span>' : ''}
+        ${e.expires_at ? `<span>sampai ${esc(wib(e.expires_at).replace(/, .*/, ''))}</span>` : ''}<span>· ${esc(KN_SRC[e.source] || e.source)} · ${esc(wib(e.updated_at))}</span></div></div>
+      ${mgr ? `<div class="row" style="gap:6px"><button class="btn small" data-tg="${e.id}">${e.active ? 'Nonaktifkan' : 'Aktifkan'}</button><button class="btn small" data-ed="${e.id}">Ubah</button></div>` : ''}</div>`).join('') : '<p class="muted">Belum ada butir yang cocok.</p>'}
+  </div>`;
+  ['fc', 'fp', 'fs'].forEach((k) => { $('#' + k, body).onchange = (e) => { location.hash = nav({ [k[1]]: e.target.value }); }; });
+  const add = $('#knadd', body);
+  if (add) add.onsubmit = (e) => { e.preventDefault(); const f = add.elements; const err = $('[data-err]', add);
+    const facts = f.facts.value.split('\n').map((x) => x.trim()).filter(Boolean); if (!facts.length) { err.textContent = 'Isi minimal satu fakta.'; return; }
+    busy($('button', add), async () => { try {
+      const r = await api('POST', `/api/knowledge/${bid}`, { facts, category: f.category.value, platforms: pickPl(add), expires_at: f.exp.value ? new Date(`${f.exp.value}T23:59:59+07:00`).toISOString() : null });
+      toast(`${r.added.length} butir ditambahkan${r.skipped.length ? `, ${r.skipped.length} dilewati (${r.skipped.map((x) => x.reason).join(' ')})` : ''}.`); route();
+    } catch (x) { err.textContent = x.message; } }); };
+  $$('[data-tg]', body).forEach((b) => { b.onclick = () => { const e = d.items.find((x) => x.id === b.dataset.tg); busy(b, async () => { await api('PATCH', `/api/knowledge/item/${e.id}`, { active: !e.active }); toast(e.active ? 'Butir dinonaktifkan.' : 'Butir diaktifkan.'); route(); }); }; });
+  $$('[data-ed]', body).forEach((b) => { b.onclick = async () => {
+    const e = d.items.find((x) => x.id === b.dataset.ed);
+    const r = await ui.form({ title: 'Ubah butir pengetahuan', ok: 'Simpan', extra: {
+      html: `<label>Isi<textarea name="text" rows="4" maxlength="500">${esc(e.text)}</textarea></label><div class="grid g2"><label>Kategori<select name="category">${catOpts(e.category)}</select></label><label>Berlaku sampai<input type="date" name="exp" value="${e.expires_at ? wibKey(e.expires_at) : ''}"></label></div><div><span class="small muted">Platform (kosong = semua)</span><div class="chips">${platBoxes(e.platforms)}</div></div>`,
+      collect: (form) => { const t = form.elements.text.value.trim(); if (t.length < 4) { $('[data-err]', form).textContent = 'Isi minimal 4 karakter.'; return undefined; } const ex = form.elements.exp.value; return { text: t, category: form.elements.category.value, platforms: pickPl(form), expires_at: ex ? new Date(`${ex}T23:59:59+07:00`).toISOString() : null }; } } });
+    if (!r) return;
+    try { await api('PATCH', `/api/knowledge/item/${e.id}`, r); toast('Butir diperbarui.'); route(); } catch (x) { toast(x.message, 'err'); } }; });
+  const cks = $$('.knck', body); const del = $('#kndel', body); const sync = () => { if (del) del.disabled = !cks.some((c) => c.checked); };
+  cks.forEach((c) => { c.onchange = sync; });
+  const all = $('#knall', body); if (all) all.onchange = () => { cks.forEach((c) => { c.checked = all.checked; }); sync(); };
+  if (del) del.onclick = async () => { const ids = cks.filter((c) => c.checked).map((c) => c.value);
+    if (!(await ui.confirm({ title: 'Hapus permanen?', message: `${ids.length} butir akan dihapus dan tidak bisa dikembalikan. Untuk sementara, gunakan Nonaktifkan.`, ok: 'Hapus', danger: true }))) return;
+    busy(del, async () => { const r = await api('POST', '/api/knowledge/delete', { ids }); toast(`${r.deleted} butir dihapus.`); route(); }); };
 };
 
 ARV.webhook = async ({ cfg, body }) => {
@@ -744,7 +805,7 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
     <li><b>Threads:</b> Meta for Developers → aplikasi Threads → <i>Webhooks</i> → objek <b>Threads</b> → isi Callback URL &amp; Verify token di atas → <i>Verify and save</i> → subscribe ke field <code>replies</code> dan <code>mentions</code>. Izin <code>threads_read_replies</code>, <code>threads_manage_replies</code>, dan <code>threads_manage_mentions</code> harus aktif (Advanced Access untuk akun non-tester).</li>
     <li><b>Instagram:</b> aplikasi Instagram → <i>API setup with Instagram login</i> → <i>Configure webhooks</i> → isi Callback URL &amp; Verify token → subscribe ke <code>comments</code>, <code>messages</code>, <code>mentions</code>. Lalu di tab <i>Aturan per akun</i> klik <i>Daftarkan webhook akun ini</i> untuk tiap brand.</li>
     <li>Pastikan <b>App Secret</b> aplikasi sudah diisi (menu Brand &amp; Akun untuk Threads, menu Instagram → Akun untuk Instagram). Permintaan tanpa tanda tangan HMAC yang cocok ditolak.</li>
-    <li>Isi <b>Pengetahuan brand</b> tiap akun, nyalakan saklar utama, aktifkan aturan dengan mode <b>Draft</b>, lalu pantau Kotak masuk beberapa hari sebelum mempertimbangkan mode Auto.</li></ol>
+    <li>Isi daftar <b>Pengetahuan brand</b> tiap brand, nyalakan saklar utama, aktifkan aturan dengan mode <b>Draft</b>, lalu pantau Kotak masuk beberapa hari sebelum mempertimbangkan mode Auto.</li></ol>
     <p class="small muted">Webhook Threads dan Instagram memakai tanda tangan <code>X-Hub-Signature-256</code>. Event dicatat 30 hari lalu dibersihkan otomatis (kecuali yang masih menunggu).</p></div>`;
   for (const w of cfg.webhooks) { const el = $('#u_' + w.platform, body); if (el) el.value = w.url; }
   if ($('#vt', body)) $('#vt', body).value = cfg.verify_token;

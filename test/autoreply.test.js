@@ -15,6 +15,7 @@ delete process.env.THREADS_APP_ID; delete process.env.INSTAGRAM_APP_ID; delete p
 
 const { createApp, bootstrapAdmin } = await import('../src/server.js');
 const AR = await import('../src/autoreply.js');
+const KN = await import('../src/knowledge.js');
 const C = await import('../src/crypto.js');
 const { get, all, run, setSetting } = await import('../src/db.js');
 
@@ -73,7 +74,8 @@ test('config: viewer tak melihat token verifikasi; aturan hanya manager+, mode a
   assert.equal(c.verify_token, undefined);
   assert.equal((await req(viewer, 'PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true })).status, 403);
   assert.equal((await req(mgr, 'PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true, mode: 'auto' })).status, 403);
-  assert.equal((await req(mgr, 'PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true, mode: 'draft', knowledge: 'Order lewat Shopee: https://shopee.co.id/delovawardrobe' })).status, 200);
+  assert.equal((await req(mgr, 'PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true, mode: 'draft' })).status, 200);
+  KN.add(brand.id, ['Order lewat Shopee: https://shopee.co.id/delovawardrobe'], { platforms: ['threads'] });
   assert.equal((await req(mgr, 'PUT', '/api/auto/global', { enabled: true })).status, 403);
 });
 
@@ -144,7 +146,8 @@ test('batas balasan otomatis per jam', async () => {
 });
 
 test('instagram: komentar, mention, DM; echo & komentar sendiri tidak dibalas', async () => {
-  await A('PUT', `/api/auto/rules/${brand.id}/instagram`, { enabled: true, mode: 'auto', kinds: ['comment', 'mention', 'dm'], knowledge: 'Katalog ada di DM.' });
+  await A('PUT', `/api/auto/rules/${brand.id}/instagram`, { enabled: true, mode: 'auto', kinds: ['comment', 'mention', 'dm'] });
+  KN.add(brand.id, ['Katalog ada di DM.'], { platforms: ['instagram'] });
   AR.setDrafter(fake({ category: 'sapaan', reply: 'Halo Kak, silakan DM ya 😊' }));
   const payload = { object: 'instagram', entry: [{ id: '999', time: Math.floor(Date.now() / 1000),
     changes: [
@@ -289,7 +292,7 @@ test('model: daftar dari /models penyedia (gratis & non-chat ditandai), khusus a
 test('auto reply memakai data produk: harga/varian/tautan masuk prompt; harga karangan ditahan', async () => {
   netCalls = []; mockNet(catalog);
   await A('PUT', '/api/store/config', { use_reply: true });
-  await A('PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true, mode: 'auto', knowledge: '' });
+  await A('PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true, mode: 'auto' });
   let seen;
   const go = async (text, drafter) => { AR.setDrafter(async (b, a) => { seen = a; return drafter(); }); const p = thReply(text); const id = p.entry[0].changes[0].value.id; await hook('threads', p); return waitFor(() => { const e = evOf(id); return e && !['new', 'processing', 'approved', 'sending'].includes(e.status) && e; }); };
   let e = await go('Kak kebaya sage ready ukuran M?', () => ({ action: 'reply', category: 'pertanyaan_produk', confidence: 0.9, reply: 'Ready Kak, Rp72.000 ya, order di https://delova.id/produk/kebaya-sage 😊', reason: 'ok' }));
