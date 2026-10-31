@@ -796,7 +796,7 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
     <p class="small muted">Auto Reply dan pembuat post mengambil nama, harga, varian, stok, dan tautan produk langsung dari API Delova Store, jadi tidak mengarang. Stok bukan realtime (disalin dari Shopee berkala); usia data selalu disertakan ke model. Kunci API dibuat di VPS delova.id (<code>API_KEYS</code>) dan hanya dipakai server-ke-server.</p>
     <div class="grid g2"><label>Base URL<input name="base_url" value="${esc(cfg.store.base_url)}" autocomplete="off"></label>
     <label>API key<input name="api_key" type="password" autocomplete="new-password" placeholder="${cfg.store.has_key ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel kunci (min. 32 karakter)'}"></label></div>
-    <div class="row"><label class="row"><input type="checkbox" name="use_reply" ${cfg.store.use_reply ? 'checked' : ''}> Pakai untuk Auto Reply</label><label class="row"><input type="checkbox" name="use_posts" ${cfg.store.use_posts ? 'checked' : ''}> Pakai untuk ide/rencana post AI</label></div>
+    <div class="row"><label class="row"><input type="checkbox" name="use_reply" ${cfg.store.use_reply ? 'checked' : ''}> Pakai untuk Auto Reply</label><label class="row"><input type="checkbox" name="use_direct" ${cfg.store.use_direct ? 'checked' : ''}> Jawab langsung tanpa approval (harga, stok, detail produk)</label><label class="row"><input type="checkbox" name="use_posts" ${cfg.store.use_posts ? 'checked' : ''}> Pakai untuk ide/rencana post AI</label></div>
     <div class="row"><button class="btn primary small">Simpan</button><button type="button" class="btn small" id="sttest">Uji koneksi</button>${cfg.store.has_key ? '<button type="button" class="btn small danger" id="stclear">Hapus API key</button>' : ''}</div></form>` : ''}
   <div class="card stack"><h3>Data untuk Meta for Developers</h3>
     ${cfg.webhooks.map((w) => `<div class="stack" style="gap:4px"><b>${PLAT[w.platform]}</b> ${w.has_secret ? '<span class="badge s-published">App Secret terisi</span>' : '<span class="badge s-failed">App Secret belum diisi</span>'}<label>Callback URL${copy('u_' + w.platform)}</label></div>`).join('')}
@@ -812,7 +812,7 @@ ${can('admin') ? `<form id="llmf" class="card stack"><h3>Model AI (balasan &amp;
   body.onclick = (e) => { const c = e.target.closest('[data-cp]'); if (c) copyText($('#' + c.dataset.cp, body).value); };
   const sf = $('#stf', body);
   if (sf) {
-    const payload = () => ({ base_url: sf.elements.base_url.value, api_key: sf.elements.api_key.value, use_reply: sf.elements.use_reply.checked, use_posts: sf.elements.use_posts.checked });
+    const payload = () => ({ base_url: sf.elements.base_url.value, api_key: sf.elements.api_key.value, use_reply: sf.elements.use_reply.checked, use_direct: sf.elements.use_direct.checked, use_posts: sf.elements.use_posts.checked });
     sf.onsubmit = (e) => { e.preventDefault(); busy($('button', sf), async () => { await api('PUT', '/api/store/config', payload()); toast('Pengaturan data produk tersimpan.'); route(); }); };
     $('#sttest', sf).onclick = (e) => busy(e.target, async () => {
       await api('PUT', '/api/store/config', payload());

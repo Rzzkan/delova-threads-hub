@@ -157,7 +157,7 @@ test('pengetahuan brand (database): tambah, tanpa duplikat, per platform, nonakt
   const dup = await add(['retur maksimal 7 hari sejak barang diterima!', 'Gratis ongkir min. belanja 300 ribu'], { platforms: ['instagram'], category: 'pengiriman' });
   assert.deepEqual([dup.json.added.length, dup.json.skipped.length], [1, 1]);
   const g = (await call(mgr, 'GET', '/api/knowledge/kids')).json;
-  assert.equal(g.items.length, 3);
+  assert.equal(g.items.length, 4);
   const { ruleOf } = await import('../src/autoreply.js');
   assert.match(ruleOf('kids', 'instagram').knowledge, /- Gratis ongkir/); assert.ok(!/Gratis ongkir/.test(ruleOf('kids', 'threads').knowledge));
   assert.equal((await add(['x'])).status, 400); assert.equal((await add([])).status, 400);
@@ -168,7 +168,7 @@ test('pengetahuan brand (database): tambah, tanpa duplikat, per platform, nonakt
   await call(mgr, 'PATCH', `/api/knowledge/item/${ong.id}`, { active: true, expires_at: '2020-01-01T00:00:00Z' });
   assert.ok(!/Gratis ongkir/.test(ruleOf('kids', 'instagram').knowledge), 'kedaluwarsa tidak dipakai');
   assert.equal((await add(['y'.repeat(400), 'z'.repeat(400), 'a'.repeat(400), 'b'.repeat(400), 'c'.repeat(400), 'd'.repeat(400), 'e'.repeat(400), 'f'.repeat(400), 'g'.repeat(400), 'h'.repeat(400), 'i'.repeat(400), 'j'.repeat(400), 'k'.repeat(400), 'l'.repeat(400), 'm'.repeat(400), 'n'.repeat(400)])).status, 400);
-  assert.equal((await call(mgr, 'GET', '/api/knowledge/kids')).json.items.length, 3, 'batas lewat membatalkan seluruh tambahan');
+  assert.equal((await call(mgr, 'GET', '/api/knowledge/kids')).json.items.length, 4, 'batas lewat membatalkan seluruh tambahan');
   const del = await call(mgr, 'POST', '/api/knowledge/delete', { ids: [ong.id] });
-  assert.equal(del.json.deleted, 1); assert.equal((await call(mgr, 'GET', '/api/knowledge/kids')).json.items.length, 2);
+  assert.equal(del.json.deleted, 1); assert.equal((await call(mgr, 'GET', '/api/knowledge/kids')).json.items.length, 3);
 });

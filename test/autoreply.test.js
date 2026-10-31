@@ -312,6 +312,27 @@ test('auto reply memakai data produk: harga/varian/tautan masuk prompt; harga ka
   globalThis.fetch = realFetch;
 });
 
+test('jalur langsung: harga/stok/detail dari API delova.id dibalas tanpa approval walau mode Draft', async () => {
+  netCalls = []; mockNet(catalog);
+  await A('PUT', '/api/store/config', { use_reply: true, use_direct: true });
+  await A('PUT', `/api/auto/rules/${brand.id}/threads`, { enabled: true, mode: 'draft' });
+  const go = async (text, drafter) => { AR.setDrafter(async () => drafter()); const p = thReply(text); const id = p.entry[0].changes[0].value.id; await hook('threads', p); return waitFor(() => { const e = evOf(id); return e && !['new', 'processing', 'sending'].includes(e.status) ? e : null; }); };
+  const ok = () => ({ action: 'reply', category: 'pertanyaan_produk', confidence: 0.9, reply: 'Ready Kak, Rp72.000 ya 😊', reason: 'ok' });
+  let e = await go('Kak kebaya sage berapa harganya dan ready ukuran M?', ok);
+  assert.equal(e.status, 'sent'); assert.match(e.note, /tanpa approval|terkirim|sent/i); assert.equal(e.decided_by, null);
+  e = await go('Kak kebaya sage cantik banget', () => ({ action: 'reply', category: 'pujian', confidence: 0.9, reply: 'Terima kasih Kak 😊', reason: 'ok' }));
+  assert.equal(e.status, 'pending', 'bukan pertanyaan fakta produk: tetap perlu approval');
+  e = await go('Kak kebaya sage berapa harganya?', () => ({ action: 'reply', category: 'pertanyaan_produk', confidence: 0.9, reply: 'Rp99.000 Kak', reason: 'ok' }));
+  assert.equal(e.status, 'pending', 'harga di luar data produk ditahan');
+  e = await go('Kak kebaya sage retur bisa? berapa harganya', ok);
+  assert.equal(e.status, 'pending', 'kata sensitif tetap ke manusia');
+  await A('PUT', '/api/store/config', { use_direct: false });
+  e = await go('Kak kebaya sage ready ukuran L stoknya berapa?', ok);
+  assert.equal(e.status, 'pending', 'saklar jalur langsung dimatikan');
+  await A('PUT', '/api/store/config', { use_direct: true });
+  globalThis.fetch = realFetch;
+});
+
 test('API produk down → tetap diproses, model diberi tahu data tidak tersedia, tanpa harga', async () => {
   await A('PUT', '/api/store/config', { use_reply: true }); // membersihkan cache
   mockNet(() => json({ error: { message: 'boom' } }, 500));

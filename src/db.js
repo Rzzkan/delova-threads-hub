@@ -191,6 +191,7 @@ const SETTING_DEFAULTS = {
   llm_fallback: '1',          // bila model utama gagal, coba Claude (jika ANTHROPIC_API_KEY ada)
   store_api_url: 'https://delova.id/api/v1', // API produk & stok Delova Store (read-only)
   store_api_key_enc: '',
+  store_use_direct: '1',      // pertanyaan harga/stok/detail produk yang datanya ada di API delova.id dibalas langsung tanpa approval
   store_use_reply: '1',       // Auto Reply mengambil harga/stok/varian dari API produk
   store_use_posts: '1',       // AI pembuat post mengambil data produk
   auto_llm_daily_cap: '300',  // maks draft LLM per 24 jam (kontrol biaya)

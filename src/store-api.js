@@ -22,7 +22,7 @@ export function storeConfig() {
   key ||= process.env.STORE_API_KEY || '';
   return {
     baseUrl: (getSetting('store_api_url') || 'https://delova.id/api/v1').replace(/\/+$/, ''),
-    key, useReply: getSetting('store_use_reply') === '1', usePosts: getSetting('store_use_posts') === '1',
+    key, useReply: getSetting('store_use_reply') === '1', useDirect: getSetting('store_use_direct') === '1', usePosts: getSetting('store_use_posts') === '1',
   };
 }
 export const storeReady = () => !!storeConfig().key;

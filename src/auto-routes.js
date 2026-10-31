@@ -37,7 +37,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
       llm: (() => { const c = AI.llmConfig(); return { provider: c.provider, base_url: c.baseUrl, model: c.model, has_key: !!c.key, fallback: c.fallback, claude_ready: AI.aiEnabled() }; })(),
       webhooks: PLATFORMS.map((p) => ({ platform: p, url: A_.webhookUrl(p), has_secret: p === 'instagram' ? !!(I.creds().appSecret || T.creds().appSecret) : !!T.creds().appSecret })),
       verify_token: admin ? A_.verifyToken() : undefined,
-      store: (() => { const c = Store.storeConfig(); return { base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_posts: c.usePosts }; })(),
+      store: (() => { const c = Store.storeConfig(); return { base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_direct: c.useDirect, use_posts: c.usePosts }; })(),
       llm_cap: Number(getSetting('auto_llm_daily_cap')) || 300,
       stats: A_.stats(),
       brands: brands.map((b) => ({
@@ -80,12 +80,13 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
   /* ---------- Data produk (API delova.id) ---------- */
   api.get('/store/config', need('admin'), humanOnly, (req, res) => {
     const c = Store.storeConfig();
-    res.json({ base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_posts: c.usePosts });
+    res.json({ base_url: c.baseUrl, has_key: !!c.key, use_reply: c.useReply, use_direct: c.useDirect, use_posts: c.usePosts });
   });
   api.put('/store/config', need('admin'), humanOnly, (req, res) => {
     const f = req.body || {};
     if (f.base_url !== undefined) { const e = Store.validateBaseUrl(String(f.base_url).trim()); if (e) return bad(res, e); setSetting('store_api_url', String(f.base_url).trim().replace(/\/+$/, '')); }
     if (f.use_reply !== undefined) setSetting('store_use_reply', f.use_reply ? '1' : '0');
+    if (f.use_direct !== undefined) setSetting('store_use_direct', f.use_direct ? '1' : '0');
     if (f.use_posts !== undefined) setSetting('store_use_posts', f.use_posts ? '1' : '0');
     if (f.clear_key) setSetting('store_api_key_enc', '');
     else if (typeof f.api_key === 'string' && f.api_key.trim()) {
@@ -93,7 +94,7 @@ export function mountAuto(app, api, { need, ah, bad, A, humanOnly, brandOr404, g
       setSetting('store_api_key_enc', C.encrypt(f.api_key.trim()));
     }
     Store.clearStoreCache();
-    A(req, 'store.config', { base_url: f.base_url, use_reply: f.use_reply, use_posts: f.use_posts }); // kunci tidak dicatat
+    A(req, 'store.config', { base_url: f.base_url, use_reply: f.use_reply, use_direct: f.use_direct, use_posts: f.use_posts }); // kunci tidak dicatat
     res.json({ ok: true });
   });
   api.post('/store/test', need('admin'), humanOnly, ah(async (req, res) => {

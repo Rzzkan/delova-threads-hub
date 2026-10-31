@@ -18,6 +18,8 @@ export const KINDS = ['reply', 'mention', 'comment', 'dm'];
 const MAX = { threads: { reply: 280, mention: 280 }, instagram: { comment: 300, mention: 300, dm: 800 }, whatsapp: { dm: 700 } };
 const maxChars = (platform, kind) => MAX[platform]?.[kind] || 280;
 const MIN_CONFIDENCE = 0.75;
+// Pertanyaan fakta produk (harga/stok/ukuran/warna/bahan/varian/deskripsi) yang jawabannya ada di API delova.id.
+export const PRODUCT_Q = /\b(harga|berapa|brp|stok|stock|ready|readi|tersedia|ketersediaan|kosong|habis|sisa|ukuran|size|warna|bahan|material|varian|variasi|deskripsi|detail|spesifikasi|panjang|lebar|lingkar|berat|muat|fit)\b/i;
 const SAFE_CATEGORIES = ['sapaan', 'pujian', 'pertanyaan_produk', 'pertanyaan_umum'];
 // kata yang selalu butuh manusia, apa pun jawaban LLM
 export const SENSITIVE = /\b(refund|retur|pengembalian|komplain|complain|kecewa|penipu|tipu|scam|lapor|polisi|pengacara|somasi|rusak|cacat|salah kirim|belum sampai|nggak sampai|tidak sampai|cancel|batal|uang kembali|konsumen|ylki|viral|endorse|kolaborasi|collab|kerja ?sama|media partner|wartawan)\b/i;
@@ -243,12 +245,14 @@ export async function processEvent(id) {
     let why = human ? (SENSITIVE.test(ev.text) ? 'Memuat kata sensitif (komplain/refund/kerja sama).' : reason || 'Perlu ditinjau manusia.') : '';
     const bad = unsafeReason(draft, `${rule.knowledge}\n${storeFacts}`, limit);
     if (bad) { human = true; why = bad; }
-    if (rule.mode !== 'auto') return end(id, 'pending', human ? why : 'Menunggu persetujuan.', { ...f, needs_human: human ? 1 : 0 });
+    // Jalur langsung: fakta produk dari API delova.id (harga/stok/detail) dibalas tanpa approval, meski mode Draft.
+    const direct = !human && Store.storeConfig().useDirect && PRODUCT_Q.test(ev.text) && used.length > 0 && !/PERINGATAN: data lebih dari 24 jam/.test(storeFacts);
+    if (rule.mode !== 'auto' && !direct) return end(id, 'pending', human ? why : 'Menunggu persetujuan.', { ...f, needs_human: human ? 1 : 0 });
     if (human) return end(id, 'pending', why, { ...f, needs_human: 1 });
     const since = new Date(Date.now() - 3600e3).toISOString();
     if (get("SELECT COUNT(*) AS n FROM auto_events WHERE brand_id=? AND platform=? AND status='sent' AND decided_by IS NULL AND updated_at>?", ev.brand_id, ev.platform, since).n >= rule.hourly_cap)
       return end(id, 'pending', `Batas ${rule.hourly_cap} balasan otomatis/jam tercapai.`, f);
-    set(id, { ...f, status: 'approved' });
+    set(id, { ...f, status: 'approved', ...(rule.mode !== 'auto' ? { note: 'Dijawab langsung dari data produk delova.id (tanpa approval).' } : {}) });
     return await send(id, draft, null);
   } catch (e) {
     return end(id, 'failed', String(e.message).slice(0, 300), { error: String(e.message).slice(0, 300) });

@@ -11,8 +11,16 @@ const plats = (v) => [...new Set((Array.isArray(v) ? v : []).filter((p) => PLATS
 const covers = (e, p) => !e.platforms.length || e.platforms.includes(p);
 const parse = (r) => ({ ...r, active: !!r.active, platforms: JSON.parse(r.platforms || '[]') });
 
-export const list = (brandId) => all('SELECT * FROM brand_knowledge WHERE brand_id=? ORDER BY active DESC, category, created_at', brandId).map(parse);
-const live = (brandId) => all('SELECT * FROM brand_knowledge WHERE brand_id=? AND active=1 AND (expires_at IS NULL OR expires_at>?) ORDER BY category, created_at', brandId, now()).map(parse);
+export const PRODUCT_POLICY = 'Pertanyaan harga, stok/ketersediaan, ukuran, warna, bahan, varian, dan deskripsi produk dijawab langsung dari data produk delova.id tanpa menunggu persetujuan; bila data tidak tersedia atau produk tidak ditemukan, arahkan pelanggan ke katalog/Shopee dan jangan menebak.';
+// Butir bawaan sekali per brand (boleh diubah/dinonaktifkan/dihapus; tidak dibuat ulang).
+function ensureSeed(brandId) {
+  const key = `kn_seed_product_${brandId}`;
+  if (getSetting(key) === '1' || !get('SELECT 1 FROM brands WHERE id=?', brandId)) return;
+  setSetting(key, '1'); const ts = now();
+  run('INSERT INTO brand_knowledge(id,brand_id,text,category,platforms,active,source,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?,?)', uid(), brandId, PRODUCT_POLICY, 'faq', '[]', 'sistem', ts, ts);
+}
+export const list = (brandId) => (ensureSeed(brandId), all('SELECT * FROM brand_knowledge WHERE brand_id=? ORDER BY active DESC, category, created_at', brandId)).map(parse);
+const live = (brandId) => (ensureSeed(brandId), all('SELECT * FROM brand_knowledge WHERE brand_id=? AND active=1 AND (expires_at IS NULL OR expires_at>?) ORDER BY category, created_at', brandId, now())).map(parse);
 
 export function composeFor(brandId, platform) {
   const rows = live(brandId).filter((e) => covers(e, platform));
