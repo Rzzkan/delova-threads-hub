@@ -1326,14 +1326,21 @@ const checkPerm = (btn, id, brand) => busy(btn, async () => {
   toast(bad_.length ? `${bad_.length} izin bermasalah, lihat detail.` : 'Cek izin selesai.', bad_.length > 0);
 });
 VIEWS.brands = async (v) => {
-  brands = await api('GET', '/api/brands');
-  const cq = params().get('connect');
+  let ig = { simulated: true, brands: [] };
+  [brands, ig] = await Promise.all([api('GET', '/api/brands'), api('GET', '/api/ig/status').catch(() => ig)]);
+  const igOf = (id) => ig.brands.find((x) => x.id === id) || {};
+  const cq = params().get('connect'); const iq = params().get('ig');
   if (cq) toast(cq === 'ok' ? 'Akun Threads berhasil terhubung.' : `Gagal menghubungkan: ${params().get('msg') || 'coba lagi'}`, cq !== 'ok');
+  if (iq) toast(iq === 'ok' ? 'Akun Instagram berhasil terhubung.' : `Gagal menghubungkan Instagram: ${params().get('msg') || 'coba lagi'}`, iq !== 'ok');
   v.innerHTML = `<h1>Brand &amp; Akun</h1><p class="muted">Brand voice di sini dipakai Claude (di dashboard maupun via MCP) setiap menulis untuk akun tersebut.</p>
   <div class="grid g2">${brands.map((b) => `<form class="card stack bcard" style="--c:${b.color}" data-id="${b.id}">
     <div class="row between"><h2>${esc(b.name)}</h2>${b.connected ? `<span class="badge s-published">@${esc(b.username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
     ${b.connected ? `<div class="small muted">Token berlaku s/d ${wib(b.token_expires_at)} (diperpanjang otomatis).</div>` : ''}
     <div class="row">${can('manager') && !b.connected ? `<a class="btn small primary" href="/auth/threads/start?brand=${b.id}">Hubungkan ke Threads</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}</div>
+    <div class="stack igbox" style="gap:6px;border-top:1px solid var(--line);padding-top:10px"><div class="row between"><b>Instagram</b>${igOf(b.id).connected ? `<span class="badge s-published">@${esc(igOf(b.id).username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
+      ${igOf(b.id).connected ? `<div class="small muted">${esc(igOf(b.id).account_type || '')}${igOf(b.id).followers != null ? ` · ${num(igOf(b.id).followers)} followers` : ''} · token berlaku s/d ${wib(igOf(b.id).token_expires_at)} (diperpanjang otomatis)</div>` : '<div class="small muted">Butuh akun Instagram Professional (Business/Creator).</div>'}
+      <div class="row">${can('manager') && !ig.simulated ? `<a class="btn small primary" href="/auth/instagram/start?brand=${b.id}&back=brands">${igOf(b.id).connected ? 'Hubungkan ulang' : 'Hubungkan ke Instagram'}</a>` : ''}${can('admin') && igOf(b.id).connected ? '<button type="button" class="btn small" data-x="igrefresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="igdisc">Putuskan</button>' : ''}</div>
+      ${ig.simulated && can('manager') ? `<div class="small muted">Tombol hubungkan aktif setelah App ID/Secret Instagram diisi${can('admin') ? ' (<a href="#/instagram?tab=akun">Instagram → Akun</a>)' : ' oleh admin'} dan mode simulasi dimatikan.</div>` : ''}</div>
     ${permBlock(b)}
     <label>Deskripsi<input name="description" value="${esc(b.description)}" ${can('manager') ? '' : 'disabled'}></label>
     <label>Brand voice<textarea name="voice" ${can('manager') ? '' : 'disabled'}>${esc(b.voice)}</textarea></label>
@@ -1345,6 +1352,8 @@ VIEWS.brands = async (v) => {
   v.onsubmit = (e) => { e.preventDefault(); const f = e.target; const d = Object.fromEntries(new FormData(f)); d.pillars = d.pillars.split('\n').map((s) => s.trim()).filter(Boolean);
     busy($('button[type=submit]', f), async () => { await api('PUT', `/api/brands/${f.dataset.id}`, d); toast('Brand tersimpan.'); }); };
   v.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('form').dataset.id;
+    if (x === 'igrefresh') return busy(e.target, async () => { await api('POST', `/api/ig/accounts/${id}/refresh`); toast('Token Instagram diperpanjang.'); route(); });
+    if (x === 'igdisc') return busy(e.target, async () => { if (!(await ui.confirm({ title: 'Putuskan Instagram?', message: 'Token Instagram dihapus dari Hub. Jadwal post, balasan, dan DM untuk akun ini berhenti sampai dihubungkan lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/ig/accounts/${id}`); toast('Instagram diputuskan.'); route(); });
     if (x === 'perm') return checkPerm(e.target, id, brands.find((y) => y.id === id));
     if (x === 'hist') return busy(e.target, () => showHistory(id));
     busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/brands/${id}/refresh-token`); if (x === 'disc') { if (!(await ui.confirm({ title: 'Putuskan akun ini?', message: 'Token Threads dihapus dari Hub. Posting terjadwal untuk akun ini akan gagal sampai Anda menghubungkannya lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/brands/${id}/connection`); } toast('Berhasil.'); route(); }); };

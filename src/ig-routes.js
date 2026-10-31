@@ -48,16 +48,18 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
     const b = brandOr404(String(req.query.brand));
     if (!b) return bad(res, 'Brand tidak ditemukan.', 404);
     if (I.isDryRun()) return bad(res, 'Mode simulasi aktif atau kredensial Instagram belum diisi. Admin: isi di menu Instagram → Akun.');
-    const state = C.randomToken('ig');
+    const state = C.randomToken(req.query.back === 'brands' ? 'igb' : 'ig');
     run('INSERT INTO oauth_states(state,brand_id,user_id,expires_at) VALUES (?,?,?,?)', state, b.id, req.user.id, Date.now() + 10 * 60_000);
     res.redirect(I.authorizeUrl(state));
   });
   app.get('/auth/instagram/callback', auth, ah(async (req, res) => {
     const { code, state, error_description: err } = req.query;
     const st = get('SELECT * FROM oauth_states WHERE state=?', String(state || ''));
-    if (!st || st.expires_at < Date.now() || st.user_id !== req.user.id) return res.redirect('/#/instagram?tab=akun&connect=gagal');
+    const home = String(state || '').startsWith('igb_') ? '/#/brands?ig=' : '/#/instagram?tab=akun&connect=';
+    const fail = (m) => res.redirect(`${home}gagal${m ? `&msg=${encodeURIComponent(m)}` : ''}`);
+    if (!st || st.expires_at < Date.now() || st.user_id !== req.user.id) return fail();
     run('DELETE FROM oauth_states WHERE state=?', st.state);
-    if (!code) return res.redirect(`/#/instagram?tab=akun&connect=gagal&msg=${encodeURIComponent(err || 'dibatalkan')}`);
+    if (!code) return fail(err || 'dibatalkan');
     try {
       const r = await I.exchangeCode(String(code).replace(/#_$/, ''));
       run(`INSERT INTO ig_accounts(brand_id,ig_user_id,username,account_type,followers,token_enc,token_expires_at,token_refreshed_at,granted_scopes,connected_at)
@@ -66,9 +68,9 @@ export function mountInstagram(app, api, { auth, need, ah, bad, A, humanOnly, br
              token_enc=excluded.token_enc, token_expires_at=excluded.token_expires_at, token_refreshed_at=excluded.token_refreshed_at, granted_scopes=excluded.granted_scopes, connected_at=excluded.connected_at`,
       st.brand_id, r.userId, r.username, r.accountType || null, r.followers, C.encrypt(r.token), new Date(Date.now() + r.expiresIn * 1000).toISOString(), now(), JSON.stringify(I.SCOPES), now());
       A(req, 'ig.connected', { brand: st.brand_id, username: r.username });
-      res.redirect('/#/instagram?tab=akun&connect=ok');
+      res.redirect(`${home}ok`);
     } catch (e) {
-      res.redirect(`/#/instagram?tab=akun&connect=gagal&msg=${encodeURIComponent(e.message)}`);
+      fail(e.message);
     }
   }));
 
