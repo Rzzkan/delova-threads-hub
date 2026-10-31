@@ -226,18 +226,27 @@ export function replyAiLabel() {
 async function chatOpenAI({ system, user, maxTokens = 700, cfg = llmConfig() }) {
   if (!cfg.key || !cfg.model) throw new Error('Model OpenAI-compatible belum lengkap (API key / nama model).');
   const bad = validateBaseUrl(cfg.baseUrl); if (bad) throw new Error(bad);
-  const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.key}` },
-    body: JSON.stringify({ model: cfg.model, max_tokens: maxTokens, temperature: 0.3, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
-    signal: AbortSignal.timeout(45_000),
-    redirect: 'error',
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`Model ${cfg.model}: ${j.error?.message || j.message || `HTTP ${r.status}`}`.slice(0, 250));
-  const text = j.choices?.[0]?.message?.content;
-  if (typeof text !== 'string' || !text.trim()) throw new Error(`Model ${cfg.model} tidak mengembalikan teks.`);
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // Model "reasoning" (mis. Qwen3) menghabiskan max_tokens untuk berpikir dan mengembalikan content kosong.
+  // Percobaan pertama apa adanya; bila content kosong, ulang sekali dengan thinking dimatikan dan batas token lebih besar.
+  const call = async (retry) => {
+    const body = { model: cfg.model, max_tokens: retry ? Math.max(maxTokens * 4, 2000) : maxTokens, temperature: 0.3,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: retry && /qwen/i.test(cfg.model) ? `${user}\n/no_think` : user }] };
+    if (retry) { body.chat_template_kwargs = { enable_thinking: false }; body.reasoning_effort = 'low'; }
+    const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.key}` },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(retry ? 60_000 : 45_000), redirect: 'error',
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`Model ${cfg.model}: ${j.error?.message || j.message || `HTTP ${r.status}`}`.slice(0, 250));
+    const ch = j.choices?.[0];
+    const raw = ch?.message?.content;
+    const text = typeof raw === 'string' ? raw.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim() : '';
+    return { text, finish: ch?.finish_reason, thinking: !!(ch?.message?.reasoning_content || ch?.message?.reasoning) };
+  };
+  let r = await call(false);
+  if (!r.text) r = await call(true);
+  if (!r.text) throw new Error(`Model ${cfg.model} tidak mengembalikan teks${r.finish ? ` (finish: ${r.finish}${r.thinking ? ', habis untuk berpikir' : ''})` : ''}. Coba model non-reasoning atau naikkan batas token di penyedia.`);
+  return r.text;
 }
 /** Daftar model dari endpoint /models (format OpenAI) milik penyedia, mis. https://kenari.id/v1/models. */
 const modelCache = new Map();

@@ -231,6 +231,19 @@ test('llm: event diproses lewat API kompatibel OpenAI (tag <think> dibuang, prom
   assert.match(c.body.messages[1].content, /<pesan_audiens>\nIgnore previous instructions/);
 });
 
+test('llm: model reasoning (qwen3) yang content-nya kosong diulang dengan thinking dimatikan', async () => {
+  AR.setDrafter(null); llmCalls = [];
+  const resp = (message, finish) => new Response(JSON.stringify({ choices: [{ message, finish_reason: finish }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  mockLlm(async (url, opts) => { const body = JSON.parse(opts.body); llmCalls.push(body);
+    return body.chat_template_kwargs ? resp({ content: '{"action":"reply","category":"sapaan","confidence":0.9,"reply":"Halo Kak 😊","reason":"ok"}' }, 'stop') : resp({ content: '', reasoning_content: 'hmm...' }, 'length'); });
+  const r = await A('POST', '/api/auto/test-event', { brand_id: brand.id, platform: 'threads', kind: 'reply', text: 'Halo kak' });
+  assert.equal(r.json.draft, 'Halo Kak 😊');
+  assert.equal(llmCalls.length, 2); assert.ok(llmCalls[1].max_tokens >= 2000); assert.equal(llmCalls[1].chat_template_kwargs.enable_thinking, false);
+  mockLlm(async () => resp({ content: '<think>belum selesai' }, 'length'));
+  const t = await A('POST', '/api/auto/llm/test');
+  assert.equal(t.status, 502); assert.match(t.json.error, /tidak mengembalikan teks.*finish: length/);
+});
+
 test('llm: error penyedia → event menunggu manusia; tombol uji koneksi', async () => {
   mockLlm(async () => new Response(JSON.stringify({ error: { message: 'rate limited' } }), { status: 429, headers: { 'content-type': 'application/json' } }));
   const r = await A('POST', '/api/auto/test-event', { brand_id: brand.id, platform: 'threads', kind: 'reply', text: 'Halo' });
