@@ -220,3 +220,11 @@ test('Inbox Reply: reply yang sudah dibalas menampilkan daftar balasannya', asyn
   const l2 = (await api('GET', '/api/brands/wardrobe/replies')).body.find((x) => x.reply.id === rid);
   assert.equal(l2.answers.length, 1); assert.equal(l2.answers[0].text, 'Siap Bunda, ya!');
 });
+
+test('Dashboard: ringkasan Instagram feed & story ikut tampil per brand', async () => {
+  const r = await api('GET', '/api/dashboard');
+  const k = r.body.brands.find((b) => b.id === 'kids');
+  assert.ok(k.instagram && k.instagram.feed && k.instagram.story, 'ada blok instagram');
+  assert.ok(Object.keys(k.instagram.story).length > 0, 'slot story dari tes sebelumnya terhitung');
+  assert.equal(typeof k.instagram.drafts_no_media, 'number');
+});

@@ -276,7 +276,16 @@ export function createApp() {
     const brands = all('SELECT * FROM brands ORDER BY sort').map((b) => {
       const counts = Object.fromEntries(all('SELECT status, COUNT(*) AS n FROM posts WHERE brand_id=? GROUP BY status', b.id).map((r) => [r.status, r.n]));
       const next = get("SELECT id,text,scheduled_at FROM posts WHERE brand_id=? AND status='scheduled' ORDER BY scheduled_at LIMIT 1", b.id);
-      return { ...publicBrand(b), counts, next_post: next || null };
+      // Instagram: hitung per jenis (feed+reels digabung sebagai "feed", story terpisah) dan status
+      const ig = { feed: {}, story: {} };
+      for (const r of all('SELECT kind, status, COUNT(*) AS n FROM ig_posts WHERE brand_id=? GROUP BY kind, status', b.id)) {
+        const k = r.kind === 'story' ? 'story' : 'feed'; ig[k][r.status] = (ig[k][r.status] || 0) + r.n;
+      }
+      const igNext = get("SELECT id,kind,caption,scheduled_at FROM ig_posts WHERE brand_id=? AND status='scheduled' ORDER BY scheduled_at LIMIT 1", b.id);
+      const igNoMedia = get("SELECT COUNT(*) AS n FROM ig_posts WHERE brand_id=? AND status='draft' AND media_urls='[]'", b.id).n;
+      const acc = get('SELECT username, token_enc, followers FROM ig_accounts WHERE brand_id=?', b.id);
+      return { ...publicBrand(b), counts, next_post: next || null,
+        instagram: { connected: !!acc?.token_enc, username: acc?.username || null, followers: acc?.followers ?? null, feed: ig.feed, story: ig.story, next: igNext || null, drafts_no_media: igNoMedia } };
     });
     res.json({ brands, simulated: T.isDryRun(), ai: AI.replyAiEnabled() });
   });

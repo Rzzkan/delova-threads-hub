@@ -197,18 +197,43 @@ window.addEventListener('hashchange', route);
 VIEWS.dashboard = async (v) => {
   const d = await api('GET', '/api/dashboard');
   const sum = (k) => d.brands.reduce((n, b) => n + ((b.counts || {})[k] || 0), 0);
+  const isum = (kind, k) => d.brands.reduce((n, b) => n + (((b.instagram || {})[kind] || {})[k] || 0), 0);
   const kpi = (cls, ic, n, l) => `<div class="kpi ${cls}"><div class="ic">${ico(ic)}</div><div><b>${n}</b><span>${l}</span></div></div>`;
-  v.innerHTML = `<div class="page-head"><h1>Dashboard</h1><p class="muted">Ringkasan 4 akun Threads Delova.</p></div>
-  <div class="grid g4" style="margin-bottom:16px">${kpi('ok', 'check', sum('published'), 'Post terbit')}${kpi('', 'clock', sum('scheduled'), 'Terjadwal')}${kpi('warn', 'send', sum('pending_approval'), 'Menunggu approval')}${kpi('bad', 'alert', sum('failed'), 'Gagal')}</div>
+  const st = (c, k) => ((c || {})[k] || 0);
+  const mini = (c) => `<div class="stats"><div><b>${st(c, 'draft')}</b><span>Draft</span></div><div><b>${st(c, 'pending_approval')}</b><span>Review</span></div><div><b>${st(c, 'scheduled')}</b><span>Terjadwal</span></div><div><b>${st(c, 'published')}</b><span>Terbit</span></div></div>`;
+  const plat = (ic, name, extra = '') => `<div class="row between" style="margin-top:8px"><b class="small">${ic} ${name}</b>${extra}</div>`;
+  v.innerHTML = `<div class="page-head"><h1>Dashboard</h1><p class="muted">Ringkasan 4 brand Delova: Threads, Instagram Feed, dan Instagram Story.</p></div>
+  <h3 class="small muted" style="margin:0 0 6px">THREADS</h3>
+  <div class="grid g4" style="margin-bottom:14px">${kpi('ok', 'check', sum('published'), 'Post terbit')}${kpi('', 'clock', sum('scheduled'), 'Terjadwal')}${kpi('warn', 'send', sum('pending_approval'), 'Menunggu approval')}${kpi('bad', 'alert', sum('failed'), 'Gagal')}</div>
+  <h3 class="small muted" style="margin:0 0 6px">INSTAGRAM FEED &amp; REELS</h3>
+  <div class="grid g4" style="margin-bottom:14px">${kpi('ok', 'check', isum('feed', 'published'), 'Feed terbit')}${kpi('', 'clock', isum('feed', 'scheduled'), 'Terjadwal')}${kpi('warn', 'send', isum('feed', 'pending_approval'), 'Menunggu approval')}${kpi('bad', 'alert', isum('feed', 'failed'), 'Gagal')}</div>
+  <h3 class="small muted" style="margin:0 0 6px">INSTAGRAM STORY</h3>
+  <div class="grid g4" style="margin-bottom:16px">${kpi('ok', 'check', isum('story', 'published'), 'Story tayang')}${kpi('', 'clock', isum('story', 'scheduled'), 'Terjadwal')}${kpi('warn', 'send', isum('story', 'pending_approval'), 'Menunggu approval')}${kpi('bad', 'alert', isum('story', 'draft'), 'Draft Story')}</div>
   <div class="grid g2w">${d.brands.map((b) => {
-    const c = b.counts || {};
-    return `<div class="card bcard" style="--c:${b.color}">
-      <div class="row between"><h2>${esc(b.name)}</h2>${b.connected ? `<span class="badge s-published">@${esc(b.username || 'terhubung')}</span>` : b.simulated ? '<span class="badge">Simulasi</span>' : '<span class="badge s-failed">Belum terhubung</span>'}</div>
-      <div class="stats"><div><b>${c.draft || 0}</b><span>Draft</span></div><div><b>${c.pending_approval || 0}</b><span>Review</span></div><div><b>${c.scheduled || 0}</b><span>Terjadwal</span></div><div><b>${c.published || 0}</b><span>Terbit</span></div></div>
-      <div class="small muted">${b.next_post ? `Berikutnya: ${wib(b.next_post.scheduled_at)}<br>“${esc(b.next_post.text.slice(0, 80))}…”` : 'Belum ada post terjadwal.'}</div>
-      ${c.failed ? `<div class="err small">${c.failed} post gagal, cek Antrean.</div>` : ''}
-      <div class="row">${can('editor') ? `<a class="btn small primary" href="#/compose?brand=${b.id}">Tulis post</a>` : ''}<a class="btn small" href="#/queue?brand=${b.id}">Antrean</a></div></div>`;
+    const c = b.counts || {}; const ig = b.instagram || {};
+    return `<div class="card bcard" style="--c:${b.color}" data-b="${b.id}">
+      <div class="row between"><h2>${esc(b.name)}</h2><div class="row">${b.connected ? `<span class="badge s-published">Threads @${esc(b.username || 'terhubung')}</span>` : b.simulated ? '<span class="badge">Simulasi</span>' : '<span class="badge s-failed">Threads belum terhubung</span>'}</div></div>
+      ${plat('🧵', 'Threads')}${mini(c)}
+      <div class="small muted">${b.next_post ? `Berikutnya: ${wib(b.next_post.scheduled_at)} · “${esc(b.next_post.text.slice(0, 60))}…”` : 'Belum ada post Threads terjadwal.'}</div>
+      ${c.failed ? `<div class="err small">${c.failed} post Threads gagal, cek Antrean.</div>` : ''}
+      ${plat('📷', 'Instagram Feed', ig.connected ? `<span class="badge s-published">@${esc(ig.username || 'terhubung')}</span>` : d.simulated ? '<span class="badge">Simulasi</span>' : '<span class="badge s-failed">Belum terhubung</span>')}${mini(ig.feed)}
+      ${plat('⭕', 'Instagram Story')}${mini(ig.story)}
+      <div class="small muted">${ig.next ? `IG berikutnya (${ig.next.kind}): ${wib(ig.next.scheduled_at)}${ig.next.caption ? ` · “${esc(ig.next.caption.slice(0, 50))}…”` : ''}` : 'Belum ada konten Instagram terjadwal.'}</div>
+      ${ig.drafts_no_media ? `<div class="small" style="color:#b7791f">${ig.drafts_no_media} draft Instagram belum ada foto/video.</div>` : ''}
+      ${st(ig.feed, 'failed') || st(ig.story, 'failed') ? `<div class="err small">${st(ig.feed, 'failed') + st(ig.story, 'failed')} konten Instagram gagal.</div>` : ''}
+      <div class="small live" data-live></div>
+      <div class="row">${can('editor') ? `<a class="btn small primary" href="#/compose?brand=${b.id}">Tulis post</a>` : ''}<a class="btn small" href="#/queue?brand=${b.id}">Antrean</a><a class="btn small" href="#/instagram?brand=${b.id}">Instagram</a><a class="btn small" href="#/insights?brand=${b.id}">Insight</a></div></div>`;
   }).join('')}</div>`;
+  // Statistik live Instagram 7 hari (opsional; gagal = disembunyikan)
+  const nf = (n) => (n == null ? '–' : Number(n).toLocaleString('id-ID'));
+  d.brands.forEach((b) => {
+    if (!(b.instagram || {}).connected && !d.simulated) return;
+    api('GET', `/api/ig/${b.id}/insights?days=7`).then((r) => {
+      const el = v.querySelector(`[data-b="${b.id}"] [data-live]`); if (!el) return;
+      const m = r.metrics || {};
+      el.innerHTML = `<b>Instagram 7 hari:</b> followers ${nf(r.followers)} · jangkauan ${nf(m.reach)} · views ${nf(m.views)} · akun berinteraksi ${nf(m.accounts_engaged)}`;
+    }).catch(() => {});
+  });
 };
 
 /* ---------- Compose ---------- */
