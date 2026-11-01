@@ -241,11 +241,25 @@ function variantsHtml(list, label = 'Pakai ini') {
   return list.map((x, i) => `<div class="variant"><div class="row between"><b>#${i + 1} ${esc(x.angle || '')}</b><span class="counter ${x.too_long ? 'over' : ''}">${x.length}/500</span></div>
     <p>${esc(x.text)}</p><div class="row"><button class="btn small primary" data-use="${i}">${label}</button></div></div>`).join('');
 }
+const composeSwitch = (cur, brand) => `<div class="tabs" style="margin-bottom:12px">${[['threads', 'Threads'], ['feed', 'Instagram Feed'], ['reels', 'Instagram Reels'], ['story', 'Instagram Story']].map(([k, l]) => `<a class="tab ${k === cur ? 'on' : ''}" href="#/compose?${k === 'threads' ? '' : `platform=${k}&`}brand=${brand}">${k === 'threads' ? '🧵' : '📷'} ${l}</a>`).join('')}</div>`;
 VIEWS.compose = async (v) => {
   const q = params();
+  const plat = ['feed', 'reels', 'story'].includes(q.get('platform')) ? q.get('platform') : 'threads';
+  if (plat !== 'threads' && !q.get('edit')) {
+    const st = await api('GET', '/api/ig/status');
+    const bid = st.brands.some((b) => b.id === q.get('brand')) ? q.get('brand') : (st.brands.find((b) => b.connected) || st.brands[0]).id;
+    const cur = st.brands.find((b) => b.id === bid);
+    v.innerHTML = `<h1>Tulis post</h1>${composeSwitch(plat, bid)}
+    ${st.simulated ? '<div class="banner"><b>Mode simulasi:</b> konten Instagram tidak dikirim ke Instagram asli.</div>' : ''}
+    <div class="chips" style="margin-bottom:10px">${st.brands.map((b) => `<a class="chip" href="#/compose?platform=${plat}&brand=${b.id}" ${b.id === bid ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}><i class="cal-dot ${b.connected || st.simulated ? 'on' : 'off'}" style="--c:${b.color}"></i> ${esc(b.name.replace('Delova ', ''))}${b.username ? ` <span class="muted small">@${esc(b.username)}</span>` : ''}</a>`).join('')}</div>
+    ${!cur.connected && !st.simulated ? `<div class="banner">Akun Instagram ${esc(cur.name)} belum terhubung. Draft tetap bisa disimpan, tapi baru bisa tayang setelah akun terhubung.</div>` : ''}
+    <div id="igc" class="stack"></div>`;
+    try { await IGV.konten({ v, bid, cur, body: $('#igc'), only: plat === 'story' ? 'story' : undefined, compose: plat }); } catch (e) { $('#igc').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+    return;
+  }
   let post = q.get('edit') ? await api('GET', `/api/posts/${q.get('edit')}`) : null;
   const brandId = post?.brand_id || q.get('brand') || brands[0].id;
-  v.innerHTML = `<h1>${post ? 'Edit post' : 'Tulis post'}</h1>
+  v.innerHTML = `<h1>${post ? 'Edit post' : 'Tulis post'}</h1>${post ? '' : composeSwitch('threads', brandId)}
   <div class="grid g2">
     <div class="card stack">
       <label>Akun ${brandPick(brandId)}</label>
@@ -496,8 +510,9 @@ const IGV = {};
 
 /* ---- Konten & jadwal ---- */
 IGV.story = (ctx) => IGV.konten({ ...ctx, only: 'story' });
-IGV.konten = async ({ v, bid, cur, body, only }) => {
+IGV.konten = async ({ v, bid, cur, body, only, compose }) => {
   const SM = only === 'story';
+  const reload = () => (compose ? (location.hash = `#/instagram?tab=${SM ? 'story' : 'konten'}&brand=${bid}`) : route());
   const [allRows, lib] = await Promise.all([api('GET', `/api/ig/posts?brand=${bid}`), can('editor') ? api('GET', '/api/media?limit=40').catch(() => []) : []]);
   const rows = allRows.filter((p) => (SM ? p.kind === 'story' : p.kind !== 'story'));
   const cntBy = (st) => rows.filter((p) => p.status === st).length;
@@ -523,7 +538,7 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
     <div class="row"><button class="btn" id="isave" type="button">Simpan draft</button><button class="btn primary" id="isubmit" type="button">Ajukan approval</button>${can('manager') ? '<button class="btn primary" id="iapprove" type="button">Setujui &amp; jadwalkan</button><button class="btn danger" id="inow" type="button">Terbitkan sekarang</button>' : ''}<button class="btn ghost" id="icancel" type="button">Batal</button></div>
   </div>` : ''}
   ${can('editor') ? '<div class="row hidden" id="igbulk"><span class="small muted" id="igbn"></span><button class="btn small" data-bulk="submit" type="button">Ajukan terpilih</button>' + (can('manager') ? '<button class="btn small primary" data-bulk="approve" type="button">Setujui &amp; jadwalkan terpilih</button><button class="btn small" data-bulk="reject" type="button">Kembalikan terpilih</button>' : '') + '</div>' : ''}
-  <div class="card"><table><thead><tr><th style="width:28px">${can('editor') ? '<input type="checkbox" id="igall" aria-label="Pilih semua">' : ''}</th><th>Konten</th><th>Jenis</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
+  <div class="card" id="iglist"><table><thead><tr><th style="width:28px">${can('editor') ? '<input type="checkbox" id="igall" aria-label="Pilih semua">' : ''}</th><th>Konten</th><th>Jenis</th><th>Jadwal / Terbit</th><th>Status</th><th></th></tr></thead><tbody>
   ${rows.map((p) => `<tr data-id="${p.id}"><td>${can('editor') && !['published', 'publishing'].includes(p.status) ? `<input type="checkbox" class="igsel" value="${p.id}" aria-label="Pilih konten">` : ''}</td><td><div class="row" style="flex-wrap:nowrap">${p.media_urls[0] ? `<span class="mini">${isVid(p.media_urls[0]) ? `<video src="${esc(p.media_urls[0])}" muted preload="metadata"></video>` : `<img src="${esc(p.media_urls[0])}" alt="" loading="lazy" />`}${p.media_urls.length > 1 ? `<i>${p.media_urls.length}</i>` : ''}</span>` : '<span class="mini" style="display:flex;align-items:center;justify-content:center;font-size:20px" title="Belum ada foto/video">🖼</span>'}<span>${esc((p.caption || '(tanpa caption)').slice(0, 110))}${!p.media_urls.length && !['published', 'publishing'].includes(p.status) ? `<div class="small" style="color:#a15c00">🖼 Menunggu foto/video: ${can('editor') ? 'klik Upload foto' : 'minta editor mengunggah'} sebelum diajukan.</div>` : ''}${p.error ? `<div class="err small">${esc(p.error)}</div>` : ''}${p.review_note ? `<div class="small muted">Catatan: ${esc(p.review_note)}</div>` : ''}<div class="small muted">${esc(p.author || '')}</div></span></div></td>
     <td><span class="badge">${IG_KIND[p.kind]}</span></td><td class="small">${wib(p.published_at || p.scheduled_at)}</td><td>${badge(p.status)}</td>
     <td><div class="row">${!p.media_urls.length && can('editor') && !['published', 'publishing'].includes(p.status) ? '<button type="button" class="btn small primary" data-upl>📷 Upload foto</button>' : ''}${igActions(p)}</div></td></tr>`).join('') || `<tr><td colspan="6" class="muted">${SM ? 'Belum ada Story untuk akun ini. Klik “Buat Story”.' : 'Belum ada konten untuk akun ini.'}</td></tr>`}</tbody></table></div>`;
@@ -544,7 +559,7 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
       const start = fromInput($c('#slwhen').value); if (!start) throw new Error('Pilih tanggal dan jam slot pertama.');
       const n = Math.min(20, Math.max(1, Number($c('#slcount').value) || 1)); const gap = Number($c('#slgap').value) * 60_000;
       const times = Array.from({ length: n }, (_, i) => new Date(Date.parse(start) + i * gap).toISOString());
-      await api('POST', '/api/ig/posts/story-slots', { brand_id: bid, times }); toast(`${n} slot Story tersimpan. Unggah fotonya lewat tombol Upload foto.`); route();
+      await api('POST', '/api/ig/posts/story-slots', { brand_id: bid, times }); toast(`${n} slot Story tersimpan. Unggah fotonya lewat tombol Upload foto.`); reload();
     });
   }
   // Upload foto langsung ke slot (tanpa membuka form)
@@ -556,7 +571,7 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
       const r = await fetch(`/api/media?as=jpg&brand=${bid}`, { method: 'POST', headers: { 'content-type': f.type, 'x-requested-with': 'hub', 'x-filename': encodeURIComponent(f.name) }, body: f });
       const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Gagal mengunggah.');
       if (!/\.(jpg|mp4|mov)$/.test(j.name)) throw new Error('Instagram hanya menerima JPG/PNG, MP4, atau MOV.');
-      await api('PUT', `/api/ig/posts/${id}`, { media_urls: [j.url] }); toast('Foto terpasang. Sekarang ajukan atau setujui slot ini.'); route();
+      await api('PUT', `/api/ig/posts/${id}`, { media_urls: [j.url] }); toast('Foto terpasang. Sekarang ajukan atau setujui slot ini.'); reload();
     });
     inp.click();
   });
@@ -586,16 +601,16 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
   const syncKind = () => { const st = $c('#kind').value === 'story'; $c('#storyhint').classList.toggle('hidden', !st); $c('#cap').closest('label').classList.toggle('hidden', st); $c('#ccnt').classList.toggle('hidden', st); };
   $c('#kind').addEventListener('change', syncKind);
   const saveIt = async (submit = false) => { if (isSeries()) { const b = payload(); if (!b.scheduled_at) throw new Error('Pilih jadwal slide pertama dulu.'); const r = await api('POST', '/api/ig/posts/story-series', { brand_id: bid, media_urls: b.media_urls, scheduled_at: b.scheduled_at, interval_minutes: Number($c('#gap').value) || 5, submit }); editing = r[0]; return { series: r }; } const b = payload(); if (editing) { const { brand_id, ...rest } = b; editing = await api('PUT', `/api/ig/posts/${editing.id}`, rest); } else editing = await api('POST', '/api/ig/posts', b); return editing; };
-  $c('#isave').onclick = (e) => busy(e.target, async () => { const r = await saveIt(); toast(r.series ? `${r.series.length} slide Story tersimpan sebagai draft.` : 'Draft tersimpan.'); route(); });
+  $c('#isave').onclick = (e) => busy(e.target, async () => { const r = await saveIt(); toast(r.series ? `${r.series.length} slide Story tersimpan sebagai draft.` : 'Draft tersimpan.'); reload(); });
   const needMedia = () => { if (!lines().length) throw new Error('Tambahkan foto/video dulu sebelum diajukan atau dijadwalkan. Draft tanpa gambar boleh disimpan dengan tombol Simpan draft.'); };
-  $c('#isubmit').onclick = (e) => busy(e.target, async () => { needMedia(); const r = await saveIt(true); if (!r.series) await api('POST', `/api/ig/posts/${editing.id}/submit`); toast(r.series ? `${r.series.length} slide Story diajukan ke manajer.` : 'Diajukan ke manajer.'); route(); });
+  $c('#isubmit').onclick = (e) => busy(e.target, async () => { needMedia(); const r = await saveIt(true); if (!r.series) await api('POST', `/api/ig/posts/${editing.id}/submit`); toast(r.series ? `${r.series.length} slide Story diajukan ke manajer.` : 'Diajukan ke manajer.'); reload(); });
   if (can('manager')) {
-    $c('#iapprove').onclick = (e) => busy(e.target, async () => { needMedia(); const w = fromInput($c('#iwhen').value); if (!w) throw new Error('Pilih jadwal tayang dulu.'); const sr = await saveIt(true); if (sr.series) { await api('POST', '/api/ig/posts/bulk', { action: 'approve', ids: sr.series.map((x) => x.id) }); toast(`${sr.series.length} slide Story dijadwalkan.`); return route(); } await api('POST', `/api/ig/posts/${editing.id}/approve`, { scheduled_at: w }); toast('Disetujui dan dijadwalkan.'); route(); });
+    $c('#iapprove').onclick = (e) => busy(e.target, async () => { needMedia(); const w = fromInput($c('#iwhen').value); if (!w) throw new Error('Pilih jadwal tayang dulu.'); const sr = await saveIt(true); if (sr.series) { await api('POST', '/api/ig/posts/bulk', { action: 'approve', ids: sr.series.map((x) => x.id) }); toast(`${sr.series.length} slide Story dijadwalkan.`); return reload(); } await api('POST', `/api/ig/posts/${editing.id}/approve`, { scheduled_at: w }); toast('Disetujui dan dijadwalkan.'); reload(); });
     $c('#inow').onclick = (e) => busy(e.target, async () => {
       needMedia();
       if (isSeries()) throw new Error('Rangkaian Story tidak bisa diterbitkan sekaligus. Gunakan Setujui & jadwalkan.');
       if (!(await ui.confirm({ title: 'Terbitkan ke Instagram sekarang?', message: 'Konten langsung tayang di akun Instagram tanpa menunggu jadwal.', quote: $c('#cap').value.slice(0, 200), quoteLabel: cur.name, ok: 'Terbitkan sekarang' }))) return;
-      await saveIt(); const r = await api('POST', `/api/ig/posts/${editing.id}/publish-now`); if (r.status === 'failed') throw new Error(r.error); toast('Terbit.'); route();
+      await saveIt(); const r = await api('POST', `/api/ig/posts/${editing.id}/publish-now`); if (r.status === 'failed') throw new Error(r.error); toast('Terbit.'); reload();
     });
   }
   const selIds = () => $$('.igsel:checked', body).map((c) => c.value);
@@ -612,7 +627,7 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
         if (!out) return; if (out.start) fill_missing = out;
       } else if (!(await ui.confirm({ title: action === 'submit' ? `Ajukan ${ids.length} konten?` : `Kembalikan ${ids.length} konten ke draft?`, message: action === 'submit' ? 'Konten masuk antrean approval manajer.' : 'Jadwal dibatalkan dan konten kembali berstatus draft.', ok: action === 'submit' ? 'Ajukan' : 'Kembalikan' }))) return;
       const r = await api('POST', '/api/ig/posts/bulk', { action, ids, fill_missing });
-      toast(`${r.done.length} berhasil${r.skipped.length ? `, ${r.skipped.length} dilewati: ${r.skipped[0].reason}` : ''}.`, !r.skipped.length); route();
+      toast(`${r.done.length} berhasil${r.skipped.length ? `, ${r.skipped.length} dilewati: ${r.skipped[0].reason}` : ''}.`, !r.skipped.length); reload();
     });
   });
   { const d = params().get('date'); if (/^\d{4}-\d{2}-\d{2}$/.test(d || '')) { open(null); const w = $c('#iwhen')._flatpickr; if (w) w.setDate(new Date(`${d}T09:00:00+07:00`), false); } }
@@ -627,9 +642,15 @@ IGV.konten = async ({ v, bid, cur, body, only }) => {
       if (act === 'approve' && !p.scheduled_at) { toast('Tentukan jadwal dulu (Edit → pilih jadwal).', true); return open(p); }
       if (act === 'delete') await api('DELETE', `/api/ig/posts/${id}`);
       else { const r = await api('POST', `/api/ig/posts/${id}/${act === 'now' ? 'publish-now' : act}`, b); if (r.status === 'failed') throw new Error(r.error); }
-      toast('Berhasil.'); route();
+      toast('Berhasil.'); reload();
     });
   };
+  if (compose) {
+    ['#newc', '#iglist', '#igbulk'].forEach((id) => $c(id)?.classList.add('hidden')); $c('#newc').closest('.row').querySelector('b')?.classList.add('hidden');
+    body.querySelectorAll('.chips').forEach((c) => c.classList.add('hidden'));
+    open(null); if (!SM) { $c('#kind').value = compose === 'reels' ? 'reels' : 'feed'; syncKind(); }
+    $c('#icancel').onclick = () => { location.hash = '#/dashboard'; };
+  }
 };
 function igActions(p) {
   const b = (a, l, c = '') => `<button class="btn small ${c}" data-iact="${a}" type="button">${l}</button>`;
