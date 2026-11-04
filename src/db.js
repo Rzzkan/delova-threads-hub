@@ -504,6 +504,9 @@ const SEED = [
   },
 ];
 
+export const DELOVA_BRAND_IDS = ['wardrobe', 'kids', 'scarf', 'daily'];
+export const isDelovaBrand = (b) => DELOVA_BRAND_IDS.includes(typeof b === 'string' ? b : b?.id);
+
 if (!get('SELECT 1 AS x FROM brands LIMIT 1')) {
   SEED.forEach((b, i) =>
     run(
@@ -512,4 +515,39 @@ if (!get('SELECT 1 AS x FROM brands LIMIT 1')) {
       b.id, b.name, b.color, b.description, b.voice, JSON.stringify(b.pillars), b.hashtags, b.dos, b.donts, i,
     ),
   );
+}
+
+/* ---------- Akun non-Delova yang dikelola Hub (ditambahkan sekali; bisa diedit/dihapus dari dashboard) ---------- */
+const EXTRA_SEED = [
+  {
+    id: 'personal',
+    name: 'Personal Brand',
+    color: '#3b5b92',
+    description: 'Akun pribadi owner (@rzzkan) di Instagram dan Threads: personal branding sebagai bapak rumah tangga yang membangun bisnis dari rumah. (Profil ini draf awal, silakan sesuaikan di menu Brand.)',
+    voice: 'Santai, jujur, Gen Z, first-person ("aku"). Cerita nyata, sesekali humor receh, tidak menggurui. Bahasa Indonesia sehari-hari, emoji secukupnya (maks 2).',
+    pillars: ['Hari-hari bapak rumah tangga', 'Journey membangun bisnis dari rumah', 'Tips UMKM & creativepreneur', 'Behind the scenes (produksi, woodworking, konten)', 'Opini ringan & pelajaran gagal-berhasil'],
+    hashtags: '#rzzkan #BapakRumahTangga #UMKM #Creativepreneur',
+    dos: 'Mulai dari cerita atau hook personal. Sertakan satu pelajaran/takeaway yang bisa dipraktikkan. Ajak diskusi di akhir.',
+    donts: 'Jangan membuka data pribadi keluarga yang sensitif (alamat, wajah anak tanpa izin). Jangan klaim hasil/omzet yang tidak bisa dibuktikan. Jangan menjelekkan pihak lain.',
+  },
+  {
+    id: 'temanseller',
+    name: 'Teman Seller',
+    color: '#1f8a5b',
+    description: 'Unit usaha baru: akun @teman.seller di Instagram dan Threads. (Profil ini draf awal, silakan sesuaikan di menu Brand.)',
+    voice: 'Ramah, praktis, seperti teman sesama seller yang sudah lebih dulu jalan. Bahasa santai, to the point, sedikit humor.',
+    pillars: ['Tips jualan online & marketplace', 'Cerita dan pelajaran sesama seller', 'Tools & cara kerja efisien', 'Edukasi (iklan, SEO produk, stok)', 'Promo & info produk/layanan'],
+    hashtags: '#TemanSeller #SellerOnline #UMKM',
+    dos: 'Beri langkah yang bisa langsung dicoba. Pakai contoh nyata. Tutup dengan pertanyaan untuk memancing diskusi antar seller.',
+    donts: 'Jangan menjanjikan omzet/hasil tertentu. Jangan mengarang fitur, harga, atau data yang tidak ada di brief. Jangan menjelekkan platform atau seller lain.',
+  },
+];
+if (!get("SELECT 1 AS x FROM settings WHERE key='seed_extra_brands_v1'")) {
+  const top = get('SELECT COALESCE(MAX(sort),-1) AS m FROM brands').m;
+  EXTRA_SEED.forEach((b, i) => {
+    if (get('SELECT 1 AS x FROM brands WHERE id=?', b.id)) return;
+    run(`INSERT INTO brands(id,name,color,description,voice,pillars,hashtags,dos,donts,sort) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      b.id, b.name, b.color, b.description, b.voice, JSON.stringify(b.pillars), b.hashtags, b.dos, b.donts, top + 1 + i);
+  });
+  run("INSERT OR REPLACE INTO settings(key,value) VALUES ('seed_extra_brands_v1','1')");
 }

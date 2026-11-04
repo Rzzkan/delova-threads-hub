@@ -3,7 +3,7 @@
  * Dipakai Auto Reply dan fitur AI pembuat post agar harga/stok/varian/tautan berasal dari data nyata, bukan karangan model.
  * Stok bukan realtime (disalin dari Shopee lewat sinkronisasi terjadwal): selalu sertakan usia datanya.
  */
-import { getSetting } from './db.js';
+import { getSetting, DELOVA_BRAND_IDS } from './db.js';
 import { decrypt } from './crypto.js';
 
 export class StoreError extends Error {
@@ -96,13 +96,14 @@ function variantLines(d) {
  * Tidak pernah melempar: kegagalan API menjadi pesan agar model tidak mengarang harga/stok.
  */
 export async function productFacts(brandId, texts, { detail = 2, featured = false } = {}) {
+  if (brandId && !DELOVA_BRAND_IDS.includes(brandId)) return { facts: '', used: [], ok: true }; // akun non-Delova tidak punya katalog Delova Store
   const cfg = storeConfig();
   if (!cfg.key) return { facts: '', used: [], ok: false, reason: 'not_configured' };
   const kws = [...new Set(texts.flatMap((t) => keywords(t)))].slice(0, 6);
   if (!kws.length && !featured) return { facts: '', used: [], ok: true };
   try {
     const found = new Map();
-    const scope = ['wardrobe', 'kids', 'scarf', 'daily'].includes(brandId) ? brandId : '';
+    const scope = DELOVA_BRAND_IDS.includes(brandId) ? brandId : '';
     const run = async (brand) => {
       for (const kw of kws.slice(0, 4)) {
         const r = await storeGet('/products', { q: kw, brand, limit: 6 });

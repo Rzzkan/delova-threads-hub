@@ -41,7 +41,7 @@ export function registerTools(server, call, { role = 'editor' } = {}) {
 
   server.registerTool(
     'list_brands',
-    { title: 'Daftar akun brand', description: 'Empat akun Threads Delova, status koneksi, dan jumlah post per status.' },
+    { title: 'Daftar akun brand', description: 'Semua akun yang dikelola Hub (Delova Wardrobe/Kids/Scarf/Daily, Personal Brand, Teman Seller, dst.), status koneksi, dan jumlah post per status.' },
     wrap(() => call('GET', '/api/dashboard')),
   );
 

@@ -43,7 +43,7 @@ after(() => server.close());
 test('ig: status, kredensial hanya admin & rahasia tak pernah dikembalikan', async () => {
   const s = (await A('GET', '/api/ig/status')).json;
   assert.equal(s.simulated, true);
-  assert.equal(s.brands.length, 4);
+  assert.equal(s.brands.length, 6);
   assert.ok(s.scopes.includes('instagram_business_manage_messages'));
   assert.equal((await req(viewer, 'GET', '/api/ig/status')).json.app_id, undefined); // viewer tak melihat app id
   assert.equal((await req(viewer, 'PUT', '/api/ig/credentials', { app_id: '1234567890' })).status, 403);

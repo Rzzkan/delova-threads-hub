@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 import * as C from './crypto.js';
-import { all, get, run, now, uid, audit, getSetting, setSetting, policy } from './db.js';
+import { all, get, run, now, uid, audit, getSetting, setSetting, policy, db, isDelovaBrand } from './db.js';
 import * as T from './threads.js';
 import * as AI from './claude.js';
 import { startScheduler, publishPost, threadsLength } from './scheduler.js';
@@ -232,6 +232,45 @@ export function createApp() {
     if (err) return bad(res, err);
     applyProfile(b, req.body || {}, req, true);
     res.json(publicBrand(brandOr404(b.id)));
+  });
+  // ---- Tambah / hapus akun yang dikelola Hub (admin, hanya dari dashboard)
+  const slug = (t) => String(t || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  api.post('/brands', humanOnly, need('admin'), (req, res) => {
+    const b = req.body || {};
+    const name = String(b.name || '').trim();
+    if (!name || name.length > 60) return bad(res, 'Nama akun wajib diisi (maks 60 karakter).');
+    const color = /^#[0-9a-f]{6}$/i.test(String(b.color || '')) ? b.color : '#6b7280';
+    const description = String(b.description || '').slice(0, 500).trim();
+    let id = slug(b.id || name); if (!id) return bad(res, 'ID akun tidak valid. Pakai huruf/angka.');
+    if (get('SELECT 1 AS x FROM brands WHERE id=?', id)) { let n = 2; while (get('SELECT 1 AS x FROM brands WHERE id=?', `${id}${n}`)) n++; id = `${id}${n}`; }
+    const sort = get('SELECT COALESCE(MAX(sort),-1) AS m FROM brands').m + 1;
+    run('INSERT INTO brands(id,name,color,description,voice,pillars,hashtags,dos,donts,sort) VALUES (?,?,?,?,?,?,?,?,?,?)', id, name, color, description || null, '', '[]', '', '', '', sort);
+    A(req, 'brand.created', { brand: id, name });
+    res.status(201).json(publicBrand(brandOr404(id)));
+  });
+  api.delete('/brands/:id', humanOnly, need('admin'), (req, res) => {
+    const b = brandOr404(req.params.id);
+    if (!b) return bad(res, 'Akun tidak ditemukan.', 404);
+    if (isDelovaBrand(b)) return bad(res, 'Empat akun Delova (Wardrobe, Kids, Scarf, Daily) tidak bisa dihapus.');
+    if (b.token_enc) return bad(res, 'Putuskan koneksi Threads akun ini dulu (Akun Terhubung → Putuskan).');
+    if (get('SELECT 1 AS x FROM ig_accounts WHERE brand_id=? AND token_enc IS NOT NULL', b.id)) return bad(res, 'Putuskan koneksi Instagram akun ini dulu.');
+    // Boleh dihapus hanya jika tak ada data kerja; tabel konfigurasi ringan ikut dibersihkan.
+    const LIGHT = new Set(['auto_rules', 'brand_knowledge', 'brand_history', 'ig_accounts', 'wa_numbers', 'kw_triggers']);
+    const used = [];
+    for (const t of db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all().map((r) => r.name)) {
+      if (t === 'brands') continue;
+      const fk = db.prepare(`PRAGMA foreign_key_list(${JSON.stringify(t).replace(/"/g, '')})`).all().find((f) => f.table === 'brands');
+      const col = fk?.from || (db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'brand_id') ? 'brand_id' : null);
+      if (!col || LIGHT.has(t)) continue;
+      if (get(`SELECT 1 AS x FROM ${t} WHERE ${col}=? LIMIT 1`, b.id)) used.push(t);
+    }
+    if (used.length) return bad(res, `Akun masih punya data (${used.join(', ')}). Hapus dulu postingan/data terkait.`);
+    try {
+      for (const t of LIGHT) { try { run(`DELETE FROM ${t} WHERE brand_id=?`, b.id); } catch { /* tabel tanpa brand_id */ } }
+      run('DELETE FROM brands WHERE id=?', b.id);
+    } catch (e) { return bad(res, `Tidak bisa menghapus: ${e.message}`); }
+    A(req, 'brand.deleted', { brand: b.id, name: b.name });
+    res.json({ ok: true });
   });
   // Jalur Claude/MCP: tanpa nama & kredensial, dikunci saklar "Ubah profil brand" di Kontrol Claude (default mati).
   api.put('/brands/:id/profile', need('manager'), gate('claude_brand'), (req, res) => {

@@ -4,7 +4,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { threadsLength } from './scheduler.js';
-import { getSetting, setSetting } from './db.js';
+import { getSetting, setSetting, isDelovaBrand } from './db.js';
 import { decrypt } from './crypto.js';
 
 export const aiEnabled = () => !!process.env.ANTHROPIC_API_KEY;
@@ -40,13 +40,17 @@ Lakukan: ${b.dos || '-'}
 Hindari: ${b.donts || '-'}`;
 }
 
+/** Prompt dasar menyebut brand Delova; untuk akun lain ganti dengan nama akunnya agar tidak tercampur. */
+const rulesFor = (rules, brand) => (!brand || isDelovaBrand(brand) ? rules : rules.replace(/brand fashion Indonesia Delova/g, `akun "${brand.name}" (identitas lengkapnya ada di blok profil brand di bawah; abaikan asumsi fashion/Delova bila tidak sesuai profil)`));
+
 async function ask(brand, prompt, maxTokens = 3000) {
+  const RULES_B = rulesFor(RULES, brand);
   const viaClaude = async () => {
     const msg = await getClient().messages.create({
       model: aiModel(),
       max_tokens: maxTokens,
       system: [
-        { type: 'text', text: RULES },
+        { type: 'text', text: RULES_B },
         { type: 'text', text: brandBlock(brand), cache_control: { type: 'ephemeral' } },
       ],
       messages: [{ role: 'user', content: prompt }],
@@ -55,7 +59,7 @@ async function ask(brand, prompt, maxTokens = 3000) {
   };
   const cfg = llmConfig();
   if (cfg.provider !== 'openai') return viaClaude();
-  try { return await chatOpenAI({ system: `${RULES}\n\n${brandBlock(brand)}`, user: prompt, maxTokens, cfg }); }
+  try { return await chatOpenAI({ system: `${RULES_B}\n\n${brandBlock(brand)}`, user: prompt, maxTokens, cfg }); }
   catch (e) { if (cfg.fallback && aiEnabled()) return viaClaude(); throw e; }
 }
 
@@ -325,7 +329,7 @@ Aturan:
 - Jangan mengarang fakta tentang produk kami. Gunakan hanya PENGETAHUAN BRAND bila perlu.
 Balas HANYA JSON valid: {"fit":0.0-1.0,"reply":"teks balasan","reason":"alasan singkat"}. fit = seberapa pantas brand ikut membalas post ini.`;
 export async function oppReply(brand, { username, text, keyword, knowledge, maxChars = 280 }) {
-  const system = `${OPP_RULES}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND:\n${knowledge?.trim() || '(kosong)'}`;
+  const system = `${rulesFor(OPP_RULES, brand)}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND:\n${knowledge?.trim() || '(kosong)'}`;
   const user = `Kata kunci pencarian: ${keyword}. Maksimal ${maxChars} karakter.\nPost dari @${String(username || 'anonim').slice(0, 60)}:\n<post_orang>\n${String(text).slice(0, 1200)}\n</post_orang>`;
   const cfg = llmConfig();
   const viaClaude = async () => {
@@ -342,7 +346,8 @@ export async function oppReply(brand, { username, text, keyword, knowledge, maxC
 export async function aiReply(brand, { platform, kind, username, text, postText, thread, knowledge, storeFacts, maxChars }) {
   const where = { threads: 'Threads', instagram: 'Instagram', whatsapp: 'WhatsApp' }[platform] || platform;
   const kindLabel = { reply: 'reply pada post kami', mention: 'post yang me-mention kami', comment: 'komentar pada post kami', dm: 'pesan langsung (DM)' }[kind] || kind;
-  const system = `${REPLY_RULES}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}${storeFacts ? `\n\n${storeFacts}` : ''}`;
+  const REPLY_B = rulesFor(REPLY_RULES, brand);
+  const system = `${REPLY_B}\n\n${brandBlock(brand)}\n\nPENGETAHUAN BRAND (satu-satunya sumber fakta):\n${knowledge?.trim() || '(kosong: jangan menjawab fakta produk; arahkan ke DM/Shopee atau eskalasi)'}${storeFacts ? `\n\n${storeFacts}` : ''}`;
   const user = `Platform: ${where}. Jenis: ${kindLabel}. Maksimal ${maxChars} karakter.
 ${postText ? `Konteks post kami: """${String(postText).slice(0, 600)}"""\n` : ''}${thread ? `Utas sebelumnya (urut waktu; baca seluruhnya. Pesan audiens di bawah mungkin hanya jawaban singkat atas pilihan/pertanyaan kami di utas ini, jadi pahami maksudnya dari utas, bukan dari pesan itu saja):\n<utas>\n${String(thread).slice(0, 1800)}\n</utas>\n` : ''}Dari @${String(username || 'anonim').slice(0, 60)}:
 <pesan_audiens>
@@ -355,7 +360,7 @@ ${String(text).slice(0, 1200)}
     const viaClaude = async () => {
       const msg = await getClient().messages.create({
         model: aiModel(), max_tokens: 700,
-        system: [{ type: 'text', text: REPLY_RULES }, { type: 'text', text: sysText.slice(REPLY_RULES.length + 2), cache_control: { type: 'ephemeral' } }],
+        system: [{ type: 'text', text: REPLY_B }, { type: 'text', text: sysText.slice(REPLY_B.length + 2), cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: usr }],
       });
       return { out: msg.content.filter((c) => c.type === 'text').map((c) => c.text).join(''), model: aiModel() };

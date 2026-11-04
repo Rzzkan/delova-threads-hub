@@ -202,7 +202,7 @@ VIEWS.dashboard = async (v) => {
   const st = (c, k) => ((c || {})[k] || 0);
   const mini = (c) => `<div class="stats"><div><b>${st(c, 'draft')}</b><span>Draft</span></div><div><b>${st(c, 'pending_approval')}</b><span>Review</span></div><div><b>${st(c, 'scheduled')}</b><span>Terjadwal</span></div><div><b>${st(c, 'published')}</b><span>Terbit</span></div></div>`;
   const plat = (ic, name, extra = '') => `<div class="row between" style="margin-top:8px"><b class="small">${ic} ${name}</b>${extra}</div>`;
-  v.innerHTML = `<div class="page-head"><h1>Dashboard</h1><p class="muted">Ringkasan 4 brand Delova: Threads, Instagram Feed, dan Instagram Story.</p></div>
+  v.innerHTML = `<div class="page-head"><h1>Dashboard</h1><p class="muted">Ringkasan ${d.brands.length} akun yang dikelola Hub: Threads, Instagram Feed, dan Instagram Story.</p></div>
   <h3 class="small muted" style="margin:0 0 6px">THREADS</h3>
   <div class="grid g4" style="margin-bottom:14px">${kpi('ok', 'check', sum('published'), 'Post terbit')}${kpi('', 'clock', sum('scheduled'), 'Terjadwal')}${kpi('warn', 'send', sum('pending_approval'), 'Menunggu approval')}${kpi('bad', 'alert', sum('failed'), 'Gagal')}</div>
   <h3 class="small muted" style="margin:0 0 6px">INSTAGRAM FEED &amp; REELS</h3>
@@ -1636,6 +1636,7 @@ async function brandsProfile(v) {
 
 /* ---------- Akun Terhubung (Pengaturan): koneksi Threads dan Instagram dipisah ---------- */
 const AKUN_TABS = [['threads', 'Threads'], ['instagram', 'Instagram']];
+const DELOVA_IDS = ['wardrobe', 'kids', 'scarf', 'daily'];
 VIEWS.akun = async (v) => {
   const q = params(); const tab = q.get('tab') === 'instagram' ? 'instagram' : 'threads';
   const cq = q.get('connect');
@@ -1649,12 +1650,21 @@ VIEWS.akun = async (v) => {
     return IGV.akun({ st, body });
   }
   brands = await api('GET', '/api/brands');
-  body.innerHTML = `${can('admin') ? '<div class="small muted">Kredensial aplikasi Threads dan mode Live/simulasi ada di <a href="#/meta">Pengaturan Meta</a>.</div>' : ''}<div class="grid g2">${brands.map((b) => `<div class="card stack bcard" style="--c:${b.color}" data-id="${b.id}">
+  body.innerHTML = `${can('admin') ? '<div class="row between"><div class="small muted">Kredensial aplikasi Threads dan mode Live/simulasi ada di <a href="#/meta">Pengaturan Meta</a>.</div><button type="button" class="btn small primary" id="addacc">+ Tambah akun</button></div>' : ''}<div class="grid g2">${brands.map((b) => `<div class="card stack bcard" style="--c:${b.color}" data-id="${b.id}">
     <div class="row between"><h2>${esc(b.name)}</h2>${b.connected ? `<span class="badge s-published">@${esc(b.username || '')}</span>` : '<span class="badge">Belum terhubung</span>'}</div>
     ${b.connected ? `<div class="small muted">Token berlaku s/d ${wib(b.token_expires_at)} (diperpanjang otomatis).</div>` : ''}
-    <div class="row">${can('manager') && !b.connected ? `<a class="btn small primary" href="/auth/threads/start?brand=${b.id}">Hubungkan ke Threads</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}</div>
+    <div class="row">${can('manager') && !b.connected ? `<a class="btn small primary" href="/auth/threads/start?brand=${b.id}">Hubungkan ke Threads</a>` : ''}${can('admin') && b.connected ? '<button type="button" class="btn small" data-x="refresh">Perpanjang token</button><button type="button" class="btn small danger" data-x="disc">Putuskan</button>' : ''}${can('admin') && !DELOVA_IDS.includes(b.id) ? '<button type="button" class="btn small danger" data-x="rmacc">Hapus akun</button>' : ''}</div>
     ${permBlock(b)}</div>`).join('')}</div>`;
+  const addAcc = $('#addacc', body);
+  if (addAcc) addAcc.onclick = async () => {
+    const r = await ui.form({ title: 'Tambah akun yang dikelola Hub', message: 'Akun baru langsung muncul di semua menu (Tulis Post, Instagram, Auto Reply, Insight). Hubungkan Threads dan Instagram-nya setelah ini.', ok: 'Tambah akun', extra: {
+      html: '<label>Nama akun<input name="name" maxlength="60" placeholder="mis. Teman Seller"></label><div class="grid g2"><label>Warna penanda<input type="color" name="color" value="#6b7280"></label><label>ID (opsional)<input name="id" maxlength="24" placeholder="otomatis dari nama"></label></div><label>Deskripsi singkat<textarea name="description" rows="3" maxlength="500" placeholder="Akun apa ini, @username Threads/IG-nya"></textarea></label>',
+      collect: (f) => { const n = f.elements.name.value.trim(); if (!n) { $('[data-err]', f).textContent = 'Nama akun wajib diisi.'; return undefined; } return { name: n, color: f.elements.color.value, id: f.elements.id.value.trim() || undefined, description: f.elements.description.value.trim() }; } } });
+    if (!r) return;
+    try { const b = await api('POST', '/api/brands', r); brands = await api('GET', '/api/brands'); toast(`Akun ${b.name} ditambahkan. Hubungkan Threads/Instagram-nya, lalu lengkapi profil di menu Pengetahuan Brand.`); route(); } catch (x) { toast(x.message, true); }
+  };
   body.onclick = (e) => { const x = e.target.dataset.x; if (!x) return; const id = e.target.closest('[data-id]').dataset.id;
+    if (x === 'rmacc') { const b = brands.find((y) => y.id === id); return ui.confirm({ title: `Hapus akun ${b.name}?`, message: 'Hanya bisa jika belum ada postingan/data kerja dan koneksinya sudah diputus. Tidak bisa dibatalkan.', ok: 'Hapus akun', danger: true }).then(async (ok) => { if (!ok) return; try { await api('DELETE', `/api/brands/${id}`); brands = await api('GET', '/api/brands'); toast('Akun dihapus.'); route(); } catch (er) { toast(er.message, true); } }); }
     if (x === 'perm') return checkPerm(e.target, id, brands.find((y) => y.id === id));
     busy(e.target, async () => { if (x === 'refresh') await api('POST', `/api/brands/${id}/refresh-token`); if (x === 'disc') { if (!(await ui.confirm({ title: 'Putuskan akun ini?', message: 'Token Threads dihapus dari Hub. Posting terjadwal untuk akun ini akan gagal sampai Anda menghubungkannya lagi.', ok: 'Putuskan', danger: true }))) return; await api('DELETE', `/api/brands/${id}/connection`); } toast('Berhasil.'); route(); }); };
 };
@@ -1761,7 +1771,7 @@ VIEWS.meta = async (v) => {
   <p class="muted">Kredensial aplikasi Meta (Threads API) disimpan terenkripsi di server. App Secret tidak pernah ditampilkan lagi setelah disimpan dan tidak bisa diubah lewat Claude/MCP. Status saat ini: ${modeNow}</p>
   <form id="gf" class="card stack">
     <h3>Aplikasi Meta (berlaku untuk semua akun)</h3>
-    <p class="small muted">Satu aplikasi Meta cukup untuk keempat akun: tiap akun tetap login sendiri lewat tombol <i>Hubungkan ke Threads</i> sehingga token-nya terpisah. Sumber aktif: <b>${esc(SRC[m.global_source])}</b>${m.env_has_creds && m.global_source !== 'env' ? ' (nilai di .env tertimpa oleh yang diisi di sini)' : ''}.</p>
+    <p class="small muted">Satu aplikasi Meta cukup untuk semua akun: tiap akun tetap login sendiri lewat tombol <i>Hubungkan ke Threads</i> sehingga token-nya terpisah. Sumber aktif: <b>${esc(SRC[m.global_source])}</b>${m.env_has_creds && m.global_source !== 'env' ? ' (nilai di .env tertimpa oleh yang diisi di sini)' : ''}.</p>
     <div class="grid g2">
       <label>Threads App ID<input name="app_id" value="${esc(m.app_id)}" autocomplete="off" placeholder="mis. 1234567890123456"></label>
       <label>Threads App Secret<input name="app_secret" type="password" autocomplete="new-password" placeholder="${m.has_secret ? 'tersimpan; kosongkan jika tidak diubah' : 'tempel App Secret'}"></label>

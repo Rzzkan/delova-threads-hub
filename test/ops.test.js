@@ -44,7 +44,7 @@ test('skrip backup membuat salinan database yang bisa dibuka', async () => {
   const { DatabaseSync } = await import('node:sqlite');
   const f = fs.readdirSync(path.join(process.env.DATA_DIR, 'backups')).find((x) => x.endsWith('.db'));
   const copy = new DatabaseSync(path.join(process.env.DATA_DIR, 'backups', f));
-  assert.equal(copy.prepare('SELECT COUNT(*) AS n FROM brands').get().n, 4);
+  assert.equal(copy.prepare('SELECT COUNT(*) AS n FROM brands').get().n, 6);
   assert.equal(copy.prepare('SELECT COUNT(*) AS n FROM users').get().n, 1);
   copy.close();
   server.close();

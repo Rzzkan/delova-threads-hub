@@ -47,9 +47,9 @@ test('API butuh login & CSRF header', async () => {
   assert.equal(noCsrf.status, 403);
 });
 
-test('4 brand Delova tersedia', async () => {
+test('4 brand Delova + akun tambahan tersedia (urutan tetap)', async () => {
   const r = await api('GET', '/api/brands');
-  assert.deepEqual(r.body.map((b) => b.id), ['wardrobe', 'kids', 'scarf', 'daily']);
+  assert.deepEqual(r.body.map((b) => b.id), ['wardrobe', 'kids', 'scarf', 'daily', 'personal', 'temanseller']);
   assert.ok(!JSON.stringify(r.body).includes('token_enc'));
 });
 
@@ -227,4 +227,22 @@ test('Dashboard: ringkasan Instagram feed & story ikut tampil per brand', async 
   assert.ok(k.instagram && k.instagram.feed && k.instagram.story, 'ada blok instagram');
   assert.ok(Object.keys(k.instagram.story).length > 0, 'slot story dari tes sebelumnya terhitung');
   assert.equal(typeof k.instagram.drafts_no_media, 'number');
+});
+
+test('Akun tambahan: Personal Brand & Teman Seller tersedia; admin bisa tambah/hapus akun baru', async () => {
+  const ids = (await api('GET', '/api/brands')).body.map((b) => b.id);
+  assert.ok(ids.includes('personal') && ids.includes('temanseller'), 'seed akun tambahan');
+  const c = await api('POST', '/api/brands', { name: 'Toko Uji', color: '#112233' });
+  assert.equal(c.status, 201); assert.equal(c.body.id, 'tokouji');
+  assert.equal((await api('POST', '/api/brands', { name: 'Toko Uji' })).body.id, 'tokouji2', 'id bentrok diberi sufiks');
+  assert.equal((await api('POST', '/api/brands', { name: '' })).status, 400);
+  const post = await api('POST', '/api/posts', { brand_id: 'tokouji', text: 'halo' });
+  assert.equal(post.status, 201);
+  assert.equal((await api('DELETE', '/api/brands/tokouji')).status, 400, 'masih punya post');
+  assert.equal((await api('DELETE', '/api/brands/wardrobe')).status, 400, 'brand Delova tidak bisa dihapus');
+  assert.equal((await api('DELETE', '/api/brands/tokouji2')).status, 200);
+  const d = await api('GET', '/api/dashboard');
+  assert.ok(d.body.brands.some((b) => b.id === 'temanseller' && b.instagram));
+  const ig = await api('GET', '/api/ig/status');
+  assert.ok(ig.body.brands.some((b) => b.id === 'personal'), 'muncul di Instagram');
 });
