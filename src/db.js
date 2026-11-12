@@ -541,13 +541,29 @@ const EXTRA_SEED = [
     dos: 'Beri langkah yang bisa langsung dicoba. Pakai contoh nyata. Tutup dengan pertanyaan untuk memancing diskusi antar seller.',
     donts: 'Jangan menjanjikan omzet/hasil tertentu. Jangan mengarang fitur, harga, atau data yang tidak ada di brief. Jangan menjelekkan platform atau seller lain.',
   },
+  {
+    id: 'bapackgenz',
+    name: 'Bapack Genz',
+    color: '#c2571a',
+    description: 'Akun @bapackgenz di Instagram dan Threads: persona bapak rumah tangga Gen Z. (Profil ini draf awal, silakan sesuaikan di menu Brand.)',
+    voice: 'Santai, lucu, relatable ala bapak muda Gen Z. Bahasa Indonesia gaul tapi sopan, first-person, humor receh dan self-deprecating, tetap hangat soal keluarga.',
+    pillars: ['Momen jadi bapak rumah tangga', 'Parenting versi bapak Gen Z', 'Urus rumah sambil jalanin bisnis', 'Relatable humor (drama rumah tangga, anak, dapur)', 'Tips praktis & rekomendasi (alat rumah, sneakers, woodworking)'],
+    hashtags: '#BapackGenz #BapakRumahTangga #ParentingGenZ',
+    dos: 'Buka dengan situasi relatable atau hook lucu. Satu cerita, satu poin. Ajak followers berbagi pengalaman di komentar.',
+    donts: 'Jangan membuka identitas atau wajah anak tanpa izin, dan jangan data pribadi keluarga yang sensitif. Jangan menggurui atau menghakimi orang tua lain. Jangan klaim medis/ahli parenting.',
+  },
 ];
-if (!get("SELECT 1 AS x FROM settings WHERE key='seed_extra_brands_v1'")) {
-  const top = get('SELECT COALESCE(MAX(sort),-1) AS m FROM brands').m;
-  EXTRA_SEED.forEach((b, i) => {
-    if (get('SELECT 1 AS x FROM brands WHERE id=?', b.id)) return;
+// Tiap akun tambahan ditanam sekali (flag per akun), jadi akun yang kemudian dihapus tidak muncul lagi.
+// Instalasi lama yang sudah menandai v1 dianggap sudah punya 'personal' dan 'temanseller'.
+if (get("SELECT 1 AS x FROM settings WHERE key='seed_extra_brands_v1'")) {
+  for (const id of ['personal', 'temanseller']) run("INSERT OR IGNORE INTO settings(key,value) VALUES (?, '1')", `seed_extra_brand_${id}`);
+}
+for (const b of EXTRA_SEED) {
+  if (get('SELECT 1 AS x FROM settings WHERE key=?', `seed_extra_brand_${b.id}`)) continue;
+  if (!get('SELECT 1 AS x FROM brands WHERE id=?', b.id)) {
+    const top = get('SELECT COALESCE(MAX(sort),-1) AS m FROM brands').m;
     run(`INSERT INTO brands(id,name,color,description,voice,pillars,hashtags,dos,donts,sort) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      b.id, b.name, b.color, b.description, b.voice, JSON.stringify(b.pillars), b.hashtags, b.dos, b.donts, top + 1 + i);
-  });
-  run("INSERT OR REPLACE INTO settings(key,value) VALUES ('seed_extra_brands_v1','1')");
+      b.id, b.name, b.color, b.description, b.voice, JSON.stringify(b.pillars), b.hashtags, b.dos, b.donts, top + 1);
+  }
+  run("INSERT OR REPLACE INTO settings(key,value) VALUES (?, '1')", `seed_extra_brand_${b.id}`);
 }

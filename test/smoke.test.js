@@ -49,7 +49,7 @@ test('API butuh login & CSRF header', async () => {
 
 test('4 brand Delova + akun tambahan tersedia (urutan tetap)', async () => {
   const r = await api('GET', '/api/brands');
-  assert.deepEqual(r.body.map((b) => b.id), ['wardrobe', 'kids', 'scarf', 'daily', 'personal', 'temanseller']);
+  assert.deepEqual(r.body.map((b) => b.id), ['wardrobe', 'kids', 'scarf', 'daily', 'personal', 'temanseller', 'bapackgenz']);
   assert.ok(!JSON.stringify(r.body).includes('token_enc'));
 });
 
@@ -231,7 +231,7 @@ test('Dashboard: ringkasan Instagram feed & story ikut tampil per brand', async 
 
 test('Akun tambahan: Personal Brand & Teman Seller tersedia; admin bisa tambah/hapus akun baru', async () => {
   const ids = (await api('GET', '/api/brands')).body.map((b) => b.id);
-  assert.ok(ids.includes('personal') && ids.includes('temanseller'), 'seed akun tambahan');
+  assert.ok(ids.includes('personal') && ids.includes('temanseller') && ids.includes('bapackgenz'), 'seed akun tambahan');
   const c = await api('POST', '/api/brands', { name: 'Toko Uji', color: '#112233' });
   assert.equal(c.status, 201); assert.equal(c.body.id, 'tokouji');
   assert.equal((await api('POST', '/api/brands', { name: 'Toko Uji' })).body.id, 'tokouji2', 'id bentrok diberi sufiks');
